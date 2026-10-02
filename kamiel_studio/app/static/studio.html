@@ -244,7 +244,30 @@ label.pct input{width:76px}
             <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_nacht_kader" aria-label="Kaders met foto's 's nachts"> %</label></td></tr>
         </tbody>
       </table>
+      <h2 style="margin-top:18px">Hoe groot</h2>
+      <p class="hint">Hoogte op het scherm, in procent van de schermhoogte. Kamiel zelf is ongeveer 38&nbsp;%. Op de grond worden objecten vooraan groter en achteraan kleiner, binnen deze grenzen. Per element kun je in de bibliotheek nog "Grootte" aanpassen.</p>
+      <table class="chances">
+        <thead><tr><th scope="col">Soort</th><th scope="col">Kleinste</th><th scope="col">Grootste</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Grond</th>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_grond_0" aria-label="Grond kleinste"> %</label></td>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_grond_1" aria-label="Grond grootste"> %</label></td></tr>
+          <tr><th scope="row">Horizon</th>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_horizon_0" aria-label="Horizon kleinste"> %</label></td>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_horizon_1" aria-label="Horizon grootste"> %</label></td></tr>
+          <tr><th scope="row">Lucht</th>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_lucht_0" aria-label="Lucht kleinste"> %</label></td>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_lucht_1" aria-label="Lucht grootste"> %</label></td></tr>
+          <tr><th scope="row">Kaders met foto's</th>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_kader_0" aria-label="Kaders met foto's kleinste"> %</label></td>
+            <td><label class="pct"><input type="number" min="3" max="90" id="z_kader_1" aria-label="Kaders met foto's grootste"> %</label></td></tr>
+        </tbody>
+      </table>
       <div class="settings" style="margin-top:14px">
+        <label class="field" for="sGiant">Kans op een reuzenobject
+          <span>Af en toe een object dat groter is dan "Grootste". 0 % is nooit.</span>
+          <label class="pct"><input type="number" id="sGiant" min="0" max="100" step="5"> %</label>
+        </label>
         <label class="field" for="sMax">Maximum aantal objecten per plek
           <span>Alles samen: grond, horizon, lucht en kaders. Wolken tellen niet mee.</span>
           <input type="number" id="sMax" min="1" max="20">
@@ -272,6 +295,7 @@ label.pct input{width:76px}
 const $ = (id) => document.getElementById(id);
 let world = null, filter = 'alles';
 const KIND_NL = { grond: 'Grond', horizon: 'Horizon', lucht: 'Lucht', wolk: 'Wolk', kader: 'Kader' };
+const SCALE_NL = [[0.5, 'Veel kleiner'], [0.75, 'Kleiner'], [1, 'Normaal'], [1.4, 'Groter'], [2, 'Veel groter']];
 const RARE_NL = { gewoon: 'Gewoon', zeldzaam: 'Zeldzaam', heelzeldzaam: 'Heel zeldzaam' };
 const MOMENT_NL = { dag: 'Overdag', nacht: "'s Nachts", altijd: 'Dag en nacht' };
 
@@ -377,6 +401,7 @@ function renderLib() {
           <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
           ${a.kind === 'grond' ? `<label><input type="checkbox" data-sign ${a.sign ? 'checked' : ''}> Tekstbord</label>` : ''}
           <label>Soort <select data-kind>${Object.entries(KIND_NL).map(([k, v]) => `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+          ${a.kind !== 'wolk' ? `<label>Grootte <select data-scale>${SCALE_NL.map(([v, n]) => `<option value="${v}" ${Math.abs((a.scale || 1) - v) < .01 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
           <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         </div>
         <div class="actions"><button type="button" class="danger" data-act="del">Verwijderen</button><span class="status"></span></div>
@@ -392,6 +417,12 @@ function renderLib() {
       el.querySelector('.thumb').classList.toggle('night', nacht && !dag);
     };
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', save));
+    const sc = el.querySelector('[data-scale]');
+    if (sc) sc.addEventListener('change', async () => {
+      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scale: +sc.value }) });
+      if (r.ok) a.scale = +sc.value;
+      status(st, r.ok ? 'Bewaard' : 'Mislukt', r.ok ? 'ok' : 'err');
+    });
     const kd = el.querySelector('[data-kind]');
     kd.addEventListener('change', async () => {
       kd.disabled = true; status(st, 'Bezig met aanpassen…');
@@ -479,6 +510,8 @@ async function renderSettings() {
   $('sNightWalks').value = s.night_walks.join(', ');
   for (const part of ['dag', 'nacht']) for (const k of ['grond', 'horizon', 'lucht', 'kader']) $(`c_${part}_${k}`).value = s.chances[part][k];
   $('sMax').value = s.max_objects;
+  for (const k of ['grond', 'horizon', 'lucht', 'kader']) { $(`z_${k}_0`).value = s.sizes[k][0]; $(`z_${k}_1`).value = s.sizes[k][1]; }
+  $('sGiant').value = s.giant_chance;
   $('words').value = s.words.join('\n');
   const sel = $('sWeather');
   try {
@@ -497,7 +530,8 @@ async function renderSettings() {
 $('setForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value, night_start: $('sNightStart').value, night_end: $('sNightEnd').value,
-    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), max_objects: +$('sMax').value,
+    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), max_objects: +$('sMax').value, giant_chance: +$('sGiant').value,
+    sizes: Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`z_${k}_0`).value || 3, +$(`z_${k}_1`).value || 3]])),
     chances: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, Math.max(0, Math.min(100, Math.round(+$(`c_${part}_${k}`).value || 0)))]))])),
     tap_url: $('sTap').value, osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
