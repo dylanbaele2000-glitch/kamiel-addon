@@ -603,7 +603,8 @@ async def api_live(request):
     db = load_db()
     s = db["settings"]
     out = {"message": None, "media": None, "trigger": None,
-           "spotlight": db.get("spotlight") if (db.get("spotlight") or {}).get("until", 0) > time.time() else None,
+           "spotlight": ({k: v for k, v in db["spotlight"].items() if k != "chat"}
+                         if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
            "snapshot": SNAP.get("id")}
     try:
         out["message"] = await current_message(db)
@@ -756,6 +757,7 @@ async def api_clear_message(request):
     async with lock:
         db = load_db()
         db.pop("message", None)
+        db.pop("spotlight", None)
         save_db(db, bump=False)
     return web.json_response({"ok": True})
 
@@ -860,8 +862,8 @@ async def tg_handle(token, upd):
         return await tg_say(chat, TG_HELP)
     if cmd == "/wis":
         async with lock:
-            db = load_db(); db.pop("message", None); save_db(db, bump=False)
-        return await tg_say(chat, "Het bericht is weg.")
+            db = load_db(); db.pop("message", None); db.pop("spotlight", None); save_db(db, bump=False)
+        return await tg_say(chat, "Weg van het scherm.")
     if cmd == "/bus":
         blocks = await departure_blocks(load_db())
         if not blocks:
@@ -900,7 +902,7 @@ async def tg_handle(token, upd):
         async with lock:
             db = load_db()
             db["photos"].append(p)
-            db["spotlight"] = {"id": p["id"], "file": p["file"], "until": now + minutes * 60}
+            db["spotlight"] = {"id": p["id"], "file": p["file"], "until": now + minutes * 60, "chat": chat}
             if text:
                 db["message"] = {"id": uuid.uuid4().hex[:8], "text": text[:200], "since": now, "until": now + minutes * 60,
                                  "sign": who.split(" ")[0][:30], "chat": chat}
@@ -1007,6 +1009,22 @@ async def api_seen(request):
     return web.json_response({"ok": True})
 
 
+async def api_photo_seen(request):
+    """Someone at home tapped the sent photo away."""
+    pid = request.match_info["id"]
+    async with lock:
+        db = load_db()
+        sp = db.get("spotlight") or {}
+        if sp.get("id") != pid:
+            return web.json_response({"ok": False})
+        chat = sp.get("chat")
+        db.pop("spotlight", None)
+        save_db(db, bump=False)
+    if chat:
+        asyncio.ensure_future(tg_say(chat, f"👀 Foto gezien om {_hm(time.time())}."))
+    return web.json_response({"ok": True})
+
+
 async def api_snapshot(request):
     """Only accepted while a /kijk is waiting for it."""
     if SNAP.get("id") != request.match_info["id"] or SNAP.get("data"):
@@ -1091,6 +1109,7 @@ def common_routes(app):
     app.router.add_get("/api/departures", api_departures)
     app.router.add_post("/api/tap/{target}", api_tap)
     app.router.add_post("/api/seen/{id}", api_seen)
+    app.router.add_post("/api/photo-seen/{id}", api_photo_seen)
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
 
 
