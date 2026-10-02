@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kamiel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Titan+One&display=swap">
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
+.stage{position:fixed;inset:0;overflow:hidden;background:#000}
+canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:url(#vhs) saturate(1.08) contrast(1.04)}
+.scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px)}
+.vig{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 18vmin rgba(0,0,0,.7)}
+.osd{position:absolute;left:3.2vw;top:4.2vh;font-family:'VT323',ui-monospace,monospace;color:#fff;font-size:6vh;line-height:.95;text-shadow:0 0 4px rgba(255,255,255,.6),2px 2px 0 rgba(0,0,0,.35);pointer-events:none;letter-spacing:1px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="vhs" color-interpolation-filters="sRGB">
+    <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/>
+    <feOffset in="r" dx="1.4" result="r2"/>
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="g"/>
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="b"/>
+    <feOffset in="b" dx="-1.4" result="b2"/>
+    <feBlend in="r2" in2="g" mode="screen" result="rg"/>
+    <feBlend in="rg" in2="b2" mode="screen" result="rgb"/>
+    <feGaussianBlur in="rgb" stdDeviation="0.45"/>
+  </filter>
+</svg>
+<div class="stage">
+  <canvas id="cv" width="960" height="600" aria-label="Kamiel in zijn droomwereld"></canvas>
+  <div class="osd" id="osd"></div>
+  <div class="scan"></div><div class="vig"></div>
+</div>
+<script>
+(async () => {
+const params = new URLSearchParams(location.search);
+const W = 960, H = 600, PLACE = 960, FEET = 548, HOR0 = 470, LAT = 51.05, LON = 3.72;
+const cv = document.getElementById('cv'), mainCtx = cv.getContext('2d'); let ctx = mainCtx;
+const wc = document.createElement('canvas'); wc.width = W; wc.height = H; const wctx = wc.getContext('2d');
+const cc = document.createElement('canvas'); cc.width = W; cc.height = H; const cctx = cc.getContext('2d');
+const mod = (a, n) => ((a % n) + n) % n;
+const rnd = Math.random;
+const load = (src) => { const i = new Image(); i.src = src; return i; };
+const ready = (i) => i && i.complete && i.naturalWidth > 0;
+
+/* ---------- data from the add-on ---------- */
+let world = await (await fetch('api/world', { cache: 'no-store' })).json();
+const S = world.settings;
+const pano = world.panorama ? load('media/' + world.panorama.file) : null;
+const PW = world.panorama ? world.panorama.width : PLACE * 8;
+const N = Math.max(1, Math.round(PW / PLACE));
+const HZ = world.panorama ? world.panorama.horizon : null;
+const horY = (wx) => HZ ? HZ[mod(Math.round(wx / 8), HZ.length)] : HOR0;
+const K = {}; ['stand', 'blink', 'walk1', 'walk2', 'walk3', 'walk4'].forEach(k => K[k] = load('static/kamiel/' + k + '.webp'));
+const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false).map(a => {
+  const v = {}; (a.colors || []).forEach(c => { if (a.files['kleur_' + c]) v[c] = load('media/' + a.files['kleur_' + c]); });
+  return Object.assign({}, a, { img: load('media/' + a.files.main), maskImg: a.files.mask ? load('media/' + a.files.mask) : null, vimg: v });
+});
+const CL = world.assets.filter(a => a.kind === 'wolk' && a.active !== false).map(a => Object.assign({}, a, { img: load('media/' + a.files.main) }));
+const PHOTOS = world.photos.length ? world.photos.map(p => 'media/' + p.file) : ['static/voorbeeldfoto.webp'];
+const photoCache = {};
+const photoImg = (url) => photoCache[url] || (photoCache[url] = load(url));
+const WORDS = S.words && S.words.length ? S.words : ['WELKOM IN KAMIELLAND'];
+
+/* ---------- time, sun, moon, weather ---------- */
+let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [];
+function now() {
+  const d = new Date();
+  const t = params.get('t'); if (t) { const [h, m] = t.split(':').map(Number); d.setHours(h, m || 0, 0, 0); }
+  return d;
+}
+const minutesOf = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+function isNightTime(d) {
+  const m = d.getHours() * 60 + d.getMinutes(), a = minutesOf(S.night_start), b = minutesOf(S.night_end);
+  return a > b ? (m >= a || m < b) : (m >= a && m < b);
+}
+function horizontal(days, ra, dec) {
+  const rad = Math.PI / 180, phi = rad * LAT, th = rad * (280.16 + 360.9856235 * days) + rad * LON, Hh = th - ra;
+  const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(Hh));
+  const az = Math.atan2(Math.sin(Hh), Math.cos(Hh) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+  return { alt: alt / rad, az: mod(az / rad + 180, 360) };
+}
+function sunCalc(d) {
+  const rad = Math.PI / 180, days = d.valueOf() / 864e5 - 0.5 + 2440588 - 2451545;
+  const M = rad * (357.5291 + 0.98560028 * days), C = rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+  const L = M + C + rad * 102.9372 + Math.PI, e = rad * 23.4397;
+  return horizontal(days, Math.atan2(Math.sin(L) * Math.cos(e), Math.cos(L)), Math.asin(Math.sin(e) * Math.sin(L)));
+}
+function sunPos(d) { return (haSun && !params.get('t')) ? haSun : sunCalc(d); }
+function moonPos(d) {
+  const rad = Math.PI / 180, days = d.valueOf() / 864e5 - 0.5 + 2440588 - 2451545;
+  const Lm = rad * (218.316 + 13.176396 * days), Mm = rad * (134.963 + 13.064993 * days), F = rad * (93.272 + 13.22935 * days);
+  const l = Lm + rad * 6.289 * Math.sin(Mm), b = rad * 5.128 * Math.sin(F), e = rad * 23.4397;
+  const ra = Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
+  const dec = Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
+  const phase = mod((d.valueOf() - Date.UTC(2000, 0, 6, 18, 14)) / 864e5, 29.530588853) / 29.530588853;
+  return { ...horizontal(days, ra, dec), phase };
+}
+const azX = (az) => W / 2 + (mod(az, 360) - 180) / 100 * (W / 2);
+const altY = (alt) => HOR0 - Math.max(-12, alt) / 62 * (HOR0 - 70);
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+function skyColors(alt) {
+  const night = [[6, 10, 30], [22, 28, 62]], blue = [[18, 26, 70], [70, 70, 120]], gold = [[30, 70, 190], [255, 170, 120]], day = [[6, 40, 196], [38, 98, 236]];
+  let c;
+  if (alt < -12) c = night;
+  else if (alt < -4) { const t = (alt + 12) / 8; c = [mix(night[0], blue[0], t), mix(night[1], blue[1], t)]; }
+  else if (alt < 6) { const t = (alt + 4) / 10; c = [mix(blue[0], gold[0], t), mix(blue[1], gold[1], t)]; }
+  else if (alt < 20) { const t = (alt - 6) / 14; c = [mix(gold[0], day[0], t), mix(gold[1], day[1], t)]; }
+  else c = day;
+  const grey = { helder: 0, licht: 0.03, bewolkt: 0.5, regen: 0.65, mist: 0.55 }[weather] || 0;
+  const lum = (x) => x[0] * .3 + x[1] * .59 + x[2] * .11;
+  return c.map(x => mix(x, [lum(x), lum(x), lum(x) * 1.05], grey));
+}
+const light = (alt) => Math.max(0, Math.min(1, (alt + 8) / 18));
+const tintFor = (alt) => Math.max(0, 1 - Math.abs(alt - 2) / 10);
+
+async function pollState() {
+  try {
+    const s = await (await fetch('api/state', { cache: 'no-store' })).json();
+    if (s.sun) haSun = s.sun;
+    osdLines = s.osd || [];
+    if (s.weather && !params.get('w')) { if (s.weather !== weather) { weather = s.weather; makeClouds(); } }
+    wind = weather === 'regen' ? 12 : weather === 'bewolkt' ? 7 : 4;
+  } catch (e) { /* keep going with what we have */ }
+}
+async function pollWorld() {
+  try {
+    const w = await (await fetch('api/world', { cache: 'no-store' })).json();
+    if (w.version !== world.version) location.reload();
+  } catch (e) { }
+}
+
+/* ---------- composing each place ---------- */
+const places = [];
+const recent = [];
+function pickFrom(list) {
+  const w = list.map(o => o.rare === 'zeldzaam' ? 0.25 : o.rare === 'heelzeldzaam' ? 0.06 : 1);
+  let r = rnd() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
+  return list[list.length - 1];
+}
+function compose(i) {
+  const night = isNightTime(now());
+  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night);
+  const used = new Set();
+  const take = (kinds) => {
+    let pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o) && !recent.includes(o.id));
+    if (!pool.length) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o));
+    if (!pool.length) return null;
+    const o = pickFrom(pool); used.add(o); recent.push(o.id); if (recent.length > 3) recent.shift(); return o;
+  };
+  const r = rnd(), dens = r < .25 ? 'rustig' : r < .7 ? 'normaal' : 'vol';
+  const nH = { rustig: 1, normaal: 1 + (rnd() < .5), vol: 2 + (rnd() < .5) }[dens];
+  const nS = { rustig: rnd() < .3 ? 1 : 0, normaal: rnd() < (night ? .8 : .5) ? 1 : 0, vol: 1 + (rnd() < .6) }[dens];
+  const nG = { rustig: 1, normaal: 2, vol: 3 + (rnd() < .4) }[dens];
+  const items = [], taken = [], takenSky = [];
+  const big = () => (rnd() < .12 ? 1.8 + rnd() * .6 : 1);
+  const asp = (o) => o.size[0] / o.size[1];
+  const GAP = 40, HALF = PLACE / 2;
+  const spot = (w, list, avoidKamiel) => {
+    for (let tries = 0; tries < 16; tries++) {
+      const lim = HALF - w / 2 - 20; if (lim <= 0) return null;
+      const dx = (rnd() * 2 - 1) * lim;
+      if (avoidKamiel && Math.abs(dx) < w / 2 + 90) continue;
+      if (list.every(([l, rr]) => dx + w / 2 + GAP < l || dx - w / 2 - GAP > rr)) { list.push([dx - w / 2, dx + w / 2]); return dx; }
+    }
+    return null;
+  };
+  const framesElsewhere = places.filter((p, j) => j !== i && p && p.items.some(it => it.o.kind === 'kader')).length;
+  const ground = [];
+  if (framesElsewhere < (S.min_frames || 0)) ground.push(take(['kader']));
+  for (let k = ground.length; k < nG; k++) ground.push(take(rnd() < .22 ? ['kader'] : ['grond']) || take(['grond']));
+  for (const o of ground) {
+    if (!o) continue;
+    const depth = rnd(), h = (110 + rnd() * 170) * (0.5 + depth * 0.7) * big();
+    const dx = spot(h * asp(o), taken, true); if (dx === null) continue;
+    const it = { o, layer: 2, dx, depth, h, flip: rnd() < .5 && o.kind === 'grond' && !o.sign };
+    if (o.sign) { it.color = (o.colors || ['paars'])[Math.floor(rnd() * (o.colors || ['paars']).length)]; it.word = WORDS[Math.floor(rnd() * WORDS.length)]; }
+    if (o.kind === 'kader') it.photo = PHOTOS[Math.floor(rnd() * PHOTOS.length)];
+    items.push(it);
+  }
+  for (let k = 0; k < nH; k++) {
+    const o = take(['horizon']); if (!o) continue;
+    const h = (90 + rnd() * 180) * big(), dx = spot(h * asp(o), taken, false); if (dx === null) continue;
+    items.push({ o, layer: 1, dx, h, sink: .1 + rnd() * .1, flip: rnd() < .35 });
+  }
+  for (let k = 0; k < nS; k++) {
+    const o = take(['lucht']); if (!o) continue;
+    const h = (/oog|eye/i.test(o.label || '') ? 50 + rnd() * 110 : 90 + rnd() * 190) * big(), dx = spot(h * asp(o), takenSky, false); if (dx === null) continue;
+    items.push({ o, layer: 0, dx, y: 40 + rnd() * Math.max(10, 300 - h), h, flip: rnd() < .5 });
+  }
+  items.sort((p, q) => (p.layer - q.layer) || ((p.depth || 0) - (q.depth || 0)));
+  places[i] = { items, night };
+}
+for (let i = 0; i < N; i++) compose(i);
+
+/* ---------- clouds ---------- */
+let clouds = [];
+function makeClouds() {
+  clouds = [];
+  if (!CL.length) return;
+  const n = { helder: 2, licht: 8, bewolkt: 16, regen: 18, mist: 6 }[weather] || 6;
+  let prev = null;
+  for (let k = 0; k < n; k++) {
+    let c = CL[Math.floor(rnd() * CL.length)];
+    if (c === prev && CL.length > 1) c = CL[(CL.indexOf(c) + 1) % CL.length];
+    prev = c;
+    const isBig = rnd() < (weather === 'helder' || weather === 'licht' ? .25 : .5);
+    const w = isBig ? 380 + rnd() * 320 : 140 + rnd() * 160;
+    clouds.push({ c, x: (k + rnd() * .8) / n * PW, y: 40 + rnd() * (isBig ? 150 : 230), w, flip: rnd() < .5, sq: 0.8 + rnd() * .35 });
+  }
+}
+makeClouds();
+
+/* ---------- Kamiel ---------- */
+let kx = PLACE / 2, target = kx, dir = -1, walking = false, t = 0, blinkT = 2, last = performance.now();
+let lastWalk = Date.now(), lastNightCheck = '';
+function go(d) {
+  if (walking) return;
+  dir = d; target = (Math.round((kx - PLACE / 2) / PLACE) + d) * PLACE + PLACE / 2; walking = true;
+}
+function visible(i) {
+  const cam = kx - W / 2;
+  for (let k = -1; k <= 1; k++) { const x0 = i * PLACE + k * PW; if (x0 + PLACE > cam - 40 && x0 < cam + W + 40) return true; }
+  return false;
+}
+function schedule() {
+  const d = now();
+  if (isNightTime(d)) {
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (S.night_walks.includes(hm) && lastNightCheck !== hm) { lastNightCheck = hm; go(rnd() < .5 ? -1 : 1); }
+  } else if (Date.now() - lastWalk > (S.walk_minutes || 20) * 60000) { lastWalk = Date.now(); go(rnd() < .5 ? -1 : 1); }
+}
+if (params.get('demo')) setInterval(() => go(rnd() < .5 ? -1 : 1), +params.get('demo') * 1000);
+
+function step(dt) {
+  t += dt;
+  if (walking) {
+    kx += dir * 70 * dt;
+    if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); }
+  }
+  const night = isNightTime(now());
+  for (let i = 0; i < N; i++) {
+    const v = visible(i);
+    if (!v && (places[i].seen || places[i].night !== night)) compose(i);
+    if (v) places[i].seen = true;
+  }
+  for (const c of clouds) c.x += wind * dt;
+  blinkT -= dt; if (blinkT < -.14) blinkT = 2 + rnd() * 4;
+}
+
+/* ---------- drawing ---------- */
+function drawImg(img, x, y, w, h, flip) {
+  if (!ready(img)) return;
+  if (flip) { ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
+  else ctx.drawImage(img, x, y, w, h);
+}
+function signText(g, o, word, w, h) {
+  if (!word || !o.plate) return;
+  const [tl, tr, br, bl] = o.plate.map(p => [p[0] * w, p[1] * h]);
+  const ux = [tr[0] - tl[0], tr[1] - tl[1]], uy = [bl[0] - tl[0], bl[1] - tl[1]];
+  const pw = Math.hypot(...ux), ph = Math.hypot(...uy);
+  g.save();
+  g.setTransform(ux[0] / pw, ux[1] / pw, uy[0] / ph, uy[1] / ph, tl[0], tl[1]);
+  const words = word.split(' '), maxLines = words.length > 4 ? 3 : words.length > 1 ? 2 : 1, per = Math.ceil(words.length / maxLines), lines = [];
+  for (let i = 0; i < words.length; i += per) lines.push(words.slice(i, i + per).join(' '));
+  const areaW = pw * .7, areaH = ph * .8;
+  let fs = areaH / lines.length * .8;
+  g.font = `${fs}px 'Titan One', 'Arial Rounded MT Bold', sans-serif`;
+  const widest = Math.max(...lines.map(l => g.measureText(l).width));
+  if (widest > areaW) { fs *= areaW / widest; g.font = `${fs}px 'Titan One', 'Arial Rounded MT Bold', sans-serif`; }
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(28,40,210,.92)'; g.shadowColor = 'rgba(60,80,255,.5)'; g.shadowBlur = fs * .15;
+  lines.forEach((l, i) => g.fillText(l, pw * .4, ph * .5 + (i - (lines.length - 1) / 2) * fs * 1.05));
+  g.restore();
+}
+function itemCanvas(it, w, h) {
+  const o = it.o, base = o.sign ? (o.vimg[it.color] || o.img) : o.img;
+  if (!ready(base)) return null;
+  const photo = o.kind === 'kader' ? photoImg(it.photo) : null;
+  if (o.kind === 'kader' && (!ready(photo) || !ready(o.maskImg) || !o.hole)) return base;
+  const W2 = Math.ceil(w), H2 = Math.ceil(h);
+  if (it.cache && it.cache.width === W2 && it.cache.height === H2) return it.cache;
+  const c = document.createElement('canvas'); c.width = W2; c.height = H2; const g = c.getContext('2d');
+  if (o.kind === 'kader') {
+    const [hx0, hy0, hx1, hy1] = o.hole, bx = hx0 * w, by = hy0 * h, bw = (hx1 - hx0) * w, bh = (hy1 - hy0) * h;
+    const s = Math.max(bw / photo.width, bh / photo.height);
+    g.drawImage(photo, bx + (bw - photo.width * s) / 2, by + (bh - photo.height * s) / 2, photo.width * s, photo.height * s);
+    g.globalCompositeOperation = 'destination-in'; g.drawImage(o.maskImg, 0, 0, w, h);
+    g.globalCompositeOperation = 'destination-over'; g.drawImage(base, 0, 0, w, h);
+  } else { g.drawImage(base, 0, 0, w, h); signText(g, o, it.word, w, h); }
+  it.cache = c; return c;
+}
+function drawSky(sun, moon) {
+  const [top, bot] = skyColors(sun.alt);
+  const g = ctx.createLinearGradient(0, 0, 0, HOR0 + 20); g.addColorStop(0, rgb(top)); g.addColorStop(1, rgb(bot));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const L = light(sun.alt);
+  if (L < .5 && (weather === 'helder' || weather === 'licht')) {
+    for (let i = 0; i < 90; i++) {
+      ctx.fillStyle = `rgba(255,250,235,${(1 - L * 2) * (.35 + .5 * Math.abs(Math.sin(t * .8 + i)))})`;
+      ctx.fillRect(mod(i * 97.13 - kx * .05, W), (i * 53.7) % (HOR0 - 40), 1.6, 1.6);
+    }
+  }
+  if (sun.alt > -6) {
+    const x = azX(sun.az), y = altY(sun.alt), tint = tintFor(sun.alt);
+    const dim = weather === 'helder' || weather === 'licht' ? 1 : weather === 'mist' ? .3 : .1, r = 30 + tint * 8;
+    const gl = ctx.createRadialGradient(x, y, r * .5, x, y, r * 5);
+    gl.addColorStop(0, `rgba(255,${230 - tint * 70},${190 - tint * 110},${.55 * dim})`); gl.addColorStop(1, 'rgba(255,220,180,0)');
+    ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(255,${250 - tint * 60},${225 - tint * 120},${.95 * dim})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  if (moon.alt > -4 && L < .8) {
+    const x = azX(moon.az), y = altY(moon.alt), r = 22, a = (1 - L) * (weather === 'bewolkt' || weather === 'regen' ? .35 : 1);
+    ctx.save(); ctx.globalAlpha = a;
+    const gl = ctx.createRadialGradient(x, y, r, x, y, r * 4); gl.addColorStop(0, 'rgba(220,230,255,.25)'); gl.addColorStop(1, 'rgba(220,230,255,0)');
+    ctx.fillStyle = gl; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8);
+    ctx.fillStyle = '#eef0ff'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    const p = moon.phase, k = Math.cos(p * 2 * Math.PI);
+    ctx.fillStyle = rgb(top); ctx.beginPath();
+    if (p < .5) { ctx.arc(x, y, r + .5, Math.PI / 2, -Math.PI / 2, false); ctx.ellipse(x, y, Math.abs(k) * r, r + .5, 0, -Math.PI / 2, Math.PI / 2, k < 0); }
+    else { ctx.arc(x, y, r + .5, -Math.PI / 2, Math.PI / 2, false); ctx.ellipse(x, y, Math.abs(k) * r, r + .5, 0, Math.PI / 2, -Math.PI / 2, k < 0); }
+    ctx.fill(); ctx.restore();
+  }
+}
+function drawClouds(sun) {
+  const L = light(sun.alt), warm = tintFor(sun.alt), cam = kx * .25;
+  const dark = weather === 'regen' ? .55 : weather === 'bewolkt' ? .3 : 0;
+  const prev = ctx; ctx = cctx; ctx.clearRect(0, 0, W, H);
+  for (const cl of clouds) {
+    const img = cl.c.img; if (!ready(img)) continue;
+    const w = cl.w, h = w * img.height / img.width * cl.sq;
+    const x = mod(cl.x - cam + 400, Math.max(PW / 2, W + 800)) - 400;
+    if (x > W + 50) continue;
+    ctx.globalAlpha = weather === 'mist' ? .55 : .95;
+    drawImg(img, x, cl.y, w, h, cl.flip);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-atop';
+  if (warm > 0.05) { ctx.fillStyle = `rgba(255,140,110,${warm * .45})`; ctx.fillRect(0, 0, W, H); }
+  if (dark > 0) { ctx.fillStyle = `rgba(70,75,90,${dark})`; ctx.fillRect(0, 0, W, H); }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx = prev; ctx.drawImage(cc, 0, 0);
+}
+function placeItems(layer) {
+  const cam = kx - W / 2;
+  for (let i = 0; i < N; i++) for (const it of places[i].items) {
+    if (it.layer !== layer) continue;
+    const o = it.o; if (!ready(o.img)) continue;
+    const h = it.h, w = h * o.size[0] / o.size[1];
+    for (let k = -1; k <= 1; k++) {
+      const wx = i * PLACE + PLACE / 2 + it.dx + k * PW, sx = wx - cam - w / 2;
+      if (sx > W || sx + w < 0) continue;
+      let y;
+      if (layer === 0) y = it.y;
+      else if (layer === 1) y = horY(wx) + h * it.sink - h;
+      else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h; }
+      ctx.save();
+      if (layer === 1) ctx.globalAlpha = .93;
+      if (layer === 2) { ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(sx + w / 2, y + h - 3, w * .38, 6, 0, 0, 7); ctx.fill(); }
+      if (o.kind === 'kader' || o.sign) { const c = itemCanvas(it, w, h); if (c) ctx.drawImage(c, sx, y, w, h); }
+      else drawImg(o.img, sx, y, w, h, it.flip);
+      ctx.restore();
+    }
+  }
+}
+function drawGround() {
+  if (!ready(pano)) { ctx.fillStyle = '#3d8a2e'; ctx.fillRect(0, HOR0, W, H - HOR0); return; }
+  const cam = mod(kx - W / 2, PW), w1 = Math.min(W, PW - cam);
+  ctx.drawImage(pano, cam, 0, w1, H, 0, 0, w1, H);
+  if (w1 < W) ctx.drawImage(pano, 0, 0, W - w1, H, w1, 0, W - w1, H);
+}
+function drawKamiel() {
+  const im = K[walking ? 'walk' + (Math.floor(t * 6) % 4 + 1) : (blinkT < 0 ? 'blink' : 'stand')]; if (!ready(im)) return;
+  const h = 225, w = im.width * h / im.height, x = W / 2 - w / 2, y = FEET - h;
+  ctx.save();
+  if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); } else ctx.drawImage(im, x, y, w, h);
+  ctx.restore();
+}
+function drawWeather(sun) {
+  const L = light(sun.alt);
+  if (weather === 'regen') {
+    ctx.strokeStyle = 'rgba(210,225,255,.35)'; ctx.lineWidth = 1.2; ctx.beginPath();
+    for (let i = 0; i < 140; i++) { const x = mod(i * 71.3 + t * 40, W), y = mod(i * 37.1 + t * 640, H); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); }
+    ctx.stroke();
+  }
+  if (weather === 'mist') {
+    const g = ctx.createLinearGradient(0, HOR0 - 140, 0, H);
+    g.addColorStop(0, 'rgba(225,230,235,0)'); g.addColorStop(.35, `rgba(225,230,235,${.55 * (0.4 + .6 * L)})`); g.addColorStop(1, `rgba(225,230,235,${.25 * (0.4 + .6 * L)})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  const hz = ctx.createLinearGradient(0, HOR0 - 60, 0, HOR0 + 40);
+  hz.addColorStop(0, 'rgba(255,240,235,0)'); hz.addColorStop(.6, `rgba(255,235,230,${.18 * L})`); hz.addColorStop(1, 'rgba(255,240,235,0)');
+  ctx.fillStyle = hz; ctx.fillRect(0, HOR0 - 60, W, 100);
+}
+const noise = document.createElement('canvas'); noise.width = 240; noise.height = 150;
+const nctx = noise.getContext('2d'), nimg = nctx.createImageData(240, 150);
+let track = -1;
+function drawVHS() {
+  const d = nimg.data;
+  for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+  nctx.putImageData(nimg, 0, 0);
+  ctx.save(); ctx.globalAlpha = .055; ctx.imageSmoothingEnabled = false; ctx.drawImage(noise, 0, 0, W, H); ctx.restore();
+  if (track < 0 && Math.random() < .002) track = 0;
+  if (track >= 0) {
+    const y = track * H; ctx.drawImage(cv, 0, y, W, 14, (Math.random() - .5) * 14, y, W, 14);
+    ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, y, W, 14); track += .012; if (track > 1) track = -1;
+  }
+}
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+let lastOsd = '';
+function osd(d) {
+  const h = d.getHours(), m = String(d.getMinutes()).padStart(2, '0');
+  const s = (h < 12 ? 'AM ' : 'PM ') + ((h % 12) || 12) + ':' + m + '<br>' + MON[d.getMonth()] + ' ' + d.getDate() + ' ' + d.getFullYear() + osdLines.map(l => '<br>' + l.replace(/[<>&]/g, '')).join('');
+  if (s !== lastOsd) { document.getElementById('osd').innerHTML = s; lastOsd = s; }
+}
+function frame() {
+  const d = now(), sun = sunPos(d), moon = moonPos(d), L = light(sun.alt);
+  ctx = mainCtx; drawSky(sun, moon);
+  ctx = wctx; ctx.clearRect(0, 0, W, H);
+  placeItems(0); drawClouds(sun); placeItems(1); drawGround(); placeItems(2); drawKamiel();
+  ctx.globalCompositeOperation = 'source-atop';
+  if (L < 1) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68})`; ctx.fillRect(0, 0, W, H); }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx = mainCtx; ctx.drawImage(wc, 0, 0);
+  drawWeather(sun); drawVHS(); osd(d);
+}
+function loop(ts) { const dt = Math.min(.05, (ts - last) / 1000); last = ts; step(dt); frame(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+pollState(); setInterval(pollState, 60000);
+setInterval(pollWorld, 120000);
+setInterval(schedule, 15000);
+document.addEventListener('pointerup', () => { if (S.tap_url) location.href = S.tap_url; });
+try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (e) { }
+})();
+</script>
+</body>
+</html>

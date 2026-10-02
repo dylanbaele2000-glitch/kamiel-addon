@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kamiel Studio</title>
+<style>
+/* Layout: a single column of tabs inside Home Assistant; cards for upload, a grid for the library. */
+:root{
+  --bg:#f4f2ee; --card:#ffffff; --line:#e2ded6; --fg:#22201c; --muted:#6f6a61;
+  --accent:#1d4fd6; --accent-fg:#ffffff; --chip:#efeae1; --danger:#b3261e; --ok:#2e7d32;
+  --sky:linear-gradient(#0b33c9,#2f6be8);
+  --f-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-osd:ui-monospace,"SFMono-Regular",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#161513;--card:#201f1c;--line:#34312c;--fg:#ece8df;--muted:#a59e92;--accent:#6d94ff;--accent-fg:#0b1430;--chip:#2c2a26;--danger:#ff8a80;--ok:#81c784;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161513;--card:#201f1c;--line:#34312c;--fg:#ece8df;--muted:#a59e92;--accent:#6d94ff;--accent-fg:#0b1430;--chip:#2c2a26;--danger:#ff8a80;--ok:#81c784;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--f-ui)}
+.wrap{max-width:1100px;margin:0 auto;padding-inline:16px;padding-block:20px 60px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+h1{margin:0;font:600 24px var(--f-ui);letter-spacing:-.01em}
+h1 small{font:400 13px var(--f-osd);color:var(--muted);margin-left:8px;letter-spacing:.06em}
+header a{margin-left:auto}
+a.btn,button{font:600 14px var(--f-ui);border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:9px 14px;min-height:42px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+button.primary,a.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.55;cursor:default}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+nav{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px}
+nav button{border-color:transparent;background:transparent}
+nav button[aria-selected="true"]{background:var(--chip);border-color:var(--line)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.card h2{margin:0;font:600 17px var(--f-ui)}
+.hint{margin:0;color:var(--muted);font-size:14px;max-width:70ch}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+legend{font-weight:600;margin-bottom:6px;padding:0}
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.choice{position:relative;display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg)}
+.choice input{margin-top:3px;accent-color:var(--accent);width:18px;height:18px;flex-shrink:0}
+.choice b{display:block;font-weight:600}
+.choice span{font-size:13px;color:var(--muted)}
+.choice:has(input:checked){border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer}
+.drop.over{border-color:var(--accent);color:var(--fg)}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.files{font-size:13px;color:var(--fg);font-family:var(--f-osd)}
+.status{font-size:14px;min-height:21px}
+.status.ok{color:var(--ok)} .status.err{color:var(--danger)}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filters button{min-height:36px;padding:6px 12px;font-weight:500}
+.filters button[aria-pressed="true"]{background:var(--chip);border-color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.thumb{height:150px;background:var(--sky);display:flex;align-items:center;justify-content:center;padding:10px}
+.thumb.night{background:linear-gradient(#070b24,#1d2350)}
+.thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.meta{padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.meta .name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{background:var(--chip);border-radius:999px;padding:2px 9px;font-size:12px}
+.edit{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px}
+.edit label{display:flex;gap:5px;align-items:center}
+.edit input{accent-color:var(--accent)}
+.edit select{font:13px var(--f-ui);padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.item .actions{display:flex;gap:6px}
+.item .actions button{min-height:34px;padding:5px 10px;font-size:13px}
+.pano{overflow-x:auto;border-radius:10px;background:var(--sky)}
+.pano img{display:block;height:180px;max-width:none}
+label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width:420px}
+label.field span{font-weight:400;color:var(--muted);font-size:13px}
+input[type=number],input[type=time],input[type=text],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.empty{color:var(--muted);padding:20px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Kamiel Studio <small>PLAY ▶ SP</small></h1>
+    <a class="btn primary" href="display" target="_blank" rel="noopener">Bekijk Kamiel</a>
+  </header>
+
+  <nav role="tablist" aria-label="Onderdelen">
+    <button type="button" role="tab" id="tab-el" aria-controls="p-el" aria-selected="true">Elementen</button>
+    <button type="button" role="tab" id="tab-wereld" aria-controls="p-wereld" aria-selected="false">Wereld</button>
+    <button type="button" role="tab" id="tab-foto" aria-controls="p-foto" aria-selected="false">Foto's</button>
+    <button type="button" role="tab" id="tab-bord" aria-controls="p-bord" aria-selected="false">Bordteksten</button>
+    <button type="button" role="tab" id="tab-inst" aria-controls="p-inst" aria-selected="false">Instellingen</button>
+  </nav>
+
+  <!-- ELEMENTEN -->
+  <section id="p-el" role="tabpanel" aria-labelledby="tab-el" style="display:flex;flex-direction:column;gap:18px">
+    <form class="card" id="upForm">
+      <h2>Nieuwe elementen toevoegen</h2>
+      <p class="hint">Kies een of meer afbeeldingen, liefst PNG met transparante achtergrond. Alles wat je hier toevoegt krijgt automatisch de dreamcore-filter.</p>
+      <label class="drop" id="drop" for="upFiles">
+        <input type="file" id="upFiles" accept="image/*" multiple>
+        <div><b>Klik om afbeeldingen te kiezen</b> of sleep ze hierheen</div>
+        <div class="files" id="upList"></div>
+      </label>
+      <fieldset>
+        <legend>Wat is het?</legend>
+        <div class="choices">
+          <label class="choice"><input type="radio" name="kind" value="grond" checked><div><b>Grond</b><span>Staat op het gras, zoals een stoel of een zwaan</span></div></label>
+          <label class="choice"><input type="radio" name="kind" value="horizon"><div><b>Horizon</b><span>Ver weg op de horizon, zoals een toren of een boom</span></div></label>
+          <label class="choice"><input type="radio" name="kind" value="lucht"><div><b>Lucht</b><span>Zweeft boven de horizon, zoals een planeet</span></div></label>
+          <label class="choice"><input type="radio" name="kind" value="wolk"><div><b>Wolk</b><span>Drijft door de lucht en kleurt mee met het weer</span></div></label>
+          <label class="choice"><input type="radio" name="kind" value="kader"><div><b>Kader</b><span>Lijst of bord met een wit vlak waar een foto in komt</span></div></label>
+        </div>
+      </fieldset>
+      <div class="row" style="align-items:flex-start;gap:24px">
+        <fieldset>
+          <legend>Wanneer mag het verschijnen?</legend>
+          <div class="row">
+            <label class="choice"><input type="checkbox" id="upDag" checked><div><b>Overdag</b></div></label>
+            <label class="choice"><input type="checkbox" id="upNacht" checked><div><b>'s Nachts</b></div></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Hoe vaak?</legend>
+          <div class="row">
+            <label class="choice"><input type="radio" name="rare" value="gewoon" checked><div><b>Gewoon</b></div></label>
+            <label class="choice"><input type="radio" name="rare" value="zeldzaam"><div><b>Zeldzaam</b></div></label>
+            <label class="choice"><input type="radio" name="rare" value="heelzeldzaam"><div><b>Heel zeldzaam</b></div></label>
+          </div>
+        </fieldset>
+        <fieldset id="signBox">
+          <legend>Extra</legend>
+          <label class="choice"><input type="checkbox" id="upSign"><div><b>Dit is een tekstbord</b><span>Krijgt teksten uit Bordteksten en wisselt van kleur</span></div></label>
+        </fieldset>
+      </div>
+      <div class="row"><button class="primary" type="submit" id="upBtn">Toevoegen</button><span class="status" id="upStatus" role="status"></span></div>
+    </form>
+
+    <div class="card">
+      <h2>Bibliotheek</h2>
+      <div class="filters" id="filters">
+        <button type="button" data-f="alles" aria-pressed="true">Alles</button>
+        <button type="button" data-f="grond" aria-pressed="false">Grond</button>
+        <button type="button" data-f="horizon" aria-pressed="false">Horizon</button>
+        <button type="button" data-f="lucht" aria-pressed="false">Lucht</button>
+        <button type="button" data-f="wolk" aria-pressed="false">Wolken</button>
+        <button type="button" data-f="kader" aria-pressed="false">Kaders</button>
+      </div>
+      <div class="grid" id="lib"></div>
+    </div>
+  </section>
+
+  <!-- WERELD -->
+  <section id="p-wereld" role="tabpanel" aria-labelledby="tab-wereld" hidden style="display:flex;flex-direction:column;gap:18px">
+    <div class="card">
+      <h2>Het panorama</h2>
+      <p class="hint">Dit is de grond waar Kamiel doorheen wandelt. Elke schermbreedte is een plek; de randen tussen plekken worden automatisch zacht gemaakt.</p>
+      <div class="pano" id="panoView"></div>
+    </div>
+    <form class="card" id="panoForm">
+      <h2>Panorama vervangen</h2>
+      <p class="hint">Kies je panoramabestanden. Ze worden achter elkaar gezet in alfabetische volgorde van hun naam, dus noem ze bijvoorbeeld 1.png, 2.png. De lucht moet transparant zijn. Verwerken duurt ongeveer een minuut.</p>
+      <label class="drop" for="panoFiles">
+        <input type="file" id="panoFiles" accept="image/*" multiple>
+        <div><b>Klik om panoramabestanden te kiezen</b></div>
+        <div class="files" id="panoList"></div>
+      </label>
+      <div class="row"><button class="primary" type="submit" id="panoBtn">Panorama vervangen</button><span class="status" id="panoStatus" role="status"></span></div>
+    </form>
+  </section>
+
+  <!-- FOTO'S -->
+  <section id="p-foto" role="tabpanel" aria-labelledby="tab-foto" hidden style="display:flex;flex-direction:column;gap:18px">
+    <form class="card" id="fotoForm">
+      <h2>Foto's voor de kaders</h2>
+      <p class="hint">Deze foto's verschijnen in de kaders in Kamiels wereld. Ze krijgen automatisch de dreamcore-filter en worden passend bijgesneden.</p>
+      <label class="drop" for="fotoFiles">
+        <input type="file" id="fotoFiles" accept="image/*" multiple>
+        <div><b>Klik om foto's te kiezen</b></div>
+        <div class="files" id="fotoList"></div>
+      </label>
+      <div class="row"><button class="primary" type="submit" id="fotoBtn">Foto's toevoegen</button><span class="status" id="fotoStatus" role="status"></span></div>
+    </form>
+    <div class="card"><h2>Album</h2><div class="grid" id="album"></div></div>
+  </section>
+
+  <!-- BORDTEKSTEN -->
+  <section id="p-bord" role="tabpanel" aria-labelledby="tab-bord" hidden>
+    <form class="card" id="wordsForm">
+      <h2>Bordteksten</h2>
+      <p class="hint">Elke tekstbord in de wereld kiest een tekst uit deze lijst. Eén tekst per regel, kort is beter (tot een woord of zes).</p>
+      <label for="words" class="hint">Teksten</label>
+      <textarea id="words" spellcheck="false"></textarea>
+      <div class="row"><button class="primary" type="submit">Opslaan</button><span class="status" id="wordsStatus" role="status"></span></div>
+    </form>
+  </section>
+
+  <!-- INSTELLINGEN -->
+  <section id="p-inst" role="tabpanel" aria-labelledby="tab-inst" hidden>
+    <form class="card" id="setForm">
+      <h2>Instellingen</h2>
+      <div class="settings">
+        <label class="field" for="sWeather">Weer
+          <span>De weer-entiteit uit Home Assistant die de lucht stuurt.</span>
+          <select id="sWeather"></select>
+        </label>
+        <label class="field" for="sWalk">Overdag verder wandelen na
+          <span>Aantal minuten dat Kamiel op een plek blijft.</span>
+          <input type="number" id="sWalk" min="1" max="240">
+        </label>
+        <label class="field" for="sNightStart">Nacht begint om
+          <input type="time" id="sNightStart">
+        </label>
+        <label class="field" for="sNightEnd">Nacht eindigt om
+          <input type="time" id="sNightEnd">
+        </label>
+        <label class="field" for="sNightWalks">'s Nachts wandelen om
+          <span>Tijden gescheiden door komma's, bijvoorbeeld 00:00, 03:00.</span>
+          <input type="text" id="sNightWalks">
+        </label>
+        <label class="field" for="sFrames">Minstens zoveel kaders in de wereld
+          <input type="number" id="sFrames" min="0" max="8">
+        </label>
+      </div>
+      <h2 style="margin-top:8px">Onder de datum en tijd</h2>
+      <p class="hint">Kies tot drie sensoren, bijvoorbeeld een temperatuur. Hun waarde verschijnt in camcorderstijl onder de datum.</p>
+      <div class="settings">
+        <label class="field" for="sOsd0">Regel 1<select id="sOsd0" class="osdsel"></select></label>
+        <label class="field" for="sOsd1">Regel 2<select id="sOsd1" class="osdsel"></select></label>
+        <label class="field" for="sOsd2">Regel 3<select id="sOsd2" class="osdsel"></select></label>
+      </div>
+      <h2 style="margin-top:8px">Tikken op het scherm</h2>
+      <label class="field" for="sTap" style="max-width:640px">Open dit adres als iemand op de tablet tikt
+        <span>Bijvoorbeeld een Home Assistant-dashboard: http://192.168.1.20:8123/kamiel-knoppen/0. Laat leeg om niets te doen.</span>
+        <input type="text" id="sTap" placeholder="http://…">
+      </label>
+      <div class="row"><button class="primary" type="submit">Opslaan</button><span class="status" id="setStatus" role="status"></span></div>
+    </form>
+  </section>
+</div>
+
+<script>
+(() => {
+const $ = (id) => document.getElementById(id);
+let world = null, filter = 'alles';
+const KIND_NL = { grond: 'Grond', horizon: 'Horizon', lucht: 'Lucht', wolk: 'Wolk', kader: 'Kader' };
+const RARE_NL = { gewoon: 'Gewoon', zeldzaam: 'Zeldzaam', heelzeldzaam: 'Heel zeldzaam' };
+const MOMENT_NL = { dag: 'Overdag', nacht: "'s Nachts", altijd: 'Dag en nacht' };
+
+function status(el, text, kind) { el.textContent = text; el.className = 'status' + (kind ? ' ' + kind : ''); }
+async function load() { world = await (await fetch('api/world', { cache: 'no-store' })).json(); render(); }
+
+/* tabs */
+const tabs = [...document.querySelectorAll('[role=tab]')];
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(o => { o.setAttribute('aria-selected', o === t ? 'true' : 'false'); $(o.getAttribute('aria-controls')).hidden = o !== t; });
+}));
+
+/* file pickers */
+function picker(inputId, listId, dropEl) {
+  const input = $(inputId);
+  const show = () => { $(listId).textContent = [...input.files].map(f => f.name).sort().join('  ·  '); };
+  input.addEventListener('change', show);
+  if (dropEl) {
+    ['dragenter', 'dragover'].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(e => dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.remove('over'); }));
+    dropEl.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
+  }
+}
+picker('upFiles', 'upList', $('drop'));
+picker('panoFiles', 'panoList');
+picker('fotoFiles', 'fotoList');
+
+const kindNow = () => document.querySelector('input[name=kind]:checked').value;
+document.querySelectorAll('input[name=kind]').forEach(r => r.addEventListener('change', () => { $('signBox').hidden = kindNow() !== 'grond'; }));
+
+/* upload elements */
+$('upForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const files = [...$('upFiles').files];
+  if (!files.length) { status($('upStatus'), 'Kies eerst een of meer afbeeldingen.', 'err'); return; }
+  if (!$('upDag').checked && !$('upNacht').checked) { status($('upStatus'), 'Vink overdag, \'s nachts of allebei aan.', 'err'); return; }
+  const fd = new FormData();
+  fd.append('kind', kindNow());
+  fd.append('dag', $('upDag').checked ? '1' : '0');
+  fd.append('nacht', $('upNacht').checked ? '1' : '0');
+  fd.append('rare', document.querySelector('input[name=rare]:checked').value);
+  fd.append('sign', $('upSign').checked && kindNow() === 'grond' ? '1' : '0');
+  files.forEach(f => fd.append('files', f, f.name));
+  $('upBtn').disabled = true; status($('upStatus'), `Bezig met ${files.length} ${files.length === 1 ? 'afbeelding' : 'afbeeldingen'}…`);
+  try {
+    const r = await fetch('api/assets', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    status($('upStatus'), `${j.added.length} toegevoegd${j.failed.length ? `, ${j.failed.length} mislukt (${j.failed.map(f => f.file).join(', ')})` : ''}.`, j.failed.length ? 'err' : 'ok');
+    $('upFiles').value = ''; $('upList').textContent = '';
+    await load();
+  } catch (err) { status($('upStatus'), 'Toevoegen mislukt: ' + err.message, 'err'); }
+  $('upBtn').disabled = false;
+});
+
+/* library */
+document.querySelectorAll('#filters button').forEach(b => b.addEventListener('click', () => {
+  filter = b.dataset.f; document.querySelectorAll('#filters button').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false')); renderLib();
+}));
+function renderLib() {
+  const lib = $('lib'); lib.innerHTML = '';
+  const list = world.assets.filter(a => filter === 'alles' || a.kind === filter);
+  if (!list.length) { lib.innerHTML = '<div class="empty">Nog niets in deze categorie. Voeg hierboven iets toe.</div>'; return; }
+  for (const a of list) {
+    const el = document.createElement('div'); el.className = 'item';
+    const night = a.moment === 'nacht';
+    el.innerHTML = `
+      <div class="thumb ${night ? 'night' : ''}"><img alt="" loading="lazy"></div>
+      <div class="meta">
+        <div class="name"></div>
+        <div class="chips"><span class="chip">${KIND_NL[a.kind]}</span>${a.sign ? '<span class="chip">Tekstbord</span>' : ''}${a.kind === 'kader' && !a.hole ? '<span class="chip">Geen fotovlak gevonden</span>' : ''}</div>
+        <div class="edit">
+          <label><input type="checkbox" data-k="dag" ${a.moment !== 'nacht' ? 'checked' : ''}> Overdag</label>
+          <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
+          <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        </div>
+        <div class="actions"><button type="button" class="danger" data-act="del">Verwijderen</button><span class="status"></span></div>
+      </div>`;
+    el.querySelector('img').src = 'media/' + a.files.main;
+    el.querySelector('.name').textContent = a.label || KIND_NL[a.kind];
+    const st = el.querySelector('.status');
+    const save = async () => {
+      const dag = el.querySelector('[data-k=dag]').checked, nacht = el.querySelector('[data-k=nacht]').checked;
+      if (!dag && !nacht) { status(st, 'Kies minstens één', 'err'); return; }
+      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dag, nacht, rare: el.querySelector('[data-k=rare]').value }) });
+      status(st, r.ok ? 'Bewaard' : 'Mislukt', r.ok ? 'ok' : 'err');
+      el.querySelector('.thumb').classList.toggle('night', nacht && !dag);
+    };
+    el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', save));
+    const del = el.querySelector('[data-act=del]');
+    del.addEventListener('click', async () => {
+      if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { del.dataset.sure = ''; del.textContent = 'Verwijderen'; }, 4000); return; }
+      const r = await fetch('api/assets/' + a.id, { method: 'DELETE' });
+      if (r.ok) { await load(); } else status(st, 'Verwijderen mislukt', 'err');
+    });
+    lib.appendChild(el);
+  }
+}
+
+/* panorama */
+function renderPano() {
+  const v = $('panoView'); v.innerHTML = '';
+  if (!world.panorama) { v.innerHTML = '<div class="empty">Nog geen panorama.</div>'; return; }
+  const img = new Image(); img.alt = 'Huidig panorama'; img.src = 'media/' + world.panorama.file; v.appendChild(img);
+}
+$('panoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const files = [...$('panoFiles').files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (!files.length) { status($('panoStatus'), 'Kies eerst de panoramabestanden.', 'err'); return; }
+  const fd = new FormData(); files.forEach(f => fd.append('files', f, f.name));
+  $('panoBtn').disabled = true; status($('panoStatus'), 'Bezig met verwerken, dit duurt ongeveer een minuut…');
+  try {
+    const r = await fetch('api/panorama', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    status($('panoStatus'), 'Panorama vervangen.', 'ok'); await load();
+  } catch (err) { status($('panoStatus'), 'Vervangen mislukt: ' + err.message, 'err'); }
+  $('panoBtn').disabled = false;
+});
+
+/* photos */
+function renderAlbum() {
+  const al = $('album'); al.innerHTML = '';
+  if (!world.photos.length) { al.innerHTML = '<div class="empty">Nog geen foto\'s. Tot je er toevoegt, tonen de kaders een voorbeeldfoto.</div>'; return; }
+  for (const p of world.photos) {
+    const el = document.createElement('div'); el.className = 'item';
+    el.innerHTML = `<div class="thumb" style="padding:0"><img alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div><div class="meta"><div class="name"></div><div class="actions"><button type="button" class="danger">Verwijderen</button></div></div>`;
+    el.querySelector('img').src = 'media/' + p.file; el.querySelector('.name').textContent = p.label || 'Foto';
+    const b = el.querySelector('button');
+    b.addEventListener('click', async () => {
+      if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Verwijderen'; }, 4000); return; }
+      await fetch('api/photos/' + p.id, { method: 'DELETE' }); await load();
+    });
+    al.appendChild(el);
+  }
+}
+$('fotoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const files = [...$('fotoFiles').files];
+  if (!files.length) { status($('fotoStatus'), 'Kies eerst een of meer foto\'s.', 'err'); return; }
+  const fd = new FormData(); files.forEach(f => fd.append('files', f, f.name));
+  $('fotoBtn').disabled = true; status($('fotoStatus'), 'Bezig…');
+  try {
+    const r = await fetch('api/photos', { method: 'POST', body: fd }); if (!r.ok) throw new Error(await r.text());
+    const j = await r.json(); status($('fotoStatus'), `${j.added.length} foto's toegevoegd.`, 'ok');
+    $('fotoFiles').value = ''; $('fotoList').textContent = ''; await load();
+  } catch (err) { status($('fotoStatus'), 'Toevoegen mislukt: ' + err.message, 'err'); }
+  $('fotoBtn').disabled = false;
+});
+
+/* words */
+$('wordsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const words = $('words').value.split('\n').map(w => w.trim()).filter(Boolean);
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ words }) });
+  status($('wordsStatus'), r.ok ? `${words.length} teksten bewaard.` : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+
+/* settings */
+async function renderSettings() {
+  const s = world.settings;
+  $('sWalk').value = s.walk_minutes; $('sNightStart').value = s.night_start; $('sNightEnd').value = s.night_end;
+  $('sNightWalks').value = s.night_walks.join(', '); $('sFrames').value = s.min_frames;
+  $('words').value = s.words.join('\n');
+  const sel = $('sWeather');
+  try {
+    const j = await (await fetch('api/entities?domain=weather')).json();
+    sel.innerHTML = '<option value="">Geen (altijd licht bewolkt)</option>' + j.entities.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
+    if (!j.connected) sel.innerHTML = '<option value="">Niet verbonden met Home Assistant</option>';
+  } catch { sel.innerHTML = '<option value="">Kon de lijst niet laden</option>'; }
+  sel.value = s.weather_entity || '';
+  $('sTap').value = s.tap_url || '';
+  try {
+    const j = await (await fetch('api/entities?domain=sensor')).json();
+    const opts = '<option value="">Niets</option>' + j.entities.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
+    document.querySelectorAll('.osdsel').forEach((el, i) => { el.innerHTML = j.connected ? opts : '<option value="">Niet verbonden met Home Assistant</option>'; const v = (s.osd_entities || [])[i] || ''; if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v)); el.value = v; });
+  } catch { }
+}
+$('setForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value, night_start: $('sNightStart').value, night_end: $('sNightEnd').value,
+    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), min_frames: +$('sFrames').value,
+    tap_url: $('sTap').value, osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+
+let settingsDone = false;
+function render() { renderLib(); renderPano(); renderAlbum(); if (!settingsDone) { renderSettings(); settingsDone = true; } }
+load();
+})();
+</script>
+</body>
+</html>
