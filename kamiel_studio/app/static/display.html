@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kamiel</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Titan+One&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Titan+One&family=Arimo:wght@700&display=swap">
+<script src="static/reminder.js"></script>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
 .stage{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -294,6 +295,7 @@ function visible(i) {
 }
 function schedule() {
   const d = now();
+  if (remShown && !params.get('r') && !KamielReminder.isActive(remShown, d)) remShown = null;
   if (isNightTime(d)) {
     const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     if (S.night_walks.includes(hm) && lastNightCheck !== hm) { lastNightCheck = hm; go(rnd() < .5 ? -1 : 1); }
@@ -301,12 +303,32 @@ function schedule() {
 }
 if (params.get('demo')) setInterval(() => go(rnd() < .5 ? -1 : 1), +params.get('demo') * 1000);
 
+/* ---------- reminders: on every Nth place Kamiel arrives at, while a reminder is on ---------- */
+const REM = world.reminders || [];
+let arrivals = 0, remShown = null, remCanvas = null, remAlpha = 0, remTurn = 0;
+function pickReminder() {
+  const d = now();
+  if (params.get('r')) { const r = REM.find(x => (x.text || '').trim()); return r || null; }
+  const on = REM.filter(r => KamielReminder.isActive(r, d) && arrivals % Math.max(1, r.scenes || 3) === 0);
+  if (!on.length) return null;
+  return on[(remTurn++) % on.length];
+}
+function showReminder(r) {
+  remShown = r; remCanvas = r ? KamielReminder.render(r.text, { width: W, height: H, color: r.color, position: r.position }) : null;
+}
+function arrived() { arrivals++; showReminder(pickReminder()); }
+showReminder(pickReminder());   // on start-up too
+if (document.fonts) document.fonts.load(`700 40px Arimo`).then(() => { if (remShown) showReminder(remShown); }).catch(() => {});
+
 function step(dt) {
   t += dt;
   if (walking) {
     kx += dir * 70 * dt;
-    if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); }
+    if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); arrived(); }
   }
+  // fade in when he stands still, out as soon as he walks on or the reminder's time is over
+  const want = remShown && !walking ? 1 : 0;
+  remAlpha += Math.sign(want - remAlpha) * Math.min(Math.abs(want - remAlpha), dt / 1.2);
   const night = isNightTime(now());
   for (let i = 0; i < N; i++) {
     const v = visible(i);
@@ -526,7 +548,9 @@ function frame() {
   if (L < 1) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  drawWeather(sun); drawVHS(); osd(d);
+  drawWeather(sun);
+  if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
+  drawVHS(); osd(d);
 }
 function loop(ts) { const dt = Math.min(.05, (ts - last) / 1000); last = ts; step(dt); frame(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
