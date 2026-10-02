@@ -151,10 +151,23 @@ function compose(i) {
     if (!pool.length) return null;
     const o = pickFrom(pool); used.add(o); recent.push(o.id); if (recent.length > 3) recent.shift(); return o;
   };
+  // how often each kind shows up (percent, separately for day and night, set in the Studio)
+  const DEFCH = { dag: { grond: 100, horizon: 100, lucht: 60, kader: 50 }, nacht: { grond: 100, horizon: 100, lucht: 75, kader: 50 } };
+  const ch = ((S.chances || DEFCH)[night ? 'nacht' : 'dag']) || DEFCH.dag;
+  const on = (k) => rnd() * 100 < (ch[k] === undefined ? DEFCH.dag[k] : +ch[k]);
   const r = rnd(), dens = r < .25 ? 'rustig' : r < .7 ? 'normaal' : 'vol';
-  const nH = { rustig: 1, normaal: 1 + (rnd() < .5), vol: 2 + (rnd() < .5) }[dens];
-  const nS = { rustig: rnd() < .3 ? 1 : 0, normaal: rnd() < (night ? .8 : .5) ? 1 : 0, vol: 1 + (rnd() < .6) }[dens];
-  const nG = { rustig: 1, normaal: 2, vol: 3 + (rnd() < .4) }[dens];
+  let nH = on('horizon') ? { rustig: 1, normaal: 1 + (rnd() < .5), vol: 2 + (rnd() < .5) }[dens] : 0;
+  let nS = on('lucht') ? { rustig: 1, normaal: 1, vol: 1 + (rnd() < .6) }[dens] : 0;
+  let nG = on('grond') ? { rustig: 1, normaal: 2, vol: 3 + (rnd() < .4) }[dens] : 0;
+  let nF = on('kader') ? 1 : 0;
+  // never more than the maximum number of objects per place: drop random ones
+  const maxO = Math.max(1, +(S.max_objects || 9));
+  while (nH + nS + nG + nF > maxO) {
+    const opts = [];
+    if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF) opts.push('f');
+    const d = opts[Math.floor(rnd() * opts.length)];
+    if (d === 'h') nH--; else if (d === 's') nS--; else if (d === 'g') nG--; else nF--;
+  }
   const items = [], taken = [], takenSky = [];
   const big = () => (rnd() < .12 ? 1.8 + rnd() * .6 : 1);
   const asp = (o) => o.size[0] / o.size[1];
@@ -168,11 +181,9 @@ function compose(i) {
     }
     return null;
   };
-  // frames: one in every N places (N from the Studio; 0 = never)
-  const ratio = S.frame_ratio === undefined ? 2 : +S.frame_ratio;
   const ground = [];
-  if (ratio > 0 && rnd() < 1 / ratio) ground.push(take(['kader']));
-  for (let k = ground.length; k < nG; k++) ground.push(take(['grond']));
+  if (nF) ground.push(take(['kader']));
+  for (let k = 0; k < nG; k++) ground.push(take(['grond']));
   for (const o of ground) {
     if (!o) continue;
     const depth = rnd(), h = (110 + rnd() * 170) * (0.5 + depth * 0.7) * big();
