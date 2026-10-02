@@ -95,6 +95,9 @@ label.pct input{width:76px}
 .days label{display:inline-flex;align-items:center;gap:4px;font-weight:500;background:var(--chip);border-radius:8px;padding:4px 8px}
 .rem .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .rem input[type=color]{width:100%;height:40px;padding:2px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
+.steps{margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.chatchip{display:inline-flex;align-items:center;gap:8px;background:var(--chip);border-radius:999px;padding:4px 6px 4px 12px;font-weight:600}
+.chatchip button{min-height:30px;padding:2px 10px;font-size:13px}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
@@ -131,6 +134,32 @@ label.pct input{width:76px}
         </div>
       </div>
     </form>
+
+    <div class="card" id="tgCard" style="margin-top:18px">
+      <h2>Berichten via Telegram</h2>
+      <p class="hint">Stuur Kamiel een bericht of foto vanuit Telegram, waar je ook bent. Je krijgt antwoord als het op het scherm staat, en als iemand thuis het gezien heeft.</p>
+      <div id="tgSetup">
+        <ol class="steps">
+          <li>Open Telegram en zoek <b>@BotFather</b> (met het blauwe vinkje).</li>
+          <li>Stuur <b>/newbot</b>. Kies een naam (bijvoorbeeld <i>Kamiel</i>) en daarna een gebruikersnaam die eindigt op <i>bot</i> (bijvoorbeeld <i>KamielThuisBot</i>).</li>
+          <li>BotFather stuurt je een lange <b>sleutel</b> (iets als <i>123456:ABC-def…</i>). Kopieer die en plak hem hieronder.</li>
+        </ol>
+        <div class="row"><input type="text" id="tgToken" placeholder="Plak hier de sleutel van BotFather" autocomplete="off" style="flex:1;min-width:220px"><button type="button" class="primary" id="tgSave">Verbinden</button></div>
+      </div>
+      <div id="tgOn" hidden>
+        <p class="when on" id="tgBot"></p>
+        <h3 style="margin:14px 0 6px;font-size:15px">Wie mag berichten sturen</h3>
+        <div id="tgChats" class="chips" style="gap:8px"></div>
+        <div class="row" style="margin-top:12px"><button type="button" class="primary" id="tgPair">Een gsm koppelen</button><span id="tgCode" class="hint"></span></div>
+        <div class="settings" style="margin-top:14px">
+          <label class="field" for="tgMin">Berichten blijven staan
+            <select id="tgMin"><option value="15">15 minuten</option><option value="60">1 uur</option><option value="180">3 uur</option><option value="720">12 uur</option><option value="1440">24 uur</option></select></label>
+        </div>
+        <p class="hint" style="margin-top:12px">Wat je de bot kunt sturen: gewoon tekst · een foto (komt in een kader) · <b>/bus</b> · <b>/kijk</b> (foto van het scherm nu) · <b>/wis</b></p>
+        <div class="row"><button type="button" id="tgOff">Telegram loskoppelen</button></div>
+      </div>
+      <span class="status" id="tgStatus" role="status"></span>
+    </div>
   </section>
 
   <section id="p-el" role="tabpanel" aria-labelledby="tab-el" hidden style="display:flex;flex-direction:column;gap:18px">
@@ -712,6 +741,44 @@ $('msgClear').addEventListener('click', async () => {
 });
 drawMsgPreview(); msgNow(); setInterval(msgNow, 30000);
 if (document.fonts) document.fonts.load('700 40px Arimo').then(drawMsgPreview).catch(() => {});
+
+/* telegram */
+let tgPoll = null;
+async function tgLoad() {
+  let j; try { j = await (await fetch('api/telegram', { cache: 'no-store' })).json(); } catch { return; }
+  $('tgSetup').hidden = j.connected; $('tgOn').hidden = !j.connected;
+  if (!j.connected) return;
+  $('tgBot').textContent = `Verbonden met ${j.bot}. Zoek die naam in Telegram.`;
+  $('tgMin').value = String(j.minutes);
+  const box = $('tgChats'); box.innerHTML = '';
+  if (!j.chats.length) box.innerHTML = '<span class="hint">Nog niemand. Klik op "Een gsm koppelen".</span>';
+  for (const c of j.chats) {
+    const el = document.createElement('span'); el.className = 'chatchip'; el.textContent = c.name;
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Verwijderen';
+    b.addEventListener('click', async () => { await fetch('api/telegram/chats/' + c.id, { method: 'DELETE' }); tgLoad(); });
+    el.appendChild(b); box.appendChild(el);
+  }
+  $('tgCode').innerHTML = j.pair ? `Stuur <b>${j.pair}</b> naar ${esc(j.bot)} in Telegram (10 minuten geldig).` : '';
+  clearTimeout(tgPoll); if (j.pair) tgPoll = setTimeout(tgLoad, 3000);   // see the new person appear
+}
+$('tgSave').addEventListener('click', async () => {
+  const token = $('tgToken').value.trim(); if (!token) { status($('tgStatus'), 'Plak eerst de sleutel.', 'err'); return; }
+  status($('tgStatus'), 'Even controleren…');
+  const r = await fetch('api/telegram', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+  if (r.ok) { $('tgToken').value = ''; status($('tgStatus'), 'Verbonden! Koppel nu jullie gsm\'s.', 'ok'); tgLoad(); }
+  else status($('tgStatus'), await r.text(), 'err');
+});
+$('tgPair').addEventListener('click', async () => { await fetch('api/telegram/pair', { method: 'POST' }); tgLoad(); });
+$('tgMin').addEventListener('change', async () => {
+  const r = await fetch('api/telegram', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: +$('tgMin').value }) });
+  status($('tgStatus'), r.ok ? 'Bewaard.' : 'Mislukt.', r.ok ? 'ok' : 'err');
+});
+$('tgOff').addEventListener('click', async () => {
+  if ($('tgOff').dataset.sure !== '1') { $('tgOff').dataset.sure = '1'; $('tgOff').textContent = 'Zeker? Klik nogmaals'; return; }
+  await fetch('api/telegram', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: '' }) });
+  $('tgOff').dataset.sure = ''; $('tgOff').textContent = 'Telegram loskoppelen'; tgLoad();
+});
+tgLoad();
 
 /* reminders */
 const DAYS_NL = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];

@@ -84,6 +84,20 @@ function builtinTV() {
   mg.fillStyle = '#fff'; mg.beginPath(); mg.roundRect ? mg.roundRect(44, 66, 204, 176, 24) : mg.rect(44, 66, 204, 176); mg.fill();
   return { id: 'tv-builtin', kind: 'kader', tv: true, size: [w, h], hole: [44 / w, 66 / h, 248 / w, 242 / h], img: c, maskImg: m, label: 'tv', moment: 'altijd' };
 }
+function builtinFrame() {
+  const w = 300, h = 360, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  const gold = g.createLinearGradient(0, 0, w, h); gold.addColorStop(0, '#e9c46a'); gold.addColorStop(.5, '#a07a2c'); gold.addColorStop(1, '#f1d48a');
+  g.fillStyle = '#5a4a3a'; g.fillRect(140, 300, 8, 60); g.fillRect(70, 330, 160, 8);
+  g.fillStyle = gold; g.fillRect(0, 0, w, 310);
+  g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(22, 22, w - 44, 266);
+  g.fillStyle = '#f5f0e6'; g.fillRect(28, 28, w - 56, 254);
+  const m = document.createElement('canvas'); m.width = w; m.height = h; const mg = m.getContext('2d');
+  mg.fillStyle = '#fff'; mg.fillRect(40, 40, w - 80, 230);
+  return { id: 'frame-builtin', kind: 'kader', size: [w, h], hole: [40 / w, 40 / h, (w - 40) / w, 270 / h], img: c, maskImg: m, label: 'kader', moment: 'altijd' };
+}
+const FRAMES = OBJ.filter(o => o.kind === 'kader' && !o.tv && o.hole);
+const FRAME = () => FRAMES.length ? FRAMES[Math.floor(rnd() * FRAMES.length)] : (FRAME.builtin || (FRAME.builtin = builtinFrame()));
+let spotlight = null;
 const TVS = OBJ.filter(o => o.tv && o.kind === 'kader' && o.hole);
 const TV = () => TVS.length ? TVS[Math.floor(rnd() * TVS.length)] : (TV.builtin || (TV.builtin = builtinTV()));
 let musicOn = false, coverImg = null, coverKey = '';
@@ -321,6 +335,7 @@ function compose(i) {
   items.sort((p, q) => (p.layer - q.layer) || ((p.depth || 0) - (q.depth || 0)));
   places[i] = { items, night };
   if (musicOn) addTV(i);
+  if (spotlight && spotlight.until * 1000 > Date.now()) addSpot(i);
 }
 for (let i = 0; i < N; i++) compose(i);
 
@@ -391,28 +406,38 @@ function setMessage(m) {
   message = m;
   if (m) msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign: m.sign });
 }
-function addTV(i) {
-  const p = places[i]; if (!p || p.items.some(x => x.tv)) return;
-  const o = TV(), asp0 = o.size[0] / o.size[1];
+function addTV(i) { addThing(i, TV(), { tv: true }, (x) => x.tv); }
+// a photo sent via Telegram: into a frame on this place (an existing frame gets the photo, otherwise one is added)
+function addSpot(i) {
+  const p = places[i]; if (!p || !spotlight) return;
+  const url = 'media/' + spotlight.file;
+  if (p.items.some(x => x.photo === url && x.spot)) return;
+  // a fresh photo deserves a big frame up front: other frames on this place make way
+  p.items = p.items.filter(x => !(x.o.kind === 'kader' && !x.tv));
+  addThing(i, FRAME(), { photo: url, spot: true, depth: .9 }, (x) => x.spot && x.photo === url, .36);
+}
+function addThing(i, o, extra, has, size) {
+  const p = places[i]; if (!p || p.items.some(has)) return;
+  const asp0 = o.size[0] / o.size[1];
   // the tv always gets a spot: if the place is full, the smallest standing objects make room
   for (let round = 0; round < 6; round++) {
-    const h = H * (round < 2 ? .24 + rnd() * .1 : .2), w = h * asp0;
-    if (tryTV(p, o, h, w)) return;
+    const h = H * (size ? (round < 2 ? size : size * .8) : (round < 2 ? .24 + rnd() * .1 : .2)), w = h * asp0;
+    if (tryTV(p, o, h, w, extra)) return;
     if (round >= 1) {
-      const standing = p.items.filter(x => x.layer > 0 && !x.tv);
+      const standing = p.items.filter(x => x.layer > 0 && !x.tv && !x.spot);
       if (!standing.length) continue;
       standing.sort((a, b) => a.h * a.o.size[0] / a.o.size[1] - b.h * b.o.size[0] / b.o.size[1]);
       p.items.splice(p.items.indexOf(standing[0]), 1);
     }
   }
 }
-function tryTV(p, o, h, w) {
+function tryTV(p, o, h, w, extra) {
   const used = p.items.filter(x => x.layer > 0).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
   for (let tries = 0; tries < 30; tries++) {
     const side = rnd() < .5 ? -1 : 1, lo = 94 + w / 2, hi = PLACE / 2 - 24 - w / 2; if (hi < lo) return;
     const dx = side * (lo + rnd() * (hi - lo));
     if (used.every(([l, r]) => dx + w / 2 + 30 < l || dx - w / 2 - 30 > r)) {
-      p.items.push({ o, layer: 2, dx, depth: .55 + rnd() * .35, h, flip: false, tv: true, born: performance.now() });
+      p.items.push(Object.assign({ o, layer: 2, dx, depth: .55 + rnd() * .35, h, flip: false, born: performance.now() }, extra));
       p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
       return true;
     }
@@ -431,9 +456,27 @@ async function pollLive() {
       else if (!visible(i)) places[i].items = places[i].items.filter(x => !x.tv);
     }
   }
+  // a photo from Telegram: show it in a frame right here, and in the places ahead
+  if (j.spotlight && (!spotlight || spotlight.id !== j.spotlight.id)) {
+    spotlight = j.spotlight;
+    for (let i = 0; i < N; i++) addSpot(i);
+  }
+  if (!j.spotlight) spotlight = null;
+  if (j.snapshot && j.snapshot !== lastSnap) { lastSnap = j.snapshot; sendSnapshot(j.snapshot); }
   const tr = j.trigger;
   if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showDepartures();
   if (tr) lastTrigger = tr.changed;
+}
+let lastSnap = null;
+// /kijk on Telegram: a still of the screen, with the camcorder text on it
+function sendSnapshot(id) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.drawImage(cv, 0, 0);
+  g.fillStyle = 'rgba(0,0,0,.12)'; for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
+  const lines = document.getElementById('osd').innerText.split('\n').filter(Boolean);
+  g.font = "36px 'VT323', ui-monospace, monospace"; g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,.4)'; g.shadowOffsetX = 2; g.shadowOffsetY = 2;
+  lines.forEach((l, k) => g.fillText(l, 30, 52 + k * 34));
+  c.toBlob(b => { if (b) fetch('api/snapshot/' + id, { method: 'POST', body: b, headers: { 'Content-Type': 'image/jpeg' } }).catch(() => {}); }, 'image/jpeg', .88);
 }
 async function showDepartures() {
   try { deps = (await (await fetch('api/departures', { cache: 'no-store' })).json()).blocks; } catch { deps = []; }
@@ -785,7 +828,7 @@ const post = (u) => fetch(u, { method: 'POST' }).catch(() => {});
 document.addEventListener('pointerup', (e) => {
   const r = cv.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H);
   const x = (e.clientX - r.left - (r.width - W * sc) / 2) / sc, y = (e.clientY - r.top - (r.height - H * sc) / 2) / sc;
-  if (message && msgAlpha > .3) { dismissed.add(message.id); message = null; return; }          // "read it"
+  if (message && msgAlpha > .3) { dismissed.add(message.id); post('api/seen/' + message.id); message = null; return; }   // "read it"
   if (performance.now() < depsUntil) { depsUntil = 0; return; }
   const near = (p, rad) => p && Math.hypot(x - p.x, y - p.y) < rad;
   if (S.sun_script && near(sunXY, 70)) { ring = { x: sunXY.x, y: sunXY.y, t0: performance.now() }; post('api/tap/sun'); return; }
