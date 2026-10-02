@@ -93,6 +93,12 @@
       gr.addColorStop(0, shade(color, .18)); gr.addColorStop(1, color);
       g.fillStyle = gr; g.fillText(l, x, y);
     });
+    if (opts.sign) {   // who sent it, small under the text
+      const fs2 = Math.max(8, Math.round(fs * .45)), y = y0 + (lines.length - 1) * lh + fs * .55 + fs2;
+      g.font = `700 ${fs2}px ${FONT}`; g.textAlign = 'right';
+      g.fillStyle = 'rgba(70,235,225,.85)'; g.fillText('— ' + opts.sign.toLowerCase(), sw / 2 + maxW / 2 - 1, y + .5);
+      g.fillStyle = color; g.fillText('— ' + opts.sign.toLowerCase(), sw / 2 + maxW / 2, y);
+    }
     const out = document.createElement('canvas'); out.width = W; out.height = H;
     const o = out.getContext('2d'); o.imageSmoothingEnabled = true; o.imageSmoothingQuality = 'low';
     o.drawImage(small, 0, 0, W, H);

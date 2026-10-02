@@ -38,10 +38,13 @@ def read_token():
 
 
 TOKEN = read_token()
-HA_URL = "http://supervisor/core/api"
+HA_URL = os.environ.get("KAMIEL_HA_URL", "http://supervisor/core/api")
+HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
+PERIODS = ["altijd", "lente", "zomer", "herfst", "winter", "valentijn", "pasen", "halloween",
+           "sinterklaas", "kerst", "nieuwjaar", "eigen"]
 
 DEFAULT_SETTINGS = {
     "weather_entity": "",
@@ -57,6 +60,16 @@ DEFAULT_SETTINGS = {
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
+    "season_colors": True,
+    "message_entity": "",
+    "message_minutes": 60,
+    "sun_script": "",
+    "moon_script": "",
+    "empty_tap": "url",
+    "media_player": "",
+    "departures": [],
+    "departure_trigger": "",
+    "people": [],
     "horizon_sink": 3,
     "tap_url": "",
     "osd_entities": [],
@@ -96,8 +109,10 @@ def load_db():
     return db
 
 
-def save_db(db):
-    db["version"] = int(time.time() * 1000)
+def save_db(db, bump=True):
+    # "version" tells the tablet to reload the world; a new message alone does not need that
+    if bump:
+        db["version"] = int(time.time() * 1000)
     tmp = DB_FILE + ".tmp"
     with open(tmp, "w") as f:
         json.dump(db, f)
@@ -134,6 +149,7 @@ WEATHER_MAP = {
     "lightning": "regen", "lightning-rainy": "regen", "snowy": "bewolkt", "snowy-rainy": "regen",
     "hail": "regen", "fog": "mist", "exceptional": "bewolkt",
 }
+WEATHER_MAP["snowy"] = "sneeuw"
 
 
 async def ha_get(path):
@@ -174,6 +190,8 @@ async def api_state(request):
                 pass
             unit = st.get("attributes", {}).get("unit_of_measurement", "")
             lines.append((val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper())
+        if db["settings"].get("people"):
+            lines += await people_lines(db["settings"]["people"])
         out["osd"] = lines
     except Exception as e:  # never break the tablet over a missing value
         out["error"] = str(e)
@@ -182,9 +200,10 @@ async def api_state(request):
 
 async def api_entities(request):
     states = await ha_get("/states") or []
-    dom = request.query.get("domain", "weather")
+    doms = tuple(d.strip() + "." for d in request.query.get("domain", "weather").split(",") if d.strip())
     ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
-            for s in states if s["entity_id"].startswith(dom + ".")]
+            for s in states if s["entity_id"].startswith(doms)]
+    ents.sort(key=lambda e: e["name"].lower())
     return web.json_response({"connected": bool(TOKEN), "entities": ents})
 
 
@@ -372,6 +391,18 @@ async def api_edit_asset(request):
                     a["rare"] = body["rare"]
                 if "label" in body:
                     a["label"] = str(body["label"])[:60]
+                if body.get("period") in PERIODS:
+                    a["period"] = body["period"]
+                for k in ("period_from", "period_to"):
+                    if k in body:
+                        v = str(body[k])
+                        a[k] = v if len(v) == 5 and v[2] == "-" else ""
+                if "tv" in body and a["kind"] == "kader":
+                    a["tv"] = bool(body["tv"])
+                if "tap" in body:
+                    t = body["tap"] or {}
+                    act = t.get("action") if t.get("action") in ("niets", "vertrek", "script") else "niets"
+                    a["tap"] = {"action": act, "entity": str(t.get("entity", ""))[:120] if act == "script" else ""}
                 if "scale" in body:
                     a["scale"] = max(0.3, min(3.0, float(body["scale"])))
                 if "active" in body:
@@ -494,6 +525,24 @@ async def api_settings(request):
                     continue
                 lo, hi = max(3, min(90, lo)), max(3, min(90, hi))
                 s["sizes"][kind] = [min(lo, hi), max(lo, hi)]
+        for k in ("message_entity", "sun_script", "moon_script", "media_player", "departure_trigger"):
+            if k in body:
+                s[k] = str(body[k]).strip()[:120]
+        if "message_minutes" in body:
+            s["message_minutes"] = max(1, min(24 * 60, int(body["message_minutes"])))
+        if body.get("empty_tap") in ("url", "vertrek", "niets"):
+            s["empty_tap"] = body["empty_tap"]
+        if "season_colors" in body:
+            s["season_colors"] = bool(body["season_colors"])
+        if isinstance(body.get("people"), list):
+            s["people"] = [str(e) for e in body["people"] if str(e).strip()][:3]
+        if isinstance(body.get("departures"), list):
+            deps = []
+            for d in body["departures"][:3]:
+                if isinstance(d, dict) and str(d.get("entity", "")).strip():
+                    deps.append({"entity": str(d["entity"]).strip()[:120], "label": str(d.get("label", "")).strip()[:40],
+                                 "lines": str(d.get("lines", "")).strip()[:60]})
+            s["departures"] = deps
         if "horizon_sink" in body:
             s["horizon_sink"] = max(0, min(40, int(body["horizon_sink"])))
         if "giant_chance" in body:
@@ -511,6 +560,227 @@ async def api_settings(request):
         save_db(db)
     return web.json_response(s)
 
+
+
+# ----------------------------------------------------------------- live: messages, music, departures, taps
+async def ha_service(domain, service, data):
+    if not TOKEN:
+        return False
+    async with ClientSession(timeout=ClientTimeout(total=10)) as s:
+        async with s.post(f"{HA_URL}/services/{domain}/{service}", json=data,
+                          headers={"Authorization": "Bearer " + TOKEN}) as r:
+            return r.status < 300
+
+
+def _ts(v):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+async def current_message(db):
+    """The newest message that is still valid: from the Studio, or from a text helper in Home Assistant."""
+    now = time.time()
+    best = None
+    m = db.get("message")
+    if m and m.get("until", 0) > now:
+        best = m
+    ent = db["settings"].get("message_entity")
+    if ent:
+        st = await ha_get("/states/" + ent)
+        if st and st.get("state") not in (None, "", "unknown", "unavailable"):
+            since = _ts(st.get("last_changed")) or now
+            until = since + 60 * db["settings"].get("message_minutes", 60)
+            if until > now and (not best or since > best.get("since", 0)):
+                best = {"id": "ha-" + str(int(since)), "text": st["state"], "since": since, "until": until, "sign": ""}
+    return best
+
+
+async def api_live(request):
+    """Polled every few seconds by the tablet: only things that change quickly."""
+    db = load_db()
+    s = db["settings"]
+    out = {"message": None, "media": None, "trigger": None}
+    try:
+        out["message"] = await current_message(db)
+        if s.get("media_player"):
+            st = await ha_get("/states/" + s["media_player"])
+            if st:
+                a = st.get("attributes", {})
+                pic = a.get("entity_picture") or ""
+                out["media"] = {"playing": st.get("state") == "playing", "title": a.get("media_title", ""),
+                                "artist": a.get("media_artist", ""), "art": str(abs(hash(pic))) if pic else ""}
+        if s.get("departure_trigger"):
+            st = await ha_get("/states/" + s["departure_trigger"])
+            if st:
+                out["trigger"] = {"on": st.get("state") in ("on", "open", "home", "detected"), "changed": st.get("last_changed")}
+    except Exception as e:
+        out["error"] = str(e)
+    return web.json_response(out)
+
+
+_cover = {"key": None, "body": None}
+
+
+def _cover_process(data):
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(data)).convert("RGBA")
+    im.thumbnail((420, 420))
+    a = process.load_rgba(_png(im))
+    a[..., 3] = 1
+    g = process.dream(a, 0.7, outer=False)
+    buf = io.BytesIO()
+    process.to_image(g).convert("RGB").save(buf, "JPEG", quality=88)
+    return buf.getvalue()
+
+
+def _png(im):
+    import io
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+async def api_cover(request):
+    db = load_db()
+    ent = db["settings"].get("media_player")
+    st = await ha_get("/states/" + ent) if ent else None
+    pic = (st or {}).get("attributes", {}).get("entity_picture")
+    if not pic:
+        raise web.HTTPNotFound()
+    if _cover["key"] != pic:
+        url = pic if pic.startswith("http") else HA_ROOT + pic
+        headers = {} if pic.startswith("http") else {"Authorization": "Bearer " + (TOKEN or "")}
+        async with ClientSession(timeout=ClientTimeout(total=10)) as s:
+            async with s.get(url, headers=headers) as r:
+                if r.status != 200:
+                    raise web.HTTPNotFound()
+                data = await r.read()
+        _cover["body"] = await run_blocking(_cover_process, data)
+        _cover["key"] = pic
+    return web.Response(body=_cover["body"], content_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+TRANSPORT = {"TRAM": "TRAM", "BUS": "BUS", "METRO": "METRO"}
+
+
+async def api_departures(request):
+    """Next departures, already as short camcorder-style lines."""
+    db = load_db()
+    now = time.time()
+    blocks = []
+    for d in db["settings"].get("departures", []):
+        st = await ha_get("/states/" + d["entity"])
+        if not st:
+            continue
+        a = st.get("attributes", {})
+        passages = a.get("next_passages") or ([a] if a.get("line_number_public") else [])
+        want = {x.strip().upper() for x in d.get("lines", "").split(",") if x.strip()}
+        lines = []
+        for p in passages:
+            num = str(p.get("line_number_public", "")).upper()
+            if want and num not in want:
+                continue
+            due = _ts(p.get("due_at_realtime") or p.get("due_at_schedule") or "")
+            if due is None:
+                continue
+            mins = int((due - now) // 60)
+            if mins < 0:
+                continue
+            kind = TRANSPORT.get(str(p.get("line_transport_type", "")).upper(), "")
+            dest = str(p.get("final_destination", "")).upper()[:22]
+            lines.append({"line": (kind + " " + num).strip(), "dest": dest, "min": mins})
+            if len(lines) >= 3:
+                break
+        if not lines and not passages:
+            due = _ts(st.get("state"))
+            if due:
+                lines.append({"line": "", "dest": "", "min": max(0, int((due - now) // 60))})
+            elif st.get("state") not in (None, "unknown", "unavailable"):
+                lines.append({"line": str(st["state"]).upper()[:30], "dest": "", "min": None})
+        name = d.get("label") or a.get("stopname") or a.get("friendly_name") or d["entity"]
+        blocks.append({"label": str(name).upper()[:30], "lines": lines})
+    return web.json_response({"blocks": blocks})
+
+
+async def api_tap(request):
+    """The tablet asks to run what the Studio set up for this target. It can only start scripts
+    or scenes that were chosen in the Studio, nothing else."""
+    target = request.match_info["target"]
+    db = load_db()
+    s = db["settings"]
+    ent = ""
+    if target == "sun":
+        ent = s.get("sun_script", "")
+    elif target == "moon":
+        ent = s.get("moon_script", "")
+    elif target.startswith("el-"):
+        a = next((x for x in db["assets"] if x["id"] == target[3:]), None)
+        if a and (a.get("tap") or {}).get("action") == "script":
+            ent = a["tap"].get("entity", "")
+    dom = ent.split(".")[0] if ent else ""
+    if dom not in ("script", "scene", "automation", "input_button", "button"):
+        return web.json_response({"ok": False})
+    service = {"automation": "trigger", "input_button": "press", "button": "press"}.get(dom, "turn_on")
+    ok = await ha_service(dom, service, {"entity_id": ent})
+    return web.json_response({"ok": ok})
+
+
+async def api_send_message(request):
+    body = await request.json()
+    text = str(body.get("text", "")).strip()[:200]
+    minutes = max(1, min(24 * 60, int(body.get("minutes", 60))))
+    sign = ""
+    if body.get("sign"):
+        sign = (request.headers.get("X-Remote-User-Display-Name") or request.headers.get("X-Remote-User-Name") or "").strip().split(" ")[0][:30]
+    async with lock:
+        db = load_db()
+        if text:
+            now = time.time()
+            db["message"] = {"id": uuid.uuid4().hex[:8], "text": text, "since": now, "until": now + minutes * 60, "sign": sign}
+        else:
+            db.pop("message", None)
+        save_db(db, bump=False)
+    return web.json_response(db.get("message") or {})
+
+
+async def api_clear_message(request):
+    async with lock:
+        db = load_db()
+        db.pop("message", None)
+        save_db(db, bump=False)
+    return web.json_response({"ok": True})
+
+
+def _km(lat1, lon1, lat2, lon2):
+    from math import radians, sin, cos, asin, sqrt
+    p1, p2 = radians(lat1), radians(lat2)
+    h = sin((p2 - p1) / 2) ** 2 + cos(p1) * cos(p2) * sin(radians(lon2 - lon1) / 2) ** 2
+    return 12742 * asin(sqrt(h))
+
+
+async def people_lines(ents):
+    home = await ha_get("/states/zone.home")
+    ha = (home or {}).get("attributes", {})
+    out = []
+    for e in ents:
+        st = await ha_get("/states/" + e)
+        if not st:
+            continue
+        a = st.get("attributes", {})
+        name = str(a.get("friendly_name", e.split(".")[-1])).split(" ")[0].upper()[:12]
+        if st.get("state") == "home":
+            out.append(f"{name} THUIS")
+        elif a.get("latitude") is not None and ha.get("latitude") is not None:
+            km = _km(ha["latitude"], ha["longitude"], a["latitude"], a["longitude"])
+            dist = f"{km:.1f}".replace(".", ",") if km < 10 else str(round(km))
+            out.append(f"{name} {dist} KM")
+        elif st.get("state") not in (None, "unknown", "unavailable", "not_home"):
+            out.append(f"{name} {str(st['state']).upper()[:14]}")
+    return out
 
 # ----------------------------------------------------------------- reminders
 REPEATS = ("once", "daily", "weekly", "monthly", "yearly")
@@ -580,6 +850,10 @@ def common_routes(app):
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/media/{name}", media)
     app.router.add_static("/static/", os.path.join(APP, "static"))
+    app.router.add_get("/api/live", api_live)
+    app.router.add_get("/api/cover", api_cover)
+    app.router.add_get("/api/departures", api_departures)
+    app.router.add_post("/api/tap/{target}", api_tap)
 
 
 def make_studio():
@@ -594,6 +868,8 @@ def make_studio():
     app.router.add_delete("/api/photos/{id}", api_delete_photo)
     app.router.add_post("/api/panorama", api_upload_panorama)
     app.router.add_put("/api/settings", api_settings)
+    app.router.add_post("/api/message", api_send_message)
+    app.router.add_delete("/api/message", api_clear_message)
     app.router.add_post("/api/reminders", api_add_reminder)
     app.router.add_put("/api/reminders/{id}", api_edit_reminder)
     app.router.add_delete("/api/reminders/{id}", api_delete_reminder)

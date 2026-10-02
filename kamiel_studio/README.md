@@ -25,3 +25,15 @@ Kamiel de alpaca in een eindeloze droomwereld, als add-on voor Home Assistant.
 ## Gegevens
 
 Alles wat je toevoegt staat in de opslag van de add-on en zit mee in de back-ups van Home Assistant.
+
+## Koppelingen met Home Assistant (optioneel)
+
+Alles stel je in via **Instellingen** in Kamiel Studio.
+
+- **Berichten**: tabblad *Bericht* (werkt ook van op afstand via de Home Assistant-app). Wil je berichten uit automatiseringen, maak dan een tekst-helper aan (Instellingen → Apparaten en diensten → Helpers → Tekst) en kies die in Kamiel Studio.
+- **Muziek-tv**: kies de speaker (bijvoorbeeld je Google Home). Een eigen tv: upload een kader en vink "Tv voor muziek" aan.
+- **Bus en tram**: installeer de De Lijn-integratie met een gratis sleutel van het De Lijn Open Data-portaal en kies de haltes.
+- **Waar zijn we**: kies personen; de afstand komt van de Home Assistant-app op jullie gsm.
+- **Tikken op zon, maan of een element**: kies een script, scène of automatisering.
+
+Testen in de browser: `?d=2026-12-24` doet alsof het die datum is, `?w=sneeuw` laat het sneeuwen.
