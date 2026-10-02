@@ -57,6 +57,7 @@ DEFAULT_SETTINGS = {
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
+    "horizon_sink": 3,
     "tap_url": "",
     "osd_entities": [],
     "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "LAVENDELSTRAAT",
@@ -492,6 +493,8 @@ async def api_settings(request):
                     continue
                 lo, hi = max(3, min(90, lo)), max(3, min(90, hi))
                 s["sizes"][kind] = [min(lo, hi), max(lo, hi)]
+        if "horizon_sink" in body:
+            s["horizon_sink"] = max(0, min(40, int(body["horizon_sink"])))
         if "giant_chance" in body:
             s["giant_chance"] = max(0, min(100, int(body["giant_chance"])))
         if "max_objects" in body:

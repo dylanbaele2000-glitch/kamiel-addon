@@ -268,6 +268,10 @@ label.pct input{width:76px}
           <span>Af en toe een object dat groter is dan "Grootste". 0 % is nooit.</span>
           <label class="pct"><input type="number" id="sGiant" min="0" max="100" step="5"> %</label>
         </label>
+        <label class="field" for="sSink">Horizon-objecten zakken in de grond
+          <span>Hoeveel van een horizon-object achter de grond verdwijnt, in procent van zijn hoogte. Ze staan altijd op het laagste punt van de grond eronder.</span>
+          <label class="pct"><input type="number" id="sSink" min="0" max="40"> %</label>
+        </label>
         <label class="field" for="sMax">Maximum aantal objecten per plek
           <span>Alles samen: grond, horizon, lucht en kaders. Wolken tellen niet mee.</span>
           <input type="number" id="sMax" min="1" max="20">
@@ -511,7 +515,7 @@ async function renderSettings() {
   for (const part of ['dag', 'nacht']) for (const k of ['grond', 'horizon', 'lucht', 'kader']) $(`c_${part}_${k}`).value = s.chances[part][k];
   $('sMax').value = s.max_objects;
   for (const k of ['grond', 'horizon', 'lucht', 'kader']) { $(`z_${k}_0`).value = s.sizes[k][0]; $(`z_${k}_1`).value = s.sizes[k][1]; }
-  $('sGiant').value = s.giant_chance;
+  $('sGiant').value = s.giant_chance; $('sSink').value = s.horizon_sink;
   $('words').value = s.words.join('\n');
   const sel = $('sWeather');
   try {
@@ -530,7 +534,7 @@ async function renderSettings() {
 $('setForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value, night_start: $('sNightStart').value, night_end: $('sNightEnd').value,
-    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), max_objects: +$('sMax').value, giant_chance: +$('sGiant').value,
+    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), max_objects: +$('sMax').value, giant_chance: +$('sGiant').value, horizon_sink: +$('sSink').value || 0,
     sizes: Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`z_${k}_0`).value || 3, +$(`z_${k}_1`).value || 3]])),
     chances: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, Math.max(0, Math.min(100, Math.round(+$(`c_${part}_${k}`).value || 0)))]))])),
     tap_url: $('sTap').value, osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
