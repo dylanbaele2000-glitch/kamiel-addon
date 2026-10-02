@@ -18,8 +18,25 @@ import process
 APP = os.path.dirname(os.path.abspath(__file__))
 DATA = os.environ.get("KAMIEL_DATA", "/data")
 MEDIA = os.path.join(DATA, "media")
+ORIG = os.path.join(DATA, "originals")
 DB_FILE = os.path.join(DATA, "kamiel.json")
-TOKEN = os.environ.get("SUPERVISOR_TOKEN")
+def read_token():
+    """The Supervisor hands the add-on a token. Depending on how the add-on starts, it is
+    either in the environment or only in s6's container environment folder."""
+    for key in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
+        if os.environ.get(key):
+            return os.environ[key].strip()
+        for folder in ("/run/s6/container_environment", "/var/run/s6/container_environment"):
+            path = os.path.join(folder, key)
+            if os.path.exists(path):
+                with open(path) as f:
+                    value = f.read().strip()
+                if value:
+                    return value
+    return None
+
+
+TOKEN = read_token()
 HA_URL = "http://supervisor/core/api"
 
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
@@ -44,6 +61,7 @@ lock = asyncio.Lock()
 # ----------------------------------------------------------------- storage
 def first_run():
     os.makedirs(MEDIA, exist_ok=True)
+    os.makedirs(ORIG, exist_ok=True)
     if not os.path.exists(DB_FILE):
         src = os.path.join(APP, "defaults")
         if os.path.isdir(src):
@@ -81,6 +99,13 @@ def remove_files(names):
         p = os.path.join(MEDIA, os.path.basename(n))
         if os.path.exists(p):
             os.remove(p)
+
+
+def keep_original(data, name):
+    """Keep the untouched upload, so it can be processed again if the filter changes."""
+    with open(os.path.join(ORIG, name), "wb") as f:
+        f.write(data)
+    return name
 
 
 async def run_blocking(fn, *args):
@@ -182,11 +207,12 @@ def _asset_from_upload(data, kind, moment, rare, is_sign, label):
     for key, arr in imgs.items():
         files[key] = save_img(arr, f"{aid}_{key}")
     main = imgs["main"]
+    original = keep_original(data, f"{aid}_origineel")
     return {
         "id": aid, "label": label, "kind": kind, "moment": moment, "rare": rare,
         "sign": bool(is_sign and meta.get("plate")),
         "size": [int(main.shape[1]), int(main.shape[0])],
-        "files": files, **meta,
+        "files": files, "original": original, **meta,
     }
 
 
@@ -258,13 +284,18 @@ async def api_delete_asset(request):
         db["assets"] = keep
         save_db(db)
     remove_files(gone["files"].values())
+    if gone.get("original"):
+        p = os.path.join(ORIG, os.path.basename(gone["original"]))
+        if os.path.exists(p):
+            os.remove(p)
     return web.json_response({"ok": True})
 
 
 def _photo(data):
     arr = process.process_photo(data)
     pid = uuid.uuid4().hex[:10]
-    return {"id": pid, "file": save_img(arr, f"foto_{pid}"), "size": [int(arr.shape[1]), int(arr.shape[0])]}
+    return {"id": pid, "file": save_img(arr, f"foto_{pid}"), "original": keep_original(data, f"foto_{pid}_origineel"),
+            "size": [int(arr.shape[1]), int(arr.shape[0])]}
 
 
 async def api_upload_photos(request):
@@ -312,6 +343,7 @@ async def api_upload_panorama(request):
         raise web.HTTPBadRequest(text="Geen bestanden ontvangen")
     pano = await run_blocking(_panorama, [d for _, d in parts])
     pano["sources"] = [n for n, _ in parts]
+    pano["originals"] = [keep_original(d, f"panorama_{i + 1}_origineel") for i, (_, d) in enumerate(parts)]
     async with lock:
         db = load_db()
         old = db.get("panorama")
@@ -389,6 +421,14 @@ async def main():
         await web.TCPSite(r, "0.0.0.0", port).start()
         runners.append(r)
     print("Kamiel Studio draait: studio op 8099 (via Home Assistant), tablet op 8100", flush=True)
+    if not TOKEN:
+        print("Let op: geen toegang tot Home Assistant (geen token gevonden). Weer en sensoren werken niet.", flush=True)
+    else:
+        try:
+            ok = await ha_get("/states/sun.sun")
+            print("Verbonden met Home Assistant." if ok else "Token gevonden, maar Home Assistant antwoordt niet.", flush=True)
+        except Exception as e:
+            print("Verbinding met Home Assistant mislukt: " + str(e), flush=True)
     await asyncio.Event().wait()
 
 
