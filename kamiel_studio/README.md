@@ -30,6 +30,7 @@ Alles wat je toevoegt staat in de opslag van de add-on en zit mee in de back-ups
 
 Alles stel je in via **Instellingen** in Kamiel Studio.
 
+- **Telegram**: tabblad *Bericht* → *Berichten via Telegram*. Maak een bot bij @BotFather, plak de sleutel, koppel jullie gsm met de code. Stuur tekst, een foto, /bus, /kijk of /wis.
 - **Berichten**: tabblad *Bericht* (werkt ook van op afstand via de Home Assistant-app). Wil je berichten uit automatiseringen, maak dan een tekst-helper aan (Instellingen → Apparaten en diensten → Helpers → Tekst) en kies die in Kamiel Studio.
 - **Muziek-tv**: kies de speaker (bijvoorbeeld je Google Home). Een eigen tv: upload een kader en vink "Tv voor muziek" aan.
 - **Bus en tram**: installeer de De Lijn-integratie met een gratis sleutel van het De Lijn Open Data-portaal en kies de haltes.
