@@ -83,7 +83,7 @@ label.pct input{width:76px}
 [hidden]{display:none!important}
 .rems{display:flex;flex-direction:column;gap:16px}
 .rem{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:18px;border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--card)}
-@media (max-width:760px){.rem{grid-template-columns:1fr}}
+@media (max-width:760px){.rem{grid-template-columns:1fr}#msgForm .rem>div:first-child{order:2}}
 .rem canvas{width:100%;aspect-ratio:16/10;border-radius:10px;display:block;background:#2f6be8}
 .rem .when{font-size:13px;color:var(--muted);margin-top:8px}
 .rem .when.on{color:var(--ok);font-weight:600}
@@ -107,7 +107,8 @@ label.pct input{width:76px}
   </header>
 
   <nav role="tablist" aria-label="Onderdelen">
-    <button type="button" role="tab" id="tab-el" aria-controls="p-el" aria-selected="true">Elementen</button>
+    <button type="button" role="tab" id="tab-msg" aria-controls="p-msg" aria-selected="true">Bericht</button>
+    <button type="button" role="tab" id="tab-el" aria-controls="p-el" aria-selected="false">Elementen</button>
     <button type="button" role="tab" id="tab-wereld" aria-controls="p-wereld" aria-selected="false">Wereld</button>
     <button type="button" role="tab" id="tab-foto" aria-controls="p-foto" aria-selected="false">Foto's</button>
     <button type="button" role="tab" id="tab-bord" aria-controls="p-bord" aria-selected="false">Bordteksten</button>
@@ -116,7 +117,23 @@ label.pct input{width:76px}
   </nav>
 
   <!-- ELEMENTEN -->
-  <section id="p-el" role="tabpanel" aria-labelledby="tab-el" style="display:flex;flex-direction:column;gap:18px">
+  <section id="p-msg" role="tabpanel" aria-labelledby="tab-msg">
+    <form class="card" id="msgForm">
+      <h2>Een bericht op het scherm zetten</h2>
+      <p class="hint">Verschijnt meteen over de scène, ook als je niet thuis bent (open Kamiel Studio in de Home Assistant-app). Wie thuis op het bericht tikt, laat het verdwijnen.</p>
+      <div class="rem" style="border:0;padding:0">
+        <div><canvas id="msgPrev" aria-label="Voorbeeld van het bericht"></canvas><div class="when" id="msgNow"></div></div>
+        <div class="fields">
+          <label class="f full">Bericht<textarea id="msgText" maxlength="200" placeholder="ik ben er om zes uur, zet jij de oven aan?"></textarea></label>
+          <label class="f">Hoe lang<select id="msgMin"><option value="15">15 minuten</option><option value="60" selected>1 uur</option><option value="180">3 uur</option><option value="720">12 uur</option><option value="1440">24 uur</option></select></label>
+          <label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="msgSign" checked> Zet mijn naam eronder</label>
+          <div class="actions full"><button class="primary" type="submit">Versturen</button><button type="button" id="msgClear">Bericht wissen</button><span class="status" id="msgStatus" role="status"></span></div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section id="p-el" role="tabpanel" aria-labelledby="tab-el" hidden style="display:flex;flex-direction:column;gap:18px">
     <form class="card" id="upForm">
       <h2>Nieuwe elementen toevoegen</h2>
       <p class="hint">Kies een of meer afbeeldingen, liefst PNG met transparante achtergrond. Alles wat je hier toevoegt krijgt automatisch de dreamcore-filter.</p>
@@ -311,10 +328,55 @@ label.pct input{width:76px}
         <label class="field" for="sOsd2">Regel 3<select id="sOsd2" class="osdsel"></select></label>
       </div>
       <h2 style="margin-top:8px">Tikken op het scherm</h2>
-      <label class="field" for="sTap" style="max-width:640px">Open dit adres als iemand op de tablet tikt
-        <span>Bijvoorbeeld een Home Assistant-dashboard: http://192.168.1.20:8123/kamiel-knoppen/0. Laat leeg om niets te doen.</span>
+      <p class="hint">Een script kan alles wat Home Assistant kan: lichten, muziek, een melding… Per element stel je in de bibliotheek in wat tikken erop doet.</p>
+      <div class="settings">
+        <label class="field" for="sSunScript">Tikken op de zon<select id="sSunScript" class="scriptsel"></select></label>
+        <label class="field" for="sMoonScript">Tikken op de maan<select id="sMoonScript" class="scriptsel"></select></label>
+        <label class="field" for="sEmpty">Tikken ergens anders
+          <select id="sEmpty"><option value="url">Open het adres hieronder</option><option value="vertrek">Toon bus en tram</option><option value="niets">Niets</option></select></label>
+      </div>
+      <label class="field" for="sTap" style="max-width:640px;margin-top:14px">Adres
+        <span>Bijvoorbeeld een Home Assistant-dashboard: http://192.168.1.20:8123/kamiel-knoppen/0.</span>
         <input type="text" id="sTap" placeholder="http://…">
       </label>
+
+      <h2 style="margin-top:18px">Muziek</h2>
+      <p class="hint">Speelt deze speaker muziek, dan staat er op elke plek een tv met de hoes van de plaat. Wil je een eigen tv, upload dan een kader en vink in de bibliotheek "Tv voor muziek" aan.</p>
+      <div class="settings"><label class="field" for="sMedia">Speaker<select id="sMedia"></select></label></div>
+
+      <h2 style="margin-top:18px">Bus en tram</h2>
+      <p class="hint">Kies tot drie haltes uit de De Lijn-integratie van Home Assistant. Bij "Lijnen" kun je filteren, bijvoorbeeld 1, 4. De vertrekken verschijnen 25 seconden.</p>
+      <table class="chances" id="depTable">
+        <thead><tr><th scope="col">Halte</th><th scope="col">Naam op het scherm</th><th scope="col">Lijnen</th></tr></thead>
+        <tbody>
+          <tr><td><select class="depent" data-i="0"></select></td><td><input type="text" class="deplab" data-i="0" placeholder="NAAR CENTRUM"></td><td><input type="text" class="deplin" data-i="0" placeholder="1, 4"></td></tr>
+          <tr><td><select class="depent" data-i="1"></select></td><td><input type="text" class="deplab" data-i="1" placeholder="NAAR STATION"></td><td><input type="text" class="deplin" data-i="1"></td></tr>
+          <tr><td><select class="depent" data-i="2"></select></td><td><input type="text" class="deplab" data-i="2"></td><td><input type="text" class="deplin" data-i="2"></td></tr>
+        </tbody>
+      </table>
+      <div class="settings" style="margin-top:14px">
+        <label class="field" for="sTrigger">Ook tonen wanneer dit aangaat
+          <span>Bijvoorbeeld de bewegingssensor in de gang of het contact van de voordeur.</span>
+          <select id="sTrigger"></select></label>
+      </div>
+
+      <h2 style="margin-top:18px">Waar zijn we</h2>
+      <p class="hint">Onder de datum: "THUIS" of hoe ver iemand van huis is, via de Home Assistant-app op jullie gsm.</p>
+      <div class="settings">
+        <label class="field" for="sP0">Persoon 1<select id="sP0" class="psel"></select></label>
+        <label class="field" for="sP1">Persoon 2<select id="sP1" class="psel"></select></label>
+        <label class="field" for="sP2">Persoon 3<select id="sP2" class="psel"></select></label>
+      </div>
+
+      <h2 style="margin-top:18px">Berichten via Home Assistant</h2>
+      <p class="hint">Optioneel: een tekst-helper (input_text). Alles wat erin komt, verschijnt als bericht. Handig voor automatiseringen, bijvoorbeeld "de was is klaar".</p>
+      <div class="settings">
+        <label class="field" for="sMsgEnt">Tekst-helper<select id="sMsgEnt"></select></label>
+        <label class="field" for="sMsgMin">Blijft staan (minuten)<input type="number" id="sMsgMin" min="1" max="1440"></label>
+      </div>
+
+      <h2 style="margin-top:18px">Seizoenen</h2>
+      <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="sSeason"> Een lichte kleurtoon per seizoen (warm in de herfst, koel in de winter…)</label>
       <div class="row"><button class="primary" type="submit">Opslaan</button><span class="status" id="setStatus" role="status"></span></div>
     </form>
   </section>
@@ -329,6 +391,11 @@ const SCALE_NL = [[0.5, 'Veel kleiner'], [0.75, 'Kleiner'], [1, 'Normaal'], [1.4
 const RARE_NL = { gewoon: 'Gewoon', zeldzaam: 'Zeldzaam', heelzeldzaam: 'Heel zeldzaam' };
 const MOMENT_NL = { dag: 'Overdag', nacht: "'s Nachts", altijd: 'Dag en nacht' };
 
+const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let SCRIPTS = [];
+fetch('api/entities?domain=script,scene,automation,input_button,button').then(r => r.json()).then(j => { SCRIPTS = j.entities || []; if (world) renderLib(); }).catch(() => {});
+const PERIOD_NL = [['altijd', 'Altijd'], ['lente', 'Lente'], ['zomer', 'Zomer'], ['herfst', 'Herfst'], ['winter', 'Winter'], ['valentijn', 'Valentijn'],
+  ['pasen', 'Pasen'], ['halloween', 'Halloween'], ['sinterklaas', 'Sinterklaas'], ['kerst', 'Kerst'], ['nieuwjaar', 'Nieuwjaar'], ['eigen', 'Eigen periode']];
 function status(el, text, kind) { el.textContent = text; el.className = 'status' + (kind ? ' ' + kind : ''); }
 async function load() { world = await (await fetch('api/world', { cache: 'no-store' })).json(); render(); }
 
@@ -425,12 +492,16 @@ function renderLib() {
       <div class="thumb ${night ? 'night' : ''}"><img alt="" loading="lazy"></div>
       <div class="meta">
         <div class="name"></div>
-        <div class="chips"><span class="chip">${KIND_NL[a.kind]}</span>${a.sign ? '<span class="chip">Tekstbord</span>' : ''}${a.kind === 'kader' && !a.hole ? '<span class="chip">Geen fotovlak gevonden</span>' : ''}</div>
+        <div class="chips"><span class="chip">${KIND_NL[a.kind]}</span>${a.sign ? '<span class="chip">Tekstbord</span>' : ''}${a.tv ? '<span class="chip">Tv</span>' : ''}${a.period && a.period !== 'altijd' ? `<span class="chip">${(PERIOD_NL.find(p => p[0] === a.period) || ['', ''])[1]}</span>` : ''}${a.kind === 'kader' && !a.hole ? '<span class="chip">Geen fotovlak gevonden</span>' : ''}</div>
         <div class="edit">
           <label><input type="checkbox" data-k="dag" ${a.moment !== 'nacht' ? 'checked' : ''}> Overdag</label>
           <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
           ${a.kind === 'grond' ? `<label><input type="checkbox" data-sign ${a.sign ? 'checked' : ''}> Tekstbord</label>` : ''}
           <label>Soort <select data-kind>${Object.entries(KIND_NL).map(([k, v]) => `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+          ${a.kind !== 'wolk' ? `<label>Wanneer <select data-period>${PERIOD_NL.map(([k, n]) => `<option value="${k}" ${(a.period || 'altijd') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          <span data-own ${a.period === 'eigen' ? '' : 'hidden'}><label>Van <input type="text" data-pf placeholder="dd-mm" size="5" value="${a.period_from ? a.period_from.split('-').reverse().join('-') : ''}"></label> <label>tot <input type="text" data-pt placeholder="dd-mm" size="5" value="${a.period_to ? a.period_to.split('-').reverse().join('-') : ''}"></label></span>
+          <label>Bij tikken <select data-tap><option value="niets">Niets</option><option value="vertrek" ${(a.tap || {}).action === 'vertrek' ? 'selected' : ''}>Toon bus en tram</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${(a.tap || {}).action === 'script' && a.tap.entity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>
+          ${a.kind === 'kader' ? `<label><input type="checkbox" data-tv ${a.tv ? 'checked' : ''}> Tv voor muziek</label>` : ''}` : ''}
           ${a.kind !== 'wolk' ? `<label>Grootte <select data-scale>${SCALE_NL.map(([v, n]) => `<option value="${v}" ${Math.abs((a.scale || 1) - v) < .01 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
           <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         </div>
@@ -447,6 +518,28 @@ function renderLib() {
       el.querySelector('.thumb').classList.toggle('night', nacht && !dag);
     };
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', save));
+    const patch = async (body) => {
+      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.ok) Object.assign(a, await r.json());
+      status(st, r.ok ? 'Bewaard' : 'Mislukt', r.ok ? 'ok' : 'err');
+    };
+    const pe = el.querySelector('[data-period]');
+    const toMd = (v) => { const m = String(v).trim().match(/^(\d{1,2})[-/.](\d{1,2})$/); return m ? m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0') : ''; };
+    const savePeriod = () => {
+      el.querySelector('[data-own]').hidden = pe.value !== 'eigen';
+      if (pe.value === 'eigen') {
+        const f = toMd(el.querySelector('[data-pf]').value), t2 = toMd(el.querySelector('[data-pt]').value);
+        if (!f || !t2) { status(st, 'Vul van en tot in, zoals 01-12', 'err'); return; }
+        patch({ period: 'eigen', period_from: f, period_to: t2 });
+      } else patch({ period: pe.value });
+    };
+    if (pe) { pe.addEventListener('change', savePeriod); el.querySelectorAll('[data-pf],[data-pt]').forEach(i => i.addEventListener('change', savePeriod)); }
+    const tp = el.querySelector('[data-tap]');
+    if (tp) tp.addEventListener('change', () => {
+      const v = tp.value; patch({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } });
+    });
+    const tv = el.querySelector('[data-tv]');
+    if (tv) tv.addEventListener('change', () => patch({ tv: tv.checked }));
     const sc = el.querySelector('[data-scale]');
     if (sc) sc.addEventListener('change', async () => {
       const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scale: +sc.value }) });
@@ -551,6 +644,23 @@ async function renderSettings() {
   } catch { sel.innerHTML = '<option value="">Kon de lijst niet laden</option>'; }
   sel.value = s.weather_entity || '';
   $('sTap').value = s.tap_url || '';
+  $('sEmpty').value = s.empty_tap || 'url'; $('sSeason').checked = s.season_colors !== false; $('sMsgMin').value = s.message_minutes || 60;
+  const fill = async (domains, els, values, none) => {
+    let j; try { j = await (await fetch('api/entities?domain=' + domains)).json(); } catch { return; }
+    const opts = `<option value="">${none}</option>` + j.entities.map(e => `<option value="${e.id}">${esc(e.name)} (${e.id})</option>`).join('');
+    els.forEach((el, i) => {
+      el.innerHTML = j.connected ? opts : '<option value="">Niet verbonden met Home Assistant</option>';
+      const v = values[i] || ''; if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v)); el.value = v;
+    });
+  };
+  fill('script,scene,automation,input_button,button', [$('sSunScript'), $('sMoonScript')], [s.sun_script, s.moon_script], 'Niets');
+  fill('media_player', [$('sMedia')], [s.media_player], 'Geen');
+  fill('sensor', [...document.querySelectorAll('.depent')], [0, 1, 2].map(i => (s.departures[i] || {}).entity), 'Geen');
+  document.querySelectorAll('.deplab').forEach((el, i) => { el.value = (s.departures[i] || {}).label || ''; });
+  document.querySelectorAll('.deplin').forEach((el, i) => { el.value = (s.departures[i] || {}).lines || ''; });
+  fill('binary_sensor,input_boolean', [$('sTrigger')], [s.departure_trigger], 'Niets');
+  fill('person', [...document.querySelectorAll('.psel')], s.people || [], 'Niemand');
+  fill('input_text', [$('sMsgEnt')], [s.message_entity], 'Geen');
   try {
     const j = await (await fetch('api/entities?domain=sensor')).json();
     const opts = '<option value="">Niets</option>' + j.entities.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
@@ -563,11 +673,45 @@ $('setForm').addEventListener('submit', async (e) => {
     night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), max_objects: +$('sMax').value, giant_chance: +$('sGiant').value, horizon_sink: +$('sSink').value || 0,
     sizes: Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`z_${k}_0`).value || 3, +$(`z_${k}_1`).value || 3]])),
     chances: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, Math.max(0, Math.min(100, Math.round(+$(`c_${part}_${k}`).value || 0)))]))])),
-    tap_url: $('sTap').value, osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
+    tap_url: $('sTap').value, empty_tap: $('sEmpty').value, sun_script: $('sSunScript').value, moon_script: $('sMoonScript').value,
+    media_player: $('sMedia').value, departure_trigger: $('sTrigger').value, message_entity: $('sMsgEnt').value,
+    message_minutes: +$('sMsgMin').value || 60, season_colors: $('sSeason').checked,
+    people: [...document.querySelectorAll('.psel')].map(e => e.value).filter(Boolean),
+    departures: [0, 1, 2].map(i => ({ entity: document.querySelector(`.depent[data-i="${i}"]`).value, label: document.querySelector(`.deplab[data-i="${i}"]`).value, lines: document.querySelector(`.deplin[data-i="${i}"]`).value })).filter(d => d.entity),
+    osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
 
+
+/* message */
+function drawMsgPreview() {
+  const cv = $('msgPrev'), g = cv.getContext('2d'); cv.width = 960; cv.height = 600; previewBg(g, 960, 600);
+  const t = $('msgText').value.trim();
+  if (t) g.drawImage(KamielReminder.render(t, { width: 960, height: 600, color: '#c8202a', position: 'midden', sign: $('msgSign').checked ? 'jouw naam' : '' }), 0, 0);
+}
+async function msgNow() {
+  try {
+    const j = await (await fetch('api/live', { cache: 'no-store' })).json(), m = j.message;
+    $('msgNow').textContent = m ? `Nu op het scherm: "${m.text}" tot ${new Date(m.until * 1000).toTimeString().slice(0, 5)}.` : 'Er staat nu geen bericht op het scherm.';
+    $('msgNow').className = 'when' + (m ? ' on' : '');
+  } catch { }
+}
+['input', 'change'].forEach(ev => $('msgForm').addEventListener(ev, drawMsgPreview));
+$('msgForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $('msgText').value.trim();
+  if (!text) { status($('msgStatus'), 'Typ eerst een bericht.', 'err'); return; }
+  const r = await fetch('api/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, minutes: +$('msgMin').value, sign: $('msgSign').checked }) });
+  status($('msgStatus'), r.ok ? 'Verstuurd. Binnen enkele seconden staat het op de tablet.' : 'Versturen mislukt.', r.ok ? 'ok' : 'err');
+  if (r.ok) { $('msgText').value = ''; drawMsgPreview(); msgNow(); }
+});
+$('msgClear').addEventListener('click', async () => {
+  const r = await fetch('api/message', { method: 'DELETE' });
+  status($('msgStatus'), r.ok ? 'Gewist.' : 'Wissen mislukt.', r.ok ? 'ok' : 'err'); msgNow();
+});
+drawMsgPreview(); msgNow(); setInterval(msgNow, 30000);
+if (document.fonts) document.fonts.load('700 40px Arimo').then(drawMsgPreview).catch(() => {});
 
 /* reminders */
 const DAYS_NL = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];

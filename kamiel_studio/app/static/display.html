@@ -43,7 +43,7 @@ const cc = document.createElement('canvas'); cc.width = W; cc.height = H; const 
 const mod = (a, n) => ((a % n) + n) % n;
 const rnd = Math.random;
 const load = (src) => { const i = new Image(); i.src = src; return i; };
-const ready = (i) => i && i.complete && i.naturalWidth > 0;
+const ready = (i) => !!i && (i instanceof HTMLCanvasElement || (i.complete && i.naturalWidth > 0));
 
 /* ---------- data from the add-on ---------- */
 let world = await (await fetch('api/world', { cache: 'no-store' })).json();
@@ -67,6 +67,26 @@ const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false).ma
   if (a.files.mask) { delete o.maskImg; lazy(o, 'maskImg', 'media/' + a.files.mask); }
   return o;
 });
+// the music tv: your own frame marked "tv", or a built-in retro set
+function builtinTV() {
+  const w = 360, h = 300, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  const rr = (x, y, ww, hh, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, ww, hh, r) : g.rect(x, y, ww, hh); };
+  g.strokeStyle = '#2b2b2b'; g.lineWidth = 4; g.beginPath(); g.moveTo(150, 40); g.lineTo(95, 2); g.moveTo(190, 40); g.lineTo(250, 4); g.stroke();
+  g.fillStyle = '#3a2a20'; g.fillRect(60, 268, 16, 32); g.fillRect(284, 268, 16, 32);
+  const wood = g.createLinearGradient(0, 36, 0, 272); wood.addColorStop(0, '#9b6236'); wood.addColorStop(1, '#5d3519');
+  g.fillStyle = wood; rr(14, 36, 332, 236, 26); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.08)'; for (let y = 50; y < 260; y += 9) g.fillRect(20, y, 320, 2);
+  g.fillStyle = '#1d1b1a'; rr(30, 52, 232, 204, 30); g.fill();
+  g.fillStyle = '#d9cfbf'; rr(272, 52, 60, 204, 10); g.fill();
+  g.fillStyle = '#3b3632'; [[302, 90], [302, 140]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill(); });
+  g.fillStyle = '#8a8178'; for (let y = 180; y < 244; y += 7) g.fillRect(282, y, 40, 3);
+  const m = document.createElement('canvas'); m.width = w; m.height = h; const mg = m.getContext('2d');
+  mg.fillStyle = '#fff'; mg.beginPath(); mg.roundRect ? mg.roundRect(44, 66, 204, 176, 24) : mg.rect(44, 66, 204, 176); mg.fill();
+  return { id: 'tv-builtin', kind: 'kader', tv: true, size: [w, h], hole: [44 / w, 66 / h, 248 / w, 242 / h], img: c, maskImg: m, label: 'tv', moment: 'altijd' };
+}
+const TVS = OBJ.filter(o => o.tv && o.kind === 'kader' && o.hole);
+const TV = () => TVS.length ? TVS[Math.floor(rnd() * TVS.length)] : (TV.builtin || (TV.builtin = builtinTV()));
+let musicOn = false, coverImg = null, coverKey = '';
 const CL = world.assets.filter(a => a.kind === 'wolk' && a.active !== false).map(a => Object.assign({}, a, { img: load('media/' + a.files.main) }));
 const PHOTOS = world.photos.length ? world.photos.map(p => 'media/' + p.file) : ['static/voorbeeldfoto.webp'];
 const photoCache = {};
@@ -77,6 +97,7 @@ const WORDS = S.words && S.words.length ? S.words : ['WELKOM IN KAMIELLAND'];
 let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [];
 function now() {
   const d = new Date();
+  const dd = params.get('d'); if (dd) { const [y, mo, da] = dd.split('-').map(Number); d.setFullYear(y, mo - 1, da); }
   const t = params.get('t'); if (t) { const [h, m] = t.split(':').map(Number); d.setHours(h, m || 0, 0, 0); }
   return d;
 }
@@ -85,6 +106,26 @@ function isNightTime(d) {
   const m = d.getHours() * 60 + d.getMinutes(), a = minutesOf(S.night_start), b = minutesOf(S.night_end);
   return a > b ? (m >= a || m < b) : (m >= a && m < b);
 }
+/* ---------- seasons and holidays ---------- */
+function easter(y) {   // Gregorian computus
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return new Date(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1);
+}
+const md = (d) => String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const between = (x, a, b) => a <= b ? (x >= a && x <= b) : (x >= a || x <= b);   // "MM-DD", may wrap over new year
+const PERIOD_DATES = { lente: ['03-21', '06-20'], zomer: ['06-21', '09-22'], herfst: ['09-23', '12-20'], winter: ['12-21', '03-20'],
+  valentijn: ['02-07', '02-14'], halloween: ['10-15', '11-01'], sinterklaas: ['11-15', '12-06'], kerst: ['12-01', '01-06'], nieuwjaar: ['12-28', '01-02'] };
+function inPeriod(name, d, from, to) {
+  if (!name || name === 'altijd') return true;
+  const x = md(d);
+  if (name === 'eigen') return !!from && !!to && between(x, from, to);
+  if (name === 'pasen') { const e = easter(d.getFullYear()), a = new Date(e), b = new Date(e); a.setDate(e.getDate() - 7); b.setDate(e.getDate() + 1); return d >= a && d < new Date(b.getFullYear(), b.getMonth(), b.getDate() + 1); }
+  const r = PERIOD_DATES[name]; return r ? between(x, r[0], r[1]) : true;
+}
+const seasonOf = (d) => ['lente', 'zomer', 'herfst', 'winter'].find(n => inPeriod(n, d));
+
 function horizontal(days, ra, dec) {
   const rad = Math.PI / 180, phi = rad * LAT, th = rad * (280.16 + 360.9856235 * days) + rad * LON, Hh = th - ra;
   const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(Hh));
@@ -101,10 +142,14 @@ function sunPos(d) { return (haSun && !params.get('t')) ? haSun : sunCalc(d); }
 function moonPos(d) {
   const rad = Math.PI / 180, days = d.valueOf() / 864e5 - 0.5 + 2440588 - 2451545;
   const Lm = rad * (218.316 + 13.176396 * days), Mm = rad * (134.963 + 13.064993 * days), F = rad * (93.272 + 13.22935 * days);
-  const l = Lm + rad * 6.289 * Math.sin(Mm), b = rad * 5.128 * Math.sin(F), e = rad * 23.4397;
+  // main term + evection + variation: good to well within an hour of the real phase
+  const Ms = rad * (357.5291 + 0.98560028 * days);
+  const Ls = Ms + rad * (1.9148 * Math.sin(Ms) + 0.02 * Math.sin(2 * Ms)) + rad * 102.9372 + Math.PI;
+  const D0 = Lm - Ls;
+  const l = Lm + rad * (6.289 * Math.sin(Mm) + 1.274 * Math.sin(2 * D0 - Mm) + 0.658 * Math.sin(2 * D0) - 0.186 * Math.sin(Ms)), b = rad * 5.128 * Math.sin(F), e = rad * 23.4397;
   const ra = Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
   const dec = Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
-  const phase = mod((d.valueOf() - Date.UTC(2000, 0, 6, 18, 14)) / 864e5, 29.530588853) / 29.530588853;
+  const phase = mod(l - Ls, 2 * Math.PI) / (2 * Math.PI);   // 0 new, .25 first quarter, .5 full, .75 last quarter
   return { ...horizontal(days, ra, dec), phase };
 }
 const azX = (az) => W / 2 + (mod(az, 360) - 180) / 100 * (W / 2);
@@ -142,18 +187,30 @@ async function pollWorld() {
   } catch (e) { }
 }
 
+let seasonNow = '', halloweenNow = false, kerstNow = false, fireworksNow = false;
+function updateSeason() {
+  const d = now();
+  seasonNow = seasonOf(d); halloweenNow = inPeriod('halloween', d); kerstNow = inPeriod('kerst', d);
+  const x = md(d), m = d.getHours() * 60 + d.getMinutes();
+  fireworksNow = (x === '12-31' && m >= 23 * 60 + 30) || (x === '01-01' && m < 45);
+}
+updateSeason();
+const SEASON_TINT = { lente: 'rgba(255,170,215,.05)', zomer: 'rgba(255,225,140,.05)', herfst: 'rgba(255,135,40,.07)', winter: 'rgba(205,225,255,.08)' };
+
 /* ---------- composing each place ---------- */
 const places = [];
 const recent = [];
 function pickFrom(list) {
-  const w = list.map(o => o.rare === 'zeldzaam' ? 0.25 : o.rare === 'heelzeldzaam' ? 0.06 : 1);
+  // seasonal and holiday elements show up a lot more during their own period
+  const w = list.map(o => (o.rare === 'zeldzaam' ? 0.25 : o.rare === 'heelzeldzaam' ? 0.06 : 1) * (o.period && o.period !== 'altijd' ? 3 : 1));
   let r = rnd() * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
   return list[list.length - 1];
 }
 function compose(i) {
   const night = isNightTime(now());
-  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night);
+  const today = now();
+  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv;
   const used = new Set();
   const take = (kinds) => {
     let pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o) && !recent.includes(o.id));
@@ -170,9 +227,10 @@ function compose(i) {
   let nS = on('lucht') ? { rustig: 1, normaal: 1, vol: 1 + (rnd() < .6) }[dens] : 0;
   let nG = on('grond') ? { rustig: 1, normaal: 2, vol: 3 + (rnd() < .4) }[dens] : 0;
   let nF = on('kader') ? 1 : 0;
+  const nT = musicOn ? 1 : 0;   // while music plays, every place gets the tv
   // never more than the maximum number of objects per place: drop random ones
   const maxO = Math.max(1, +(S.max_objects || 9));
-  while (nH + nS + nG + nF > maxO) {
+  while (nH + nS + nG + nF + nT > maxO && nH + nS + nG + nF > 0) {
     const opts = [];
     if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF) opts.push('f');
     const d = opts[Math.floor(rnd() * opts.length)];
@@ -214,6 +272,7 @@ function compose(i) {
   };
   // gather everything first, then place the biggest pieces first so they get the good spots
   const want = [];
+  if (nT) want.push({ o: TV(), layer: 2, tv: true });
   if (nF) { const o = take(['kader']); if (o) want.push({ o, layer: 2 }); }
   for (let k = 0; k < nG; k++) { const o = take(['grond']); if (o) want.push({ o, layer: 2 }); }
   for (let k = 0; k < nH; k++) { const o = take(['horizon']); if (o) want.push({ o, layer: 1 }); }
@@ -256,10 +315,12 @@ function compose(i) {
     const it = { o, layer: 2, dx, depth: c.depth, h: c.h, flip: rnd() < .5 && o.kind === 'grond' && !o.sign };
     if (o.sign) { it.color = (o.colors || ['paars'])[Math.floor(rnd() * (o.colors || ['paars']).length)]; it.word = WORDS[Math.floor(rnd() * WORDS.length)]; }
     if (o.kind === 'kader') it.photo = PHOTOS[Math.floor(rnd() * PHOTOS.length)];
+    if (c.tv) { it.tv = true; it.born = performance.now(); }
     items.push(it);
   }
   items.sort((p, q) => (p.layer - q.layer) || ((p.depth || 0) - (q.depth || 0)));
   places[i] = { items, night };
+  if (musicOn) addTV(i);
 }
 for (let i = 0; i < N; i++) compose(i);
 
@@ -268,7 +329,7 @@ let clouds = [];
 function makeClouds() {
   clouds = [];
   if (!CL.length) return;
-  const n = { helder: 2, licht: 8, bewolkt: 16, regen: 18, mist: 6 }[weather] || 6;
+  const n = { helder: 2, licht: 8, bewolkt: 16, regen: 18, mist: 6, sneeuw: 14 }[weather] || 6;
   let prev = null;
   for (let k = 0; k < n; k++) {
     let c = CL[Math.floor(rnd() * CL.length)];
@@ -295,6 +356,7 @@ function visible(i) {
 }
 function schedule() {
   const d = now();
+  updateSeason();
   if (remShown && !params.get('r') && !KamielReminder.isActive(remShown, d)) remShown = null;
   if (isNightTime(d)) {
     const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -320,6 +382,94 @@ function arrived() { arrivals++; showReminder(pickReminder()); }
 showReminder(pickReminder());   // on start-up too
 if (document.fonts) document.fonts.load(`700 40px Arimo`).then(() => { if (remShown) showReminder(remShown); }).catch(() => {});
 
+/* ---------- live: messages, music, departures ---------- */
+let message = null, msgCanvas = null, msgAlpha = 0, dismissed = new Set(), lastTrigger = null;
+let deps = null, depsUntil = 0, depsAlpha = 0, ring = null;
+function setMessage(m) {
+  if (m && dismissed.has(m.id)) m = null;
+  if ((m && m.id) === (message && message.id)) return;
+  message = m;
+  if (m) msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign: m.sign });
+}
+function addTV(i) {
+  const p = places[i]; if (!p || p.items.some(x => x.tv)) return;
+  const o = TV(), asp0 = o.size[0] / o.size[1];
+  // the tv always gets a spot: if the place is full, the smallest standing objects make room
+  for (let round = 0; round < 6; round++) {
+    const h = H * (round < 2 ? .24 + rnd() * .1 : .2), w = h * asp0;
+    if (tryTV(p, o, h, w)) return;
+    if (round >= 1) {
+      const standing = p.items.filter(x => x.layer > 0 && !x.tv);
+      if (!standing.length) continue;
+      standing.sort((a, b) => a.h * a.o.size[0] / a.o.size[1] - b.h * b.o.size[0] / b.o.size[1]);
+      p.items.splice(p.items.indexOf(standing[0]), 1);
+    }
+  }
+}
+function tryTV(p, o, h, w) {
+  const used = p.items.filter(x => x.layer > 0).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
+  for (let tries = 0; tries < 30; tries++) {
+    const side = rnd() < .5 ? -1 : 1, lo = 94 + w / 2, hi = PLACE / 2 - 24 - w / 2; if (hi < lo) return;
+    const dx = side * (lo + rnd() * (hi - lo));
+    if (used.every(([l, r]) => dx + w / 2 + 30 < l || dx - w / 2 - 30 > r)) {
+      p.items.push({ o, layer: 2, dx, depth: .55 + rnd() * .35, h, flip: false, tv: true, born: performance.now() });
+      p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
+      return true;
+    }
+  }
+  return false;
+}
+async function pollLive() {
+  let j; try { j = await (await fetch('api/live', { cache: 'no-store' })).json(); } catch { return; }
+  setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
+  const m = j.media, playing = !!(m && m.playing);
+  if (playing && m.art && m.art !== coverKey) { coverKey = m.art; coverImg = load('api/cover?v=' + m.art); }
+  if (playing !== musicOn) {
+    musicOn = playing;
+    for (let i = 0; i < N; i++) {
+      if (musicOn) addTV(i);
+      else if (!visible(i)) places[i].items = places[i].items.filter(x => !x.tv);
+    }
+  }
+  const tr = j.trigger;
+  if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showDepartures();
+  if (tr) lastTrigger = tr.changed;
+}
+async function showDepartures() {
+  try { deps = (await (await fetch('api/departures', { cache: 'no-store' })).json()).blocks; } catch { deps = []; }
+  depsUntil = performance.now() + 25000;
+}
+function drawDepartures() {
+  const want = performance.now() < depsUntil ? 1 : 0;
+  depsAlpha += Math.sign(want - depsAlpha) * Math.min(Math.abs(want - depsAlpha), .05);
+  if (depsAlpha <= 0 || !deps) return;
+  const rows = [];
+  if (!deps.length) rows.push(['', 'GEEN VERTREKKEN GEVONDEN', '']);
+  for (const b of deps) {
+    rows.push(['▶ ' + b.label, '', '']);
+    if (!b.lines.length) rows.push(['', 'NIETS IN DE KOMENDE TIJD', '']);
+    for (const l of b.lines) rows.push([l.line, l.dest, l.min === null ? '' : l.min === 0 ? 'NU' : l.min + ' MIN']);
+  }
+  const lh = 34, top = Math.max(150, H - 60 - rows.length * lh);
+  ctx.save(); ctx.globalAlpha = depsAlpha;
+  ctx.fillStyle = 'rgba(0,0,30,.45)'; ctx.fillRect(40, top - 30, W - 80, rows.length * lh + 30);
+  ctx.font = "34px 'VT323', ui-monospace, monospace"; ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(255,255,255,.6)'; ctx.shadowBlur = 4; ctx.fillStyle = '#fff';
+  rows.forEach((r, k) => {
+    const y = top + k * lh;
+    ctx.textAlign = 'left'; ctx.fillText(r[0], 70, y); ctx.fillText(r[1], r[0] && !r[1] ? 70 : 220, y);
+    ctx.textAlign = 'right'; ctx.fillText(r[2], W - 70, y);
+  });
+  ctx.restore();
+}
+// a soft ring where a tap started something
+function drawRing() {
+  if (!ring) return;
+  const a = (performance.now() - ring.t0) / 900; if (a > 1) { ring = null; return; }
+  ctx.save(); ctx.strokeStyle = `rgba(255,255,255,${1 - a})`; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(ring.x, ring.y, 20 + a * 60, 0, 7); ctx.stroke(); ctx.restore();
+}
+
 function step(dt) {
   t += dt;
   if (walking) {
@@ -327,7 +477,9 @@ function step(dt) {
     if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); arrived(); }
   }
   // fade in when he stands still, out as soon as he walks on or the reminder's time is over
-  const want = remShown && !walking ? 1 : 0;
+  const want = remShown && !walking && !message ? 1 : 0;
+  if (message && message.until * 1000 < Date.now()) message = null;
+  msgAlpha += Math.sign((message ? 1 : 0) - msgAlpha) * Math.min(Math.abs((message ? 1 : 0) - msgAlpha), dt / 1);
   remAlpha += Math.sign(want - remAlpha) * Math.min(Math.abs(want - remAlpha), dt / 1.2);
   const night = isNightTime(now());
   for (let i = 0; i < N; i++) {
@@ -365,13 +517,24 @@ function signText(g, o, word, w, h, color) {
   lines.forEach((l, i) => g.fillText(l, pw * .4, ph * .5 + (i - (lines.length - 1) / 2) * fs * 1.05));
   g.restore();
 }
+// snow on the tv when the music stops
+const STATIC = [0, 1, 2].map(() => {
+  const c = document.createElement('canvas'); c.width = 96; c.height = 72; const g = c.getContext('2d'), im = g.createImageData(96, 72);
+  for (let i = 0; i < im.data.length; i += 4) { const v = 40 + Math.random() * 200; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); return c;
+});
 function itemCanvas(it, w, h) {
   const o = it.o, base = o.sign ? (o.vimg[it.color] || o.img) : o.img;
   if (!ready(base)) return null;
-  const photo = o.kind === 'kader' ? photoImg(it.photo) : null;
+  let photo = o.kind === 'kader' ? photoImg(it.photo) : null, key = 'p';
+  if (it.tv) {
+    if (musicOn && ready(coverImg)) { photo = coverImg; key = 'c' + coverKey; }
+    else { const f = Math.floor(t * 12) % STATIC.length; photo = STATIC[f]; key = 's' + f; }
+  }
   if (o.kind === 'kader' && (!ready(photo) || !ready(o.maskImg) || !o.hole)) return base;
   const W2 = Math.ceil(w), H2 = Math.ceil(h);
-  if (it.cache && it.cache.width === W2 && it.cache.height === H2) return it.cache;
+  if (it.cache && it.cache.width === W2 && it.cache.height === H2 && it.cacheKey === key) return it.cache;
+  it.cacheKey = key;
   const c = document.createElement('canvas'); c.width = W2; c.height = H2; const g = c.getContext('2d');
   if (o.kind === 'kader') {
     const [hx0, hy0, hx1, hy1] = o.hole, bx = hx0 * w, by = hy0 * h, bw = (hx1 - hx0) * w, bh = (hy1 - hy0) * h;
@@ -393,9 +556,11 @@ function drawSky(sun, moon) {
       ctx.fillRect(mod(i * 97.13 - kx * .05, W), (i * 53.7) % (HOR0 - 40), 1.6, 1.6);
     }
   }
+  sunXY = null; moonXY = null;
   if (sun.alt > -6) {
     const x = azX(sun.az), y = altY(sun.alt), tint = tintFor(sun.alt);
     const dim = weather === 'helder' || weather === 'licht' ? 1 : weather === 'mist' ? .3 : .1, r = 30 + tint * 8;
+    if (dim >= .3 && sun.alt > 0) sunXY = { x, y };   // only tappable when you can see it
     const gl = ctx.createRadialGradient(x, y, r * .5, x, y, r * 5);
     gl.addColorStop(0, `rgba(255,${230 - tint * 70},${190 - tint * 110},${.55 * dim})`); gl.addColorStop(1, 'rgba(255,220,180,0)');
     ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
@@ -407,17 +572,44 @@ function drawSky(sun, moon) {
     ctx.save(); ctx.globalAlpha = a;
     const gl = ctx.createRadialGradient(x, y, r, x, y, r * 4); gl.addColorStop(0, 'rgba(220,230,255,.25)'); gl.addColorStop(1, 'rgba(220,230,255,0)');
     ctx.fillStyle = gl; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8);
-    ctx.fillStyle = '#eef0ff'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
-    const p = moon.phase, k = Math.cos(p * 2 * Math.PI);
-    ctx.fillStyle = rgb(top); ctx.beginPath();
-    if (p < .5) { ctx.arc(x, y, r + .5, Math.PI / 2, -Math.PI / 2, false); ctx.ellipse(x, y, Math.abs(k) * r, r + .5, 0, -Math.PI / 2, Math.PI / 2, k < 0); }
-    else { ctx.arc(x, y, r + .5, -Math.PI / 2, Math.PI / 2, false); ctx.ellipse(x, y, Math.abs(k) * r, r + .5, 0, Math.PI / 2, -Math.PI / 2, k < 0); }
-    ctx.fill(); ctx.restore();
+    // the lit side points to where the sun is (even when the sun is below the horizon)
+    if (a > .3) moonXY = { x, y };
+    const sp = sunCalc(now());
+    let daz = mod(sp.az - moon.az + 180, 360) - 180;
+    const ang = Math.atan2(-(sp.alt - moon.alt), daz);
+    ctx.drawImage(moonDisc(moon.phase, ang, r, halloweenNow ? [255, 176, 92] : [238, 240, 255]), x - r - 2, y - r - 2);
+    ctx.restore();
   }
+}
+const moonCv = document.createElement('canvas');
+let moonKey = '';
+function moonDisc(p, ang, r, col) {
+  const key = [p.toFixed(3), ang.toFixed(2), r, col].join();
+  if (key === moonKey) return moonCv;
+  moonKey = key;
+  const S2 = Math.ceil(r * 2 + 4); moonCv.width = moonCv.height = S2;
+  const g = moonCv.getContext('2d'), c = S2 / 2;
+  g.clearRect(0, 0, S2, S2);
+  // earthshine: the dark part is faintly visible
+  g.fillStyle = `rgba(${col.join(',')},.10)`; g.beginPath(); g.arc(c, c, r, 0, 7); g.fill();
+  const lit = document.createElement('canvas'); lit.width = lit.height = S2; const l = lit.getContext('2d');
+  l.translate(c, c); l.rotate(ang);
+  const k = Math.cos(p * 2 * Math.PI);           // 1 new … -1 full
+  l.fillStyle = rgb(col);
+  l.beginPath(); l.arc(0, 0, r, -Math.PI / 2, Math.PI / 2); l.fill();          // the half facing the sun
+  l.beginPath(); l.ellipse(0, 0, Math.abs(k) * r + .01, r, 0, 0, 7);
+  if (k > 0) { l.globalCompositeOperation = 'destination-out'; l.fill(); l.globalCompositeOperation = 'source-over'; }  // crescent
+  else l.fill();                                                                // gibbous
+  // a few soft "seas" so it reads as the moon
+  l.globalCompositeOperation = 'source-atop'; l.rotate(-ang);
+  l.fillStyle = 'rgba(120,125,150,.18)';
+  [[-.3, -.25, .28], [.2, -.05, .22], [-.05, .35, .18], [.35, .3, .12]].forEach(([u, v, s]) => { l.beginPath(); l.arc(u * r, v * r, s * r, 0, 7); l.fill(); });
+  g.drawImage(lit, 0, 0);
+  return moonCv;
 }
 function drawClouds(sun) {
   const L = light(sun.alt), warm = tintFor(sun.alt), cam = kx * .25;
-  const dark = weather === 'regen' ? .55 : weather === 'bewolkt' ? .3 : 0;
+  const dark = weather === 'regen' ? .55 : weather === 'bewolkt' ? .3 : weather === 'sneeuw' ? .2 : 0;
   const prev = ctx; ctx = cctx; ctx.clearRect(0, 0, W, H);
   for (const cl of clouds) {
     const img = cl.c.img; if (!ready(img)) continue;
@@ -439,8 +631,9 @@ function drawClouds(sun) {
 const footCv = document.createElement('canvas');
 function footOf(img) {
   if (img._foot) return img._foot;
-  const sc = Math.min(1, 160 / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = footCv.width = Math.max(1, Math.round(img.naturalWidth * sc)), h = footCv.height = Math.max(1, Math.round(img.naturalHeight * sc));
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const sc = Math.min(1, 160 / Math.max(iw, ih));
+  const w = footCv.width = Math.max(1, Math.round(iw * sc)), h = footCv.height = Math.max(1, Math.round(ih * sc));
   const g = footCv.getContext('2d', { willReadFrequently: true }); g.clearRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
   let d; try { d = g.getImageData(0, 0, w, h).data; } catch { return (img._foot = { y: 1, x0: .3, x1: .7 }); }
   let bottom = h - 1;
@@ -450,6 +643,8 @@ function footOf(img) {
   if (x1 < x0) { x0 = w * .3; x1 = w * .7; }
   return (img._foot = { y: (bottom + 1) / h, x0: x0 / w, x1: (x1 + 1) / w });
 }
+let sunXY = null, moonXY = null;
+let hits = [];   // where everything was drawn in the last frame, for tapping
 function placeItems(layer) {
   const cam = kx - W / 2;
   for (let i = 0; i < N; i++) for (const it of places[i].items) {
@@ -473,6 +668,8 @@ function placeItems(layer) {
       else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
       ctx.save();
       if (layer === 1) ctx.globalAlpha = .93;
+      if (it.born) ctx.globalAlpha = Math.min(1, (performance.now() - it.born) / 1500);
+      hits.push({ it, x: sx, y, w, h });
       if (layer === 2) {
         // soft contact shadow right under the part that touches the ground
         const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
@@ -502,6 +699,19 @@ function drawKamiel() {
   if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); } else ctx.drawImage(im, x, y, w, h);
   ctx.restore();
 }
+let rockets = [];
+function drawFireworks() {
+  if (rockets.length < 4 && rnd() < .03) rockets.push({ x: 120 + rnd() * (W - 240), y: 80 + rnd() * 160, t0: t, hue: Math.floor(rnd() * 360) });
+  rockets = rockets.filter(r => t - r.t0 < 2.2);
+  for (const r of rockets) {
+    const a = t - r.t0, rad = 20 + a * 60, fade = Math.max(0, 1 - a / 2.2);
+    ctx.fillStyle = `hsla(${r.hue},90%,70%,${fade})`;
+    for (let k = 0; k < 28; k++) {
+      const an = k / 28 * Math.PI * 2;
+      ctx.beginPath(); ctx.arc(r.x + Math.cos(an) * rad, r.y + Math.sin(an) * rad + a * a * 12, 1.8, 0, 7); ctx.fill();
+    }
+  }
+}
 function drawWeather(sun) {
   const L = light(sun.alt);
   if (weather === 'regen') {
@@ -509,6 +719,15 @@ function drawWeather(sun) {
     for (let i = 0; i < 140; i++) { const x = mod(i * 71.3 + t * 40, W), y = mod(i * 37.1 + t * 640, H); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); }
     ctx.stroke();
   }
+  const snowing = weather === 'sneeuw' ? 160 : (kerstNow && L < .5 ? 45 : 0);
+  if (snowing) {
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (let i = 0; i < snowing; i++) {
+      const sp = 18 + (i % 7) * 6, x = mod(i * 83.7 + Math.sin(t * .7 + i) * 18 - kx * .15, W), y = mod(i * 41.3 + t * sp, H);
+      ctx.beginPath(); ctx.arc(x, y, 1 + (i % 3) * .7, 0, 7); ctx.fill();
+    }
+  }
+  if (fireworksNow) drawFireworks();
   if (weather === 'mist') {
     const g = ctx.createLinearGradient(0, HOR0 - 140, 0, H);
     g.addColorStop(0, 'rgba(225,230,235,0)'); g.addColorStop(.35, `rgba(225,230,235,${.55 * (0.4 + .6 * L)})`); g.addColorStop(1, `rgba(225,230,235,${.25 * (0.4 + .6 * L)})`);
@@ -542,14 +761,17 @@ function osd(d) {
 function frame() {
   const d = now(), sun = sunPos(d), moon = moonPos(d), L = light(sun.alt);
   ctx = mainCtx; drawSky(sun, moon);
-  ctx = wctx; ctx.clearRect(0, 0, W, H);
+  ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
   placeItems(0); drawClouds(sun); placeItems(1); drawGround(); placeItems(2); drawKamiel();
   ctx.globalCompositeOperation = 'source-atop';
+  if (S.season_colors !== false && SEASON_TINT[seasonNow]) { ctx.fillStyle = SEASON_TINT[seasonNow]; ctx.fillRect(0, 0, W, H); }
   if (L < 1) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
   drawWeather(sun);
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
+  if (msgCanvas && msgAlpha > 0) { ctx.globalAlpha = msgAlpha; ctx.drawImage(msgCanvas, 0, 0); ctx.globalAlpha = 1; }
+  drawDepartures(); drawRing();
   drawVHS(); osd(d);
 }
 function loop(ts) { const dt = Math.min(.05, (ts - last) / 1000); last = ts; step(dt); frame(); requestAnimationFrame(loop); }
@@ -558,7 +780,27 @@ pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
 setInterval(pollWorld, 120000);
 setInterval(schedule, 15000);
-document.addEventListener('pointerup', () => { if (S.tap_url) location.href = S.tap_url; });
+/* ---------- tapping: message, sun, moon, an element, or the empty scene ---------- */
+const post = (u) => fetch(u, { method: 'POST' }).catch(() => {});
+document.addEventListener('pointerup', (e) => {
+  const r = cv.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H);
+  const x = (e.clientX - r.left - (r.width - W * sc) / 2) / sc, y = (e.clientY - r.top - (r.height - H * sc) / 2) / sc;
+  if (message && msgAlpha > .3) { dismissed.add(message.id); message = null; return; }          // "read it"
+  if (performance.now() < depsUntil) { depsUntil = 0; return; }
+  const near = (p, rad) => p && Math.hypot(x - p.x, y - p.y) < rad;
+  if (S.sun_script && near(sunXY, 70)) { ring = { x: sunXY.x, y: sunXY.y, t0: performance.now() }; post('api/tap/sun'); return; }
+  if (S.moon_script && near(moonXY, 60)) { ring = { x: moonXY.x, y: moonXY.y, t0: performance.now() }; post('api/tap/moon'); return; }
+  for (let k = hits.length - 1; k >= 0; k--) {
+    const hh = hits[k], tap = hh.it.o.tap;
+    if (!tap || tap.action === 'niets' || x < hh.x || x > hh.x + hh.w || y < hh.y || y > hh.y + hh.h) continue;
+    if (tap.action === 'vertrek') { showDepartures(); return; }
+    if (tap.action === 'script') { ring = { x, y, t0: performance.now() }; post('api/tap/el-' + hh.it.o.id); return; }
+  }
+  const act = S.empty_tap || 'url';
+  if (act === 'vertrek') showDepartures();
+  else if (act === 'url' && S.tap_url) location.href = S.tap_url;
+});
+pollLive(); setInterval(pollLive, 5000);
 try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (e) { }
 })();
 </script>
