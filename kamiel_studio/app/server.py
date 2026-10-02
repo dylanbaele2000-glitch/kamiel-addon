@@ -49,6 +49,7 @@ DEFAULT_SETTINGS = {
     "night_end": "06:00",
     "night_walks": ["00:00", "03:00"],
     "min_frames": 1,
+    "frame_ratio": 2,
     "tap_url": "",
     "osd_entities": [],
     "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "LAVENDELSTRAAT",
@@ -251,9 +252,52 @@ async def api_upload_assets(request):
     return web.json_response({"added": added, "failed": failed})
 
 
+def _make_sign(asset, on):
+    """Turn the text-sign option on or off for an existing element, using its original upload."""
+    for k in [k for k in asset["files"] if k.startswith("kleur_")]:
+        remove_files([asset["files"].pop(k)])
+    for k in ("plate", "colors"):
+        asset.pop(k, None)
+    asset["sign"] = False
+    if not on:
+        return asset
+    orig = asset.get("original")
+    path = os.path.join(ORIG, os.path.basename(orig)) if orig else None
+    if not path or not os.path.exists(path):
+        raise ValueError("Het origineel van dit element is niet bewaard. Verwijder het en voeg het opnieuw toe met 'Dit is een tekstbord' aangevinkt.")
+    with open(path, "rb") as f:
+        imgs, meta = process.process_asset(f.read(), "grond", True)
+    if not meta.get("plate"):
+        raise ValueError("Op dit element werd geen gekleurd bordvlak gevonden.")
+    for key, arr in imgs.items():
+        if key.startswith("kleur_"):
+            asset["files"][key] = save_img(arr, f"{asset['id']}_{key}_{uuid.uuid4().hex[:4]}")
+    asset.update(meta)
+    asset["sign"] = True
+    return asset
+
+
 async def api_edit_asset(request):
     aid = request.match_info["id"]
     body = await request.json()
+    if "sign" in body:
+        db = load_db()
+        a = next((x for x in db["assets"] if x["id"] == aid), None)
+        if not a:
+            raise web.HTTPNotFound()
+        if a["kind"] != "grond":
+            raise web.HTTPBadRequest(text="Alleen grondelementen kunnen een tekstbord zijn.")
+        try:
+            updated = await run_blocking(_make_sign, dict(a, files=dict(a["files"])), bool(body["sign"]))
+        except ValueError as e:
+            raise web.HTTPBadRequest(text=str(e))
+        async with lock:
+            db = load_db()
+            for i, x in enumerate(db["assets"]):
+                if x["id"] == aid:
+                    db["assets"][i] = updated
+            save_db(db)
+        return web.json_response(updated)
     async with lock:
         db = load_db()
         for a in db["assets"]:
@@ -368,6 +412,8 @@ async def api_settings(request):
                 s[k] = str(body[k])[:5]
         if "night_walks" in body:
             s["night_walks"] = [str(x)[:5] for x in body["night_walks"] if str(x).strip()][:12]
+        if "frame_ratio" in body and int(body["frame_ratio"]) in (0, 1, 2, 4, 8):
+            s["frame_ratio"] = int(body["frame_ratio"])
         if "min_frames" in body:
             s["min_frames"] = max(0, min(8, int(body["min_frames"])))
         if "tap_url" in body:

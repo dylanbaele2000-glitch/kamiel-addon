@@ -219,8 +219,15 @@ textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
           <span>Tijden gescheiden door komma's, bijvoorbeeld 00:00, 03:00.</span>
           <input type="text" id="sNightWalks">
         </label>
-        <label class="field" for="sFrames">Minstens zoveel kaders in de wereld
-          <input type="number" id="sFrames" min="0" max="8">
+        <label class="field" for="sFrames">Kaders met foto's
+          <span>Op hoeveel plekken er een kader staat.</span>
+          <select id="sFrames">
+            <option value="1">Op elke plek</option>
+            <option value="2">Op 1 op 2 plekken</option>
+            <option value="4">Op 1 op 4 plekken</option>
+            <option value="8">Op 1 op 8 plekken</option>
+            <option value="0">Nooit</option>
+          </select>
         </label>
       </div>
       <h2 style="margin-top:8px">Onder de datum en tijd</h2>
@@ -319,6 +326,7 @@ function renderLib() {
         <div class="edit">
           <label><input type="checkbox" data-k="dag" ${a.moment !== 'nacht' ? 'checked' : ''}> Overdag</label>
           <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
+          ${a.kind === 'grond' ? `<label><input type="checkbox" data-sign ${a.sign ? 'checked' : ''}> Tekstbord</label>` : ''}
           <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         </div>
         <div class="actions"><button type="button" class="danger" data-act="del">Verwijderen</button><span class="status"></span></div>
@@ -334,6 +342,12 @@ function renderLib() {
       el.querySelector('.thumb').classList.toggle('night', nacht && !dag);
     };
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', save));
+    const sg = el.querySelector('[data-sign]');
+    if (sg) sg.addEventListener('change', async () => {
+      sg.disabled = true; status(st, 'Bezig…');
+      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sign: sg.checked }) });
+      if (r.ok) { await load(); } else { status(st, await r.text(), 'err'); sg.checked = !sg.checked; sg.disabled = false; }
+    });
     const del = el.querySelector('[data-act=del]');
     del.addEventListener('click', async () => {
       if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { del.dataset.sure = ''; del.textContent = 'Verwijderen'; }, 4000); return; }
@@ -406,7 +420,7 @@ $('wordsForm').addEventListener('submit', async (e) => {
 async function renderSettings() {
   const s = world.settings;
   $('sWalk').value = s.walk_minutes; $('sNightStart').value = s.night_start; $('sNightEnd').value = s.night_end;
-  $('sNightWalks').value = s.night_walks.join(', '); $('sFrames').value = s.min_frames;
+  $('sNightWalks').value = s.night_walks.join(', '); $('sFrames').value = String(s.frame_ratio === undefined ? 2 : s.frame_ratio);
   $('words').value = s.words.join('\n');
   const sel = $('sWeather');
   try {
@@ -425,7 +439,7 @@ async function renderSettings() {
 $('setForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value, night_start: $('sNightStart').value, night_end: $('sNightEnd').value,
-    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), min_frames: +$('sFrames').value,
+    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), frame_ratio: +$('sFrames').value,
     tap_url: $('sTap').value, osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
