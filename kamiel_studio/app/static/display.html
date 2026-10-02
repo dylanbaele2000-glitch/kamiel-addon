@@ -47,11 +47,15 @@ const ready = (i) => i && i.complete && i.naturalWidth > 0;
 /* ---------- data from the add-on ---------- */
 let world = await (await fetch('api/world', { cache: 'no-store' })).json();
 const S = world.settings;
+const SINK = (S.horizon_sink === undefined ? 3 : +S.horizon_sink) / 100;   // how far horizon objects sink behind the ground
 const pano = world.panorama ? load('media/' + world.panorama.file) : null;
 const PW = world.panorama ? world.panorama.width : PLACE * 8;
 const N = Math.max(1, Math.round(PW / PLACE));
 const HZ = world.panorama ? world.panorama.horizon : null;
 const horY = (wx) => HZ ? HZ[mod(Math.round(wx / 8), HZ.length)] : HOR0;
+// lowest ground point (largest y) between two x positions: an object standing there is never floating,
+// and where the ground is higher it simply disappears a little behind the hill
+const baseY = (wxc, w) => { let m = -1; for (let x = wxc - w / 2; x <= wxc + w / 2; x += 8) m = Math.max(m, horY(x)); return m < 0 ? horY(wxc) : m; };
 const K = {}; ['stand', 'blink', 'walk1', 'walk2', 'walk3', 'walk4'].forEach(k => K[k] = load('static/kamiel/' + k + '.webp'));
 // images load only when an element is actually placed somewhere, so a big library stays light on the tablet
 const lazy = (obj, key, src) => { let im = null; Object.defineProperty(obj, key, { enumerable: true, get: () => im || (im = load(src)) }); };
@@ -219,17 +223,35 @@ function compose(i) {
     else c.h = sizeFor(c.o, rnd()) * (/oog|eye/i.test(c.o.label || '') ? .6 : 1);
     c.w = c.h * asp(c.o);
   }
-  want.sort((p, q) => q.w - p.w);
+  // sky last: it has to stay clear of everything that stands on the ground or the horizon
+  want.sort((p, q) => ((p.layer === 0) - (q.layer === 0)) || (q.w - p.w));
+  const rects = [];   // [x0, y0, x1, y1] of everything standing, in place coordinates
+  const wx0 = i * PLACE + PLACE / 2;
   for (const c of want) {
     const o = c.o;
     if (c.layer === 0) {
-      const y = 40 + rnd() * Math.max(10, 300 - c.h);
-      const dx = spot(c.w, takenSky, y + c.h > KTOP - 10); if (dx === null) continue;
-      items.push({ o, layer: 0, dx, y, h: c.h, flip: rnd() < .5 });
+      let done = false;
+      for (let tries = 0; tries < 18 && !done; tries++) {
+        const y = 30 + rnd() * Math.max(10, 320 - c.h);
+        const lane = y + c.h > KTOP - 10;
+        const side = rnd() < .5 ? -1 : 1, lo = (lane ? LANE : 0) + c.w / 2, hi = HALF - EDGE - c.w / 2;
+        if (hi < lo) continue;
+        const dx = side * (lo + rnd() * (hi - lo));
+        const x0 = dx - c.w / 2 - 24, x1 = dx + c.w / 2 + 24;
+        if (rects.some(r => x0 < r[2] && x1 > r[0] && y - 24 < r[3] && y + c.h + 24 > r[1])) continue;
+        if (takenSky.some(([l, r]) => !(dx + c.w / 2 + GAP < l || dx - c.w / 2 - GAP > r))) continue;
+        takenSky.push([dx - c.w / 2, dx + c.w / 2]);
+        items.push({ o, layer: 0, dx, y, h: c.h, flip: rnd() < .5 }); done = true;
+      }
       continue;
     }
     const dx = spot(c.w, taken, true); if (dx === null) continue;
-    if (c.layer === 1) { items.push({ o, layer: 1, dx, h: c.h, sink: .1 + rnd() * .1, flip: rnd() < .35 }); continue; }
+    if (c.layer === 1) {
+      const top = baseY(wx0 + dx, c.w) - c.h;
+      rects.push([dx - c.w / 2, top, dx + c.w / 2, H]);
+      items.push({ o, layer: 1, dx, h: c.h, flip: rnd() < .35 }); continue;
+    }
+    { const hy = horY(wx0 + dx); rects.push([dx - c.w / 2, hy + 14 + c.depth * Math.max(20, FEET - 8 - hy - 14) - c.h, dx + c.w / 2, H]); }
     const it = { o, layer: 2, dx, depth: c.depth, h: c.h, flip: rnd() < .5 && o.kind === 'grond' && !o.sign };
     if (o.sign) { it.color = (o.colors || ['paars'])[Math.floor(rnd() * (o.colors || ['paars']).length)]; it.word = WORDS[Math.floor(rnd() * WORDS.length)]; }
     if (o.kind === 'kader') it.photo = PHOTOS[Math.floor(rnd() * PHOTOS.length)];
@@ -418,7 +440,14 @@ function placeItems(layer) {
       const f = layer === 0 ? null : footOf(o.img);
       let y;
       if (layer === 0) y = it.y;
-      else if (layer === 1) y = horY(wx) + h * it.sink - h * f.y;
+      else if (layer === 1) {
+        if (it.base === undefined) {
+          const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
+          const fw = Math.max(8, w * (fx1 - fx0)), fc = wx - w / 2 + w * (fx0 + fx1) / 2;
+          it.base = baseY(fc - k * PW, fw);
+        }
+        y = it.base + h * SINK - h * f.y;
+      }
       else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
       ctx.save();
       if (layer === 1) ctx.globalAlpha = .93;
