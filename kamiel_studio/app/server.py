@@ -197,6 +197,7 @@ async def api_world(request):
         "photos": db["photos"],
         "panorama": db.get("panorama"),
         "settings": db["settings"],
+        "reminders": db.get("reminders", []),
     })
 
 
@@ -511,6 +512,67 @@ async def api_settings(request):
     return web.json_response(s)
 
 
+# ----------------------------------------------------------------- reminders
+REPEATS = ("once", "daily", "weekly", "monthly", "yearly")
+POSITIONS = ("midden", "boven", "onder")
+
+
+def _clean_reminder(body, old=None):
+    r = dict(old or {"id": uuid.uuid4().hex[:10]})
+    hm = lambda v, d: v if isinstance(v, str) and len(v) == 5 and v[2] == ":" and v.replace(":", "").isdigit() else d
+    day = lambda v: v if isinstance(v, str) and len(v) == 10 and v[4] == "-" and v[7] == "-" else ""
+    r["text"] = str(body.get("text", r.get("text", ""))).strip()[:200]
+    r["active"] = bool(body.get("active", r.get("active", True)))
+    r["repeat"] = body.get("repeat") if body.get("repeat") in REPEATS else r.get("repeat", "weekly")
+    r["date"] = day(body.get("date", r.get("date", "")))
+    r["until"] = day(body.get("until", r.get("until", "")))
+    r["days"] = sorted({int(d) for d in body.get("days", r.get("days", [])) if str(d).isdigit() and 1 <= int(d) <= 7})
+    r["every_weeks"] = max(1, min(8, int(body.get("every_weeks", r.get("every_weeks", 1)) or 1)))
+    r["month_day"] = max(1, min(31, int(body.get("month_day", r.get("month_day", 1)) or 1)))
+    r["from"] = hm(body.get("from", r.get("from")), "18:00")
+    r["to"] = hm(body.get("to", r.get("to")), "23:00")
+    r["scenes"] = max(1, min(20, int(body.get("scenes", r.get("scenes", 3)) or 3)))
+    col = str(body.get("color", r.get("color", "#c8202a")))
+    r["color"] = col if len(col) == 7 and col.startswith("#") else "#c8202a"
+    r["position"] = body.get("position") if body.get("position") in POSITIONS else r.get("position", "midden")
+    return r
+
+
+async def api_add_reminder(request):
+    body = await request.json()
+    async with lock:
+        db = load_db()
+        r = _clean_reminder(body)
+        db.setdefault("reminders", []).append(r)
+        save_db(db)
+    return web.json_response(r)
+
+
+async def api_edit_reminder(request):
+    rid = request.match_info["id"]
+    body = await request.json()
+    async with lock:
+        db = load_db()
+        for i, r in enumerate(db.get("reminders", [])):
+            if r["id"] == rid:
+                db["reminders"][i] = _clean_reminder(body, r)
+                save_db(db)
+                return web.json_response(db["reminders"][i])
+    raise web.HTTPNotFound()
+
+
+async def api_delete_reminder(request):
+    rid = request.match_info["id"]
+    async with lock:
+        db = load_db()
+        before = len(db.get("reminders", []))
+        db["reminders"] = [r for r in db.get("reminders", []) if r["id"] != rid]
+        if len(db["reminders"]) == before:
+            raise web.HTTPNotFound()
+        save_db(db)
+    return web.json_response({"ok": True})
+
+
 # ----------------------------------------------------------------- apps
 def common_routes(app):
     app.router.add_get("/display", page("display.html"))
@@ -532,6 +594,9 @@ def make_studio():
     app.router.add_delete("/api/photos/{id}", api_delete_photo)
     app.router.add_post("/api/panorama", api_upload_panorama)
     app.router.add_put("/api/settings", api_settings)
+    app.router.add_post("/api/reminders", api_add_reminder)
+    app.router.add_put("/api/reminders/{id}", api_edit_reminder)
+    app.router.add_delete("/api/reminders/{id}", api_delete_reminder)
     return app
 
 

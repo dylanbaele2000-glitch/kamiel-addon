@@ -71,7 +71,7 @@ legend{font-weight:600;margin-bottom:6px;padding:0}
 .pano img{display:block;height:180px;max-width:none}
 label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width:420px}
 label.field span{font-weight:400;color:var(--muted);font-size:13px}
-input[type=number],input[type=time],input[type=text],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+input[type=number],input[type=time],input[type=date],input[type=text],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
 table.chances{border-collapse:collapse;width:auto}
 table.chances th,table.chances td{text-align:left;padding:6px 14px 6px 0}
@@ -81,7 +81,23 @@ label.pct input{width:76px}
 .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
 .empty{color:var(--muted);padding:20px;text-align:center;border:1px dashed var(--line);border-radius:12px}
 [hidden]{display:none!important}
+.rems{display:flex;flex-direction:column;gap:16px}
+.rem{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:18px;border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--card)}
+@media (max-width:760px){.rem{grid-template-columns:1fr}}
+.rem canvas{width:100%;aspect-ratio:16/10;border-radius:10px;display:block;background:#2f6be8}
+.rem .when{font-size:13px;color:var(--muted);margin-top:8px}
+.rem .when.on{color:var(--ok);font-weight:600}
+.rem .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-content:start}
+.rem .fields .full{grid-column:1/-1}
+.rem label.f{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:14px}
+.rem textarea{min-height:70px;resize:vertical;font-family:var(--f-ui);text-transform:none}
+.days{display:flex;flex-wrap:wrap;gap:6px}
+.days label{display:inline-flex;align-items:center;gap:4px;font-weight:500;background:var(--chip);border-radius:8px;padding:4px 8px}
+.rem .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rem input[type=color]{width:100%;height:40px;padding:2px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
 </style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
+<script src="static/reminder.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -95,6 +111,7 @@ label.pct input{width:76px}
     <button type="button" role="tab" id="tab-wereld" aria-controls="p-wereld" aria-selected="false">Wereld</button>
     <button type="button" role="tab" id="tab-foto" aria-controls="p-foto" aria-selected="false">Foto's</button>
     <button type="button" role="tab" id="tab-bord" aria-controls="p-bord" aria-selected="false">Bordteksten</button>
+    <button type="button" role="tab" id="tab-her" aria-controls="p-her" aria-selected="false">Herinneringen</button>
     <button type="button" role="tab" id="tab-inst" aria-controls="p-inst" aria-selected="false">Instellingen</button>
   </nav>
 
@@ -191,6 +208,15 @@ label.pct input{width:76px}
   </section>
 
   <!-- BORDTEKSTEN -->
+  <section id="p-her" role="tabpanel" aria-labelledby="tab-her" hidden>
+    <div class="card">
+      <h2>Herinneringen</h2>
+      <p class="hint">Een tekst die over de scène verschijnt, in vage memestijl. Alleen op de momenten die je hier kiest, en dan op elke derde plek (of hoe vaak je zelf wilt). Is een herinnering niet aan de beurt, dan zie je gewoon Kamiel.</p>
+      <div class="row" style="margin-bottom:14px"><button type="button" class="primary" id="remAdd">Nieuwe herinnering</button><span class="status" id="remStatus" role="status"></span></div>
+      <div class="rems" id="rems"></div>
+    </div>
+  </section>
+
   <section id="p-bord" role="tabpanel" aria-labelledby="tab-bord" hidden>
     <form class="card" id="wordsForm">
       <h2>Bordteksten</h2>
@@ -542,8 +568,101 @@ $('setForm').addEventListener('submit', async (e) => {
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
 
+
+/* reminders */
+const DAYS_NL = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+const REP_NL = { once: 'Eén keer', daily: 'Elke dag', weekly: 'Elke week', monthly: 'Elke maand', yearly: 'Elk jaar' };
+const fmtWhen = (d) => d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }) + ' om ' + d.toTimeString().slice(0, 5);
+function previewBg(g, w, h) {
+  const sky = g.createLinearGradient(0, 0, 0, h * .78); sky.addColorStop(0, '#0b33c9'); sky.addColorStop(1, '#4f86f0');
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#4f8d34'; g.fillRect(0, h * .78, w, h);
+}
+function drawPreview(cv, r) {
+  const g = cv.getContext('2d'); cv.width = 960; cv.height = 600; previewBg(g, 960, 600);
+  if ((r.text || '').trim()) g.drawImage(KamielReminder.render(r.text, { width: 960, height: 600, color: r.color, position: r.position }), 0, 0);
+}
+function remBody(el) {
+  const v = (k) => el.querySelector(`[data-r=${k}]`);
+  return {
+    text: v('text').value, active: v('active').checked, repeat: v('repeat').value, date: v('date').value, until: v('until').value,
+    days: [...el.querySelectorAll('[data-day]:checked')].map(i => +i.dataset.day), every_weeks: +v('every_weeks').value,
+    month_day: +v('month_day').value, from: v('from').value, to: v('to').value, scenes: +v('scenes').value,
+    color: v('color').value, position: v('position').value,
+  };
+}
+function renderRems() {
+  const box = $('rems'); box.innerHTML = '';
+  const list = world.reminders || [];
+  if (!list.length) { box.innerHTML = '<div class="empty">Nog geen herinneringen. Klik op "Nieuwe herinnering".</div>'; return; }
+  for (const r of list) {
+    const el = document.createElement('div'); el.className = 'rem';
+    el.innerHTML = `
+      <div><canvas aria-label="Voorbeeld van de herinnering"></canvas><div class="when"></div></div>
+      <div class="fields">
+        <label class="f full">Tekst<textarea data-r="text" maxlength="200" placeholder="hebben jullie het afval al buiten gezet"></textarea></label>
+        <label class="f">Herhaling<select data-r="repeat">${Object.entries(REP_NL).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+        <label class="f" data-show="date"><span data-datelabel>Vanaf</span><input type="date" data-r="date"></label>
+        <div class="f full" data-show="weekly" style="font-weight:600;font-size:14px">Op deze dagen
+          <div class="days">${DAYS_NL.map((n, i) => `<label><input type="checkbox" data-day="${i + 1}"> ${n}</label>`).join('')}</div></div>
+        <label class="f" data-show="weekly">Om de<select data-r="every_weeks">${[1, 2, 3, 4].map(n => `<option value="${n}">${n === 1 ? 'week' : n + ' weken'}</option>`).join('')}</select></label>
+        <label class="f" data-show="monthly">Dag van de maand<input type="number" min="1" max="31" data-r="month_day"></label>
+        <label class="f">Van<input type="time" data-r="from"></label>
+        <label class="f">Tot<input type="time" data-r="to"></label>
+        <label class="f" data-show="until">Tot en met (leeg = altijd)<input type="date" data-r="until"></label>
+        <label class="f">Om de hoeveel plekken<input type="number" min="1" max="20" data-r="scenes"></label>
+        <label class="f">Kleur<input type="color" data-r="color"></label>
+        <label class="f">Plaats<select data-r="position"><option value="boven">Boven</option><option value="midden">Midden</option><option value="onder">Onder</option></select></label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-r="active"> Aan</label>
+        <div class="actions full"><button type="button" class="primary" data-act="save">Bewaren</button><button type="button" class="danger" data-act="del">Verwijderen</button><span class="status"></span></div>
+      </div>`;
+    const v = (k) => el.querySelector(`[data-r=${k}]`);
+    v('text').value = r.text || ''; v('repeat').value = r.repeat; v('date').value = r.date || ''; v('until').value = r.until || '';
+    el.querySelectorAll('[data-day]').forEach(i => { i.checked = (r.days || []).includes(+i.dataset.day); });
+    v('every_weeks').value = String(r.every_weeks || 1); v('month_day').value = r.month_day || 1;
+    v('from').value = r.from; v('to').value = r.to; v('scenes').value = r.scenes || 3;
+    v('color').value = r.color || '#c8202a'; v('position').value = r.position || 'midden'; v('active').checked = r.active !== false;
+    const cv = el.querySelector('canvas'), when = el.querySelector('.when'), st = el.querySelector('.status');
+    const refresh = () => {
+      const b = remBody(el), rep = b.repeat;
+      el.querySelectorAll('[data-show]').forEach(x => {
+        const k = x.dataset.show;
+        x.hidden = k === 'weekly' ? rep !== 'weekly' : k === 'monthly' ? rep !== 'monthly' : k === 'until' ? rep === 'once' || rep === 'yearly' : false;
+      });
+      el.querySelector('[data-datelabel]').textContent = rep === 'once' ? 'Op' : rep === 'yearly' ? 'Op (dag en maand)' : 'Vanaf (leeg = nu)';
+      drawPreview(cv, b);
+      const d = new Date();
+      if (KamielReminder.isActive(b, d)) { when.textContent = 'Nu aan: verschijnt op de tablet op elke ' + (b.scenes === 1 ? 'plek' : b.scenes + 'e plek') + '.'; when.className = 'when on'; }
+      else { const n = KamielReminder.nextStart(b, d); when.textContent = !b.active ? 'Staat uit.' : n ? 'Volgende keer: ' + fmtWhen(n) + '.' : 'Komt niet meer voor met deze instellingen.'; when.className = 'when'; }
+    };
+    el.addEventListener('input', refresh); el.addEventListener('change', refresh);
+    if (document.fonts) document.fonts.load('700 40px Arimo').then(refresh).catch(() => {});
+    refresh();
+    el.querySelector('[data-act=save]').addEventListener('click', async () => {
+      const b = remBody(el);
+      if (!b.text.trim()) { status(st, 'Typ eerst een tekst.', 'err'); return; }
+      if (b.repeat === 'weekly' && !b.days.length) { status(st, 'Kies minstens één dag.', 'err'); return; }
+      if ((b.repeat === 'once' || b.repeat === 'yearly') && !b.date) { status(st, 'Kies een datum.', 'err'); return; }
+      const res = await fetch('api/reminders/' + r.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+      if (res.ok) { Object.assign(r, await res.json()); status(st, 'Bewaard. De tablet neemt het binnen een paar minuten over.', 'ok'); } else status(st, 'Opslaan mislukt.', 'err');
+    });
+    const del = el.querySelector('[data-act=del]');
+    del.addEventListener('click', async () => {
+      if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { del.dataset.sure = ''; del.textContent = 'Verwijderen'; }, 4000); return; }
+      const res = await fetch('api/reminders/' + r.id, { method: 'DELETE' }); if (res.ok) await load(); else status(st, 'Verwijderen mislukt.', 'err');
+    });
+    box.appendChild(el);
+  }
+}
+$('remAdd').addEventListener('click', async () => {
+  const res = await fetch('api/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '', repeat: 'weekly', days: [1], from: '18:00', to: '23:00', scenes: 3, active: true }) });
+  if (res.ok) { await load(); const c = $('rems').lastElementChild; c && c.querySelector('textarea').focus(); }
+  else status($('remStatus'), 'Toevoegen mislukt.', 'err');
+});
+
 let settingsDone = false;
-function render() { renderLib(); renderPano(); renderAlbum(); if (!settingsDone) { renderSettings(); settingsDone = true; } }
+function render() { renderLib(); renderPano(); renderAlbum(); renderRems(); if (!settingsDone) { renderSettings(); settingsDone = true; } }
 load();
 })();
 </script>
