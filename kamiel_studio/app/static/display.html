@@ -416,6 +416,11 @@ function addSpot(i) {
   p.items = p.items.filter(x => !(x.o.kind === 'kader' && !x.tv));
   addThing(i, FRAME(), { photo: url, spot: true, depth: .9 }, (x) => x.spot && x.photo === url, .36);
 }
+// the sent photo leaves every place; the frame simply disappears
+function dropSpot() {
+  spotlight = null;
+  for (const p of places) if (p) p.items = p.items.filter(x => !x.spot);
+}
 function addThing(i, o, extra, has, size) {
   const p = places[i]; if (!p || p.items.some(has)) return;
   const asp0 = o.size[0] / o.size[1];
@@ -461,7 +466,7 @@ async function pollLive() {
     spotlight = j.spotlight;
     for (let i = 0; i < N; i++) addSpot(i);
   }
-  if (!j.spotlight) spotlight = null;
+  if (!j.spotlight && spotlight) dropSpot();   // /wis, wissen in the Studio, or its time is over
   if (j.snapshot && j.snapshot !== lastSnap) { lastSnap = j.snapshot; sendSnapshot(j.snapshot); }
   const tr = j.trigger;
   if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showDepartures();
@@ -828,6 +833,14 @@ const post = (u) => fetch(u, { method: 'POST' }).catch(() => {});
 document.addEventListener('pointerup', (e) => {
   const r = cv.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H);
   const x = (e.clientX - r.left - (r.width - W * sc) / 2) / sc, y = (e.clientY - r.top - (r.height - H * sc) / 2) / sc;
+  // tapping the sent photo: it goes away and the sender hears it was seen
+  for (let k = hits.length - 1; k >= 0; k--) {
+    const hh = hits[k];
+    if (hh.it.spot && x >= hh.x && x <= hh.x + hh.w && y >= hh.y && y <= hh.y + hh.h) {
+      if (spotlight) post('api/photo-seen/' + spotlight.id);
+      dropSpot(); return;
+    }
+  }
   if (message && msgAlpha > .3) { dismissed.add(message.id); post('api/seen/' + message.id); message = null; return; }   // "read it"
   if (performance.now() < depsUntil) { depsUntil = 0; return; }
   const near = (p, rad) => p && Math.hypot(x - p.x, y - p.y) < rad;
