@@ -327,6 +327,7 @@ function renderLib() {
           <label><input type="checkbox" data-k="dag" ${a.moment !== 'nacht' ? 'checked' : ''}> Overdag</label>
           <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
           ${a.kind === 'grond' ? `<label><input type="checkbox" data-sign ${a.sign ? 'checked' : ''}> Tekstbord</label>` : ''}
+          <label>Soort <select data-kind>${Object.entries(KIND_NL).map(([k, v]) => `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
           <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         </div>
         <div class="actions"><button type="button" class="danger" data-act="del">Verwijderen</button><span class="status"></span></div>
@@ -342,6 +343,12 @@ function renderLib() {
       el.querySelector('.thumb').classList.toggle('night', nacht && !dag);
     };
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', save));
+    const kd = el.querySelector('[data-kind]');
+    kd.addEventListener('change', async () => {
+      kd.disabled = true; status(st, 'Bezig met aanpassen…');
+      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: kd.value }) });
+      if (r.ok) { await load(); } else { status(st, await r.text(), 'err'); kd.value = a.kind; kd.disabled = false; }
+    });
     const sg = el.querySelector('[data-sign]');
     if (sg) sg.addEventListener('change', async () => {
       sg.disabled = true; status(st, 'Bezig…');

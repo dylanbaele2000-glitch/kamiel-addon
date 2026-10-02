@@ -277,9 +277,58 @@ def _make_sign(asset, on):
     return asset
 
 
+SIMPLE_KINDS = ("grond", "horizon", "lucht")  # these share the same processing
+
+
+def _change_kind(asset, kind):
+    """Change what an element is. Clouds and frames are processed differently, so those
+    switches redo the processing from the original upload."""
+    old = asset["kind"]
+    if old in SIMPLE_KINDS and kind in SIMPLE_KINDS:
+        if kind != "grond" and asset.get("sign"):
+            asset = _make_sign(asset, False)
+        asset["kind"] = kind
+        return asset
+    orig = asset.get("original")
+    path = os.path.join(ORIG, os.path.basename(orig)) if orig else None
+    if not path or not os.path.exists(path):
+        raise ValueError("Het origineel van dit element is niet bewaard. Verwijder het en voeg het opnieuw toe als de juiste soort.")
+    with open(path, "rb") as f:
+        imgs, meta = process.process_asset(f.read(), kind, False)
+    old_files = list(asset["files"].values())
+    tag = uuid.uuid4().hex[:4]
+    asset["files"] = {key: save_img(arr, f"{asset['id']}_{key}_{tag}") for key, arr in imgs.items()}
+    remove_files(old_files)
+    for k in ("plate", "colors", "hole"):
+        asset.pop(k, None)
+    asset.update(meta)
+    asset["sign"] = False
+    asset["kind"] = kind
+    main = imgs["main"]
+    asset["size"] = [int(main.shape[1]), int(main.shape[0])]
+    return asset
+
+
 async def api_edit_asset(request):
     aid = request.match_info["id"]
     body = await request.json()
+    if body.get("kind") in KINDS:
+        db = load_db()
+        a = next((x for x in db["assets"] if x["id"] == aid), None)
+        if not a:
+            raise web.HTTPNotFound()
+        if body["kind"] != a["kind"]:
+            try:
+                updated = await run_blocking(_change_kind, dict(a, files=dict(a["files"])), body["kind"])
+            except ValueError as e:
+                raise web.HTTPBadRequest(text=str(e))
+            async with lock:
+                db = load_db()
+                for i, x in enumerate(db["assets"]):
+                    if x["id"] == aid:
+                        db["assets"][i] = updated
+                save_db(db)
+            return web.json_response(updated)
     if "sign" in body:
         db = load_db()
         a = next((x for x in db["assets"] if x["id"] == aid), None)
@@ -306,8 +355,6 @@ async def api_edit_asset(request):
                     a["moment"] = parse_moment(body.get("dag"), body.get("nacht"))
                 if body.get("rare") in RARITY:
                     a["rare"] = body["rare"]
-                if body.get("kind") in KINDS and body["kind"] != "wolk" and a["kind"] != "wolk" and body["kind"] != "kader" and a["kind"] != "kader":
-                    a["kind"] = body["kind"]
                 if "label" in body:
                     a["label"] = str(body["label"])[:60]
                 if "active" in body:
