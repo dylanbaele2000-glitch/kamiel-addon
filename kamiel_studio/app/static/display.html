@@ -168,10 +168,11 @@ function compose(i) {
     }
     return null;
   };
-  const framesElsewhere = places.filter((p, j) => j !== i && p && p.items.some(it => it.o.kind === 'kader')).length;
+  // frames: one in every N places (N from the Studio; 0 = never)
+  const ratio = S.frame_ratio === undefined ? 2 : +S.frame_ratio;
   const ground = [];
-  if (framesElsewhere < (S.min_frames || 0)) ground.push(take(['kader']));
-  for (let k = ground.length; k < nG; k++) ground.push(take(rnd() < .22 ? ['kader'] : ['grond']) || take(['grond']));
+  if (ratio > 0 && rnd() < 1 / ratio) ground.push(take(['kader']));
+  for (let k = ground.length; k < nG; k++) ground.push(take(['grond']));
   for (const o of ground) {
     if (!o) continue;
     const depth = rnd(), h = (110 + rnd() * 170) * (0.5 + depth * 0.7) * big();
@@ -257,7 +258,7 @@ function drawImg(img, x, y, w, h, flip) {
   if (flip) { ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); ctx.restore(); }
   else ctx.drawImage(img, x, y, w, h);
 }
-function signText(g, o, word, w, h) {
+function signText(g, o, word, w, h, color) {
   if (!word || !o.plate) return;
   const [tl, tr, br, bl] = o.plate.map(p => [p[0] * w, p[1] * h]);
   const ux = [tr[0] - tl[0], tr[1] - tl[1]], uy = [bl[0] - tl[0], bl[1] - tl[1]];
@@ -272,7 +273,8 @@ function signText(g, o, word, w, h) {
   const widest = Math.max(...lines.map(l => g.measureText(l).width));
   if (widest > areaW) { fs *= areaW / widest; g.font = `${fs}px 'Titan One', 'Arial Rounded MT Bold', sans-serif`; }
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = 'rgba(28,40,210,.92)'; g.shadowColor = 'rgba(60,80,255,.5)'; g.shadowBlur = fs * .15;
+  const ink = { blauw: ['#fff6c9', 'rgba(255,240,180,.5)'], rood: ['#fff6c9', 'rgba(255,240,180,.5)'], groen: ['#1b25b8', 'rgba(60,80,255,.45)'] }[color] || ['#1c28d2', 'rgba(60,80,255,.5)'];
+  g.fillStyle = ink[0]; g.shadowColor = ink[1]; g.shadowBlur = fs * .15;
   lines.forEach((l, i) => g.fillText(l, pw * .4, ph * .5 + (i - (lines.length - 1) / 2) * fs * 1.05));
   g.restore();
 }
@@ -290,7 +292,7 @@ function itemCanvas(it, w, h) {
     g.drawImage(photo, bx + (bw - photo.width * s) / 2, by + (bh - photo.height * s) / 2, photo.width * s, photo.height * s);
     g.globalCompositeOperation = 'destination-in'; g.drawImage(o.maskImg, 0, 0, w, h);
     g.globalCompositeOperation = 'destination-over'; g.drawImage(base, 0, 0, w, h);
-  } else { g.drawImage(base, 0, 0, w, h); signText(g, o, it.word, w, h); }
+  } else { g.drawImage(base, 0, 0, w, h); signText(g, o, it.word, w, h, it.color); }
   it.cache = c; return c;
 }
 function drawSky(sun, moon) {
@@ -431,6 +433,7 @@ function frame() {
 function loop(ts) { const dt = Math.min(.05, (ts - last) / 1000); last = ts; step(dt); frame(); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 pollState(); setInterval(pollState, 60000);
+if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
 setInterval(pollWorld, 120000);
 setInterval(schedule, 15000);
 document.addEventListener('pointerup', () => { if (S.tap_url) location.href = S.tap_url; });
