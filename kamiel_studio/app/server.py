@@ -401,7 +401,7 @@ def _photo(data):
 
 async def api_upload_photos(request):
     reader = await request.multipart()
-    added = []
+    added, failed = [], []
     async for part in reader:
         if part.filename:
             try:
@@ -409,12 +409,12 @@ async def api_upload_photos(request):
                 p["label"] = os.path.splitext(os.path.basename(part.filename))[0][:60]
                 added.append(p)
             except Exception:
-                pass
+                failed.append({"file": part.filename})
     async with lock:
         db = load_db()
         db["photos"].extend(added)
         save_db(db)
-    return web.json_response({"added": added})
+    return web.json_response({"added": added, "failed": failed})
 
 
 async def api_delete_photo(request):

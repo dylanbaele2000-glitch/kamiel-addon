@@ -302,28 +302,57 @@ picker('fotoFiles', 'fotoList');
 const kindNow = () => document.querySelector('input[name=kind]:checked').value;
 document.querySelectorAll('input[name=kind]').forEach(r => r.addEventListener('change', () => { $('signBox').hidden = kindNow() !== 'grond'; }));
 
+/* uploads go one file at a time: Home Assistant refuses anything over 16 MB per request.
+   Large images are made smaller in the browser first (Kamiel never uses more than ~900 px anyway). */
+async function shrink(file, maxSide, type, quality, fitHeight) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const sc = fitHeight ? fitHeight / bmp.height : Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    if (sc >= 1 && file.size < 8e6) { bmp.close && bmp.close(); return file; }
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bmp.width * Math.min(sc, 1))); c.height = Math.max(1, Math.round(bmp.height * Math.min(sc, 1)));
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close && bmp.close();
+    const blob = await new Promise(res => c.toBlob(res, type, quality));
+    if (!blob) return file;
+    const ext = type === 'image/png' ? '.png' : '.jpg';
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + ext, { type });
+  } catch { return file; } // the browser can't read it: send as is, the server will say if it fails
+}
+async function uploadEach(files, url, extra, prep, onStep) {
+  const added = [], failed = [];
+  for (let i = 0; i < files.length; i++) {
+    onStep(i);
+    const f = await prep(files[i]);
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+    fd.append('files', f, f.name);
+    try {
+      const r = await fetch(url, { method: 'POST', body: fd });
+      if (!r.ok) throw new Error(await r.text());
+      const j = await r.json();
+      added.push(...(j.added || []));
+      (j.failed || []).forEach(x => failed.push(x.file || files[i].name));
+      if (!(j.added || []).length && !(j.failed || []).length) failed.push(files[i].name);
+    } catch { failed.push(files[i].name); }
+  }
+  return { added, failed };
+}
+
 /* upload elements */
 $('upForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const files = [...$('upFiles').files];
   if (!files.length) { status($('upStatus'), 'Kies eerst een of meer afbeeldingen.', 'err'); return; }
   if (!$('upDag').checked && !$('upNacht').checked) { status($('upStatus'), 'Vink overdag, \'s nachts of allebei aan.', 'err'); return; }
-  const fd = new FormData();
-  fd.append('kind', kindNow());
-  fd.append('dag', $('upDag').checked ? '1' : '0');
-  fd.append('nacht', $('upNacht').checked ? '1' : '0');
-  fd.append('rare', document.querySelector('input[name=rare]:checked').value);
-  fd.append('sign', $('upSign').checked && kindNow() === 'grond' ? '1' : '0');
-  files.forEach(f => fd.append('files', f, f.name));
-  $('upBtn').disabled = true; status($('upStatus'), `Bezig met ${files.length} ${files.length === 1 ? 'afbeelding' : 'afbeeldingen'}…`);
-  try {
-    const r = await fetch('api/assets', { method: 'POST', body: fd });
-    if (!r.ok) throw new Error(await r.text());
-    const j = await r.json();
-    status($('upStatus'), `${j.added.length} toegevoegd${j.failed.length ? `, ${j.failed.length} mislukt (${j.failed.map(f => f.file).join(', ')})` : ''}.`, j.failed.length ? 'err' : 'ok');
-    $('upFiles').value = ''; $('upList').textContent = '';
-    await load();
-  } catch (err) { status($('upStatus'), 'Toevoegen mislukt: ' + err.message, 'err'); }
+  const extra = { kind: kindNow(), dag: $('upDag').checked ? '1' : '0', nacht: $('upNacht').checked ? '1' : '0',
+    rare: document.querySelector('input[name=rare]:checked').value, sign: $('upSign').checked && kindNow() === 'grond' ? '1' : '0' };
+  $('upBtn').disabled = true;
+  const { added, failed } = await uploadEach(files, 'api/assets', extra, f => shrink(f, 1400, 'image/png'),
+    i => status($('upStatus'), `Bezig: ${i + 1} van ${files.length}…`));
+  status($('upStatus'), `${added.length} toegevoegd${failed.length ? `, ${failed.length} mislukt (${failed.join(', ')})` : ''}.`, failed.length ? 'err' : 'ok');
+  $('upFiles').value = ''; $('upList').textContent = '';
+  await load();
   $('upBtn').disabled = false;
 });
 
@@ -395,8 +424,10 @@ $('panoForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const files = [...$('panoFiles').files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   if (!files.length) { status($('panoStatus'), 'Kies eerst de panoramabestanden.', 'err'); return; }
-  const fd = new FormData(); files.forEach(f => fd.append('files', f, f.name));
-  $('panoBtn').disabled = true; status($('panoStatus'), 'Bezig met verwerken, dit duurt ongeveer een minuut…');
+  $('panoBtn').disabled = true; status($('panoStatus'), 'Bezig met voorbereiden…');
+  const small = []; for (const f of files) small.push(await shrink(f, 0, 'image/png', undefined, 600));
+  const fd = new FormData(); small.forEach(f => fd.append('files', f, f.name));
+  status($('panoStatus'), 'Bezig met verwerken, dit duurt ongeveer een minuut…');
   try {
     const r = await fetch('api/panorama', { method: 'POST', body: fd });
     if (!r.ok) throw new Error(await r.text());
@@ -425,13 +456,11 @@ $('fotoForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const files = [...$('fotoFiles').files];
   if (!files.length) { status($('fotoStatus'), 'Kies eerst een of meer foto\'s.', 'err'); return; }
-  const fd = new FormData(); files.forEach(f => fd.append('files', f, f.name));
-  $('fotoBtn').disabled = true; status($('fotoStatus'), 'Bezig…');
-  try {
-    const r = await fetch('api/photos', { method: 'POST', body: fd }); if (!r.ok) throw new Error(await r.text());
-    const j = await r.json(); status($('fotoStatus'), `${j.added.length} foto's toegevoegd.`, 'ok');
-    $('fotoFiles').value = ''; $('fotoList').textContent = ''; await load();
-  } catch (err) { status($('fotoStatus'), 'Toevoegen mislukt: ' + err.message, 'err'); }
+  $('fotoBtn').disabled = true;
+  const { added, failed } = await uploadEach(files, 'api/photos', {}, f => shrink(f, 1600, 'image/jpeg', 0.92),
+    i => status($('fotoStatus'), `Bezig: ${i + 1} van ${files.length}…`));
+  status($('fotoStatus'), `${added.length} foto's toegevoegd${failed.length ? `, ${failed.length} mislukt (${failed.join(', ')})` : ''}.`, failed.length ? 'err' : 'ok');
+  $('fotoFiles').value = ''; $('fotoList').textContent = ''; await load();
   $('fotoBtn').disabled = false;
 });
 

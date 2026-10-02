@@ -53,9 +53,14 @@ const N = Math.max(1, Math.round(PW / PLACE));
 const HZ = world.panorama ? world.panorama.horizon : null;
 const horY = (wx) => HZ ? HZ[mod(Math.round(wx / 8), HZ.length)] : HOR0;
 const K = {}; ['stand', 'blink', 'walk1', 'walk2', 'walk3', 'walk4'].forEach(k => K[k] = load('static/kamiel/' + k + '.webp'));
+// images load only when an element is actually placed somewhere, so a big library stays light on the tablet
+const lazy = (obj, key, src) => { let im = null; Object.defineProperty(obj, key, { enumerable: true, get: () => im || (im = load(src)) }); };
 const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false).map(a => {
-  const v = {}; (a.colors || []).forEach(c => { if (a.files['kleur_' + c]) v[c] = load('media/' + a.files['kleur_' + c]); });
-  return Object.assign({}, a, { img: load('media/' + a.files.main), maskImg: a.files.mask ? load('media/' + a.files.mask) : null, vimg: v });
+  const o = Object.assign({}, a, { vimg: {}, maskImg: null });
+  (a.colors || []).forEach(c => { if (a.files['kleur_' + c]) lazy(o.vimg, c, 'media/' + a.files['kleur_' + c]); });
+  lazy(o, 'img', 'media/' + a.files.main);
+  if (a.files.mask) { delete o.maskImg; lazy(o, 'maskImg', 'media/' + a.files.mask); }
+  return o;
 });
 const CL = world.assets.filter(a => a.kind === 'wolk' && a.active !== false).map(a => Object.assign({}, a, { img: load('media/' + a.files.main) }));
 const PHOTOS = world.photos.length ? world.photos.map(p => 'media/' + p.file) : ['static/voorbeeldfoto.webp'];
