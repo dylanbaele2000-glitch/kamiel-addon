@@ -4,6 +4,7 @@ Port 8099 (ingress, inside Home Assistant): the Studio, where everything is mana
 Port 8100 (your network): the tablet view. It can only read, never change anything.
 """
 import asyncio
+import copy
 import json
 import os
 import shutil
@@ -50,6 +51,9 @@ DEFAULT_SETTINGS = {
     "night_walks": ["00:00", "03:00"],
     "min_frames": 1,
     "frame_ratio": 2,
+    "chances": {"dag": {"grond": 100, "horizon": 100, "lucht": 60, "kader": 50},
+                "nacht": {"grond": 100, "horizon": 100, "lucht": 75, "kader": 50}},
+    "max_objects": 9,
     "tap_url": "",
     "osd_entities": [],
     "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "LAVENDELSTRAAT",
@@ -70,14 +74,20 @@ def first_run():
                 shutil.copy(os.path.join(src, "media", f), MEDIA)
             shutil.copy(os.path.join(src, "kamiel.json"), DB_FILE)
         else:
-            save_db({"assets": [], "photos": [], "panorama": None, "settings": dict(DEFAULT_SETTINGS), "version": 1})
+            save_db({"assets": [], "photos": [], "panorama": None, "settings": copy.deepcopy(DEFAULT_SETTINGS), "version": 1})
 
 
 def load_db():
     with open(DB_FILE) as f:
         db = json.load(f)
-    s = dict(DEFAULT_SETTINGS)
-    s.update(db.get("settings", {}))
+    stored = db.get("settings", {})
+    s = copy.deepcopy(DEFAULT_SETTINGS)
+    s.update(stored)
+    if "chances" not in stored:
+        # older versions had "1 frame in N places"; carry that over
+        r = int(stored.get("frame_ratio", 2))
+        for part in ("dag", "nacht"):
+            s["chances"][part]["kader"] = round(100 / r) if r > 0 else 0
     db["settings"] = s
     return db
 
@@ -461,6 +471,16 @@ async def api_settings(request):
             s["night_walks"] = [str(x)[:5] for x in body["night_walks"] if str(x).strip()][:12]
         if "frame_ratio" in body and int(body["frame_ratio"]) in (0, 1, 2, 4, 8):
             s["frame_ratio"] = int(body["frame_ratio"])
+        if isinstance(body.get("chances"), dict):
+            for part in ("dag", "nacht"):
+                for kind in ("grond", "horizon", "lucht", "kader"):
+                    try:
+                        v = int(body["chances"][part][kind])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    s["chances"][part][kind] = max(0, min(100, v))
+        if "max_objects" in body:
+            s["max_objects"] = max(1, min(20, int(body["max_objects"])))
         if "min_frames" in body:
             s["min_frames"] = max(0, min(8, int(body["min_frames"])))
         if "tap_url" in body:

@@ -73,6 +73,11 @@ label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width
 label.field span{font-weight:400;color:var(--muted);font-size:13px}
 input[type=number],input[type=time],input[type=text],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
+table.chances{border-collapse:collapse;width:auto}
+table.chances th,table.chances td{text-align:left;padding:6px 14px 6px 0}
+table.chances thead th{font-size:13px;color:var(--muted);font-weight:600}
+label.pct{display:inline-flex;align-items:center;gap:6px}
+label.pct input{width:76px}
 .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
 .empty{color:var(--muted);padding:20px;text-align:center;border:1px dashed var(--line);border-radius:12px}
 [hidden]{display:none!important}
@@ -219,15 +224,30 @@ textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
           <span>Tijden gescheiden door komma's, bijvoorbeeld 00:00, 03:00.</span>
           <input type="text" id="sNightWalks">
         </label>
-        <label class="field" for="sFrames">Kaders met foto's
-          <span>Op hoeveel plekken er een kader staat.</span>
-          <select id="sFrames">
-            <option value="1">Op elke plek</option>
-            <option value="2">Op 1 op 2 plekken</option>
-            <option value="4">Op 1 op 4 plekken</option>
-            <option value="8">Op 1 op 8 plekken</option>
-            <option value="0">Nooit</option>
-          </select>
+      </div>
+      <h2 style="margin-top:8px">Wat staat er op een plek</h2>
+      <p class="hint">Op hoeveel procent van de plekken elke soort voorkomt. 100&nbsp;% is altijd, 0&nbsp;% is nooit. Hoeveel stuks er dan staan, kiest Kamiel zelf (rustig, normaal of vol).</p>
+      <table class="chances">
+        <thead><tr><th scope="col">Soort</th><th scope="col">Overdag</th><th scope="col">'s Nachts</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Grond</th>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_dag_grond" aria-label="Grond overdag"> %</label></td>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_nacht_grond" aria-label="Grond 's nachts"> %</label></td></tr>
+          <tr><th scope="row">Horizon</th>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_dag_horizon" aria-label="Horizon overdag"> %</label></td>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_nacht_horizon" aria-label="Horizon 's nachts"> %</label></td></tr>
+          <tr><th scope="row">Lucht</th>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_dag_lucht" aria-label="Lucht overdag"> %</label></td>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_nacht_lucht" aria-label="Lucht 's nachts"> %</label></td></tr>
+          <tr><th scope="row">Kaders met foto's</th>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_dag_kader" aria-label="Kaders met foto's overdag"> %</label></td>
+            <td><label class="pct"><input type="number" min="0" max="100" step="5" id="c_nacht_kader" aria-label="Kaders met foto's 's nachts"> %</label></td></tr>
+        </tbody>
+      </table>
+      <div class="settings" style="margin-top:14px">
+        <label class="field" for="sMax">Maximum aantal objecten per plek
+          <span>Alles samen: grond, horizon, lucht en kaders. Wolken tellen niet mee.</span>
+          <input type="number" id="sMax" min="1" max="20">
         </label>
       </div>
       <h2 style="margin-top:8px">Onder de datum en tijd</h2>
@@ -427,7 +447,9 @@ $('wordsForm').addEventListener('submit', async (e) => {
 async function renderSettings() {
   const s = world.settings;
   $('sWalk').value = s.walk_minutes; $('sNightStart').value = s.night_start; $('sNightEnd').value = s.night_end;
-  $('sNightWalks').value = s.night_walks.join(', '); $('sFrames').value = String(s.frame_ratio === undefined ? 2 : s.frame_ratio);
+  $('sNightWalks').value = s.night_walks.join(', ');
+  for (const part of ['dag', 'nacht']) for (const k of ['grond', 'horizon', 'lucht', 'kader']) $(`c_${part}_${k}`).value = s.chances[part][k];
+  $('sMax').value = s.max_objects;
   $('words').value = s.words.join('\n');
   const sel = $('sWeather');
   try {
@@ -446,7 +468,8 @@ async function renderSettings() {
 $('setForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value, night_start: $('sNightStart').value, night_end: $('sNightEnd').value,
-    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), frame_ratio: +$('sFrames').value,
+    night_walks: $('sNightWalks').value.split(',').map(x => x.trim()).filter(Boolean), max_objects: +$('sMax').value,
+    chances: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, Math.max(0, Math.min(100, Math.round(+$(`c_${part}_${k}`).value || 0)))]))])),
     tap_url: $('sTap').value, osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
