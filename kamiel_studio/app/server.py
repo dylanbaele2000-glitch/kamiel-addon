@@ -54,6 +54,9 @@ DEFAULT_SETTINGS = {
     "chances": {"dag": {"grond": 100, "horizon": 100, "lucht": 60, "kader": 50},
                 "nacht": {"grond": 100, "horizon": 100, "lucht": 75, "kader": 50}},
     "max_objects": 9,
+    # height on screen, in % of the screen height: [smallest, largest]
+    "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
+    "giant_chance": 10,
     "tap_url": "",
     "osd_entities": [],
     "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "LAVENDELSTRAAT",
@@ -367,6 +370,8 @@ async def api_edit_asset(request):
                     a["rare"] = body["rare"]
                 if "label" in body:
                     a["label"] = str(body["label"])[:60]
+                if "scale" in body:
+                    a["scale"] = max(0.3, min(3.0, float(body["scale"])))
                 if "active" in body:
                     a["active"] = bool(body["active"])
                 save_db(db)
@@ -479,6 +484,16 @@ async def api_settings(request):
                     except (KeyError, TypeError, ValueError):
                         continue
                     s["chances"][part][kind] = max(0, min(100, v))
+        if isinstance(body.get("sizes"), dict):
+            for kind in ("grond", "horizon", "lucht", "kader"):
+                try:
+                    lo, hi = (int(v) for v in body["sizes"][kind])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                lo, hi = max(3, min(90, lo)), max(3, min(90, hi))
+                s["sizes"][kind] = [min(lo, hi), max(lo, hi)]
+        if "giant_chance" in body:
+            s["giant_chance"] = max(0, min(100, int(body["giant_chance"])))
         if "max_objects" in body:
             s["max_objects"] = max(1, min(20, int(body["max_objects"])))
         if "min_frames" in body:

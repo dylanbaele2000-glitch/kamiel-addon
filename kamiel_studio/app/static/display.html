@@ -174,39 +174,66 @@ function compose(i) {
     if (d === 'h') nH--; else if (d === 's') nS--; else if (d === 'g') nG--; else nF--;
   }
   const items = [], taken = [], takenSky = [];
-  const big = () => (rnd() < .12 ? 1.8 + rnd() * .6 : 1);
+  // sizes from the Studio: [smallest, largest] in % of the screen height, per kind; each element can have its own factor
+  const DEFSZ = { grond: [10, 40], horizon: [15, 42], lucht: [12, 38], kader: [18, 42] };
+  const SZ = Object.assign({}, DEFSZ, S.sizes || {});
+  const giantP = (S.giant_chance === undefined ? 10 : +S.giant_chance) / 100;
   const asp = (o) => o.size[0] / o.size[1];
-  const GAP = 40, HALF = PLACE / 2;
-  const spot = (w, list, avoidKamiel) => {
-    for (let tries = 0; tries < 16; tries++) {
-      const lim = HALF - w / 2 - 20; if (lim <= 0) return null;
-      const dx = (rnd() * 2 - 1) * lim;
-      if (avoidKamiel && Math.abs(dx) < w / 2 + 90) continue;
-      if (list.every(([l, rr]) => dx + w / 2 + GAP < l || dx - w / 2 - GAP > rr)) { list.push([dx - w / 2, dx + w / 2]); return dx; }
+  const GAP = 40, HALF = PLACE / 2, EDGE = 24;
+  const LANE = 64 + 30;            // Kamiel is ~128 px wide; keep a clear lane around him
+  const KTOP = FEET - 225;         // top of Kamiel's ears
+  const sizeFor = (o, t) => {
+    const [lo, hi] = SZ[o.kind] || DEFSZ.grond;
+    let h = (lo + (hi - lo) * t) * H / 100;
+    if (rnd() < giantP) h = hi * H / 100 * (1.4 + rnd() * .4);
+    h *= (o.scale || 1);
+    const maxW = HALF - LANE - EDGE - 10;            // must fit on one side of Kamiel
+    h = Math.min(h, H * .9, maxW / asp(o));
+    return Math.max(12, h);
+  };
+  // balance: the next object goes to the emptier side, at a free spot that leaves Kamiel's lane open
+  const weight = { '-1': 0, '1': 0 };
+  const spot = (w, list, lane) => {
+    const first = weight['-1'] === weight['1'] ? (rnd() < .5 ? -1 : 1) : (weight['-1'] < weight['1'] ? -1 : 1);
+    for (const side of [first, -first]) {
+      const lo = (lane ? LANE : 0) + w / 2, hi = HALF - EDGE - w / 2;
+      if (hi < lo) continue;
+      for (let tries = 0; tries < 14; tries++) {
+        const dx = side * (lo + rnd() * (hi - lo));
+        if (list.every(([l, r]) => dx + w / 2 + GAP < l || dx - w / 2 - GAP > r)) {
+          list.push([dx - w / 2, dx + w / 2]); weight[side] += w; return dx;
+        }
+      }
     }
     return null;
   };
-  const ground = [];
-  if (nF) ground.push(take(['kader']));
-  for (let k = 0; k < nG; k++) ground.push(take(['grond']));
-  for (const o of ground) {
-    if (!o) continue;
-    const depth = rnd(), h = (110 + rnd() * 170) * (0.5 + depth * 0.7) * big();
-    const dx = spot(h * asp(o), taken, true); if (dx === null) continue;
-    const it = { o, layer: 2, dx, depth, h, flip: rnd() < .5 && o.kind === 'grond' && !o.sign };
+  // gather everything first, then place the biggest pieces first so they get the good spots
+  const want = [];
+  if (nF) { const o = take(['kader']); if (o) want.push({ o, layer: 2 }); }
+  for (let k = 0; k < nG; k++) { const o = take(['grond']); if (o) want.push({ o, layer: 2 }); }
+  for (let k = 0; k < nH; k++) { const o = take(['horizon']); if (o) want.push({ o, layer: 1 }); }
+  for (let k = 0; k < nS; k++) { const o = take(['lucht']); if (o) want.push({ o, layer: 0 }); }
+  for (const c of want) {
+    if (c.layer === 2) { c.depth = rnd(); c.h = sizeFor(c.o, .25 * rnd() + .75 * c.depth); }
+    else if (c.layer === 1) c.h = sizeFor(c.o, rnd());
+    else c.h = sizeFor(c.o, rnd()) * (/oog|eye/i.test(c.o.label || '') ? .6 : 1);
+    c.w = c.h * asp(c.o);
+  }
+  want.sort((p, q) => q.w - p.w);
+  for (const c of want) {
+    const o = c.o;
+    if (c.layer === 0) {
+      const y = 40 + rnd() * Math.max(10, 300 - c.h);
+      const dx = spot(c.w, takenSky, y + c.h > KTOP - 10); if (dx === null) continue;
+      items.push({ o, layer: 0, dx, y, h: c.h, flip: rnd() < .5 });
+      continue;
+    }
+    const dx = spot(c.w, taken, true); if (dx === null) continue;
+    if (c.layer === 1) { items.push({ o, layer: 1, dx, h: c.h, sink: .1 + rnd() * .1, flip: rnd() < .35 }); continue; }
+    const it = { o, layer: 2, dx, depth: c.depth, h: c.h, flip: rnd() < .5 && o.kind === 'grond' && !o.sign };
     if (o.sign) { it.color = (o.colors || ['paars'])[Math.floor(rnd() * (o.colors || ['paars']).length)]; it.word = WORDS[Math.floor(rnd() * WORDS.length)]; }
     if (o.kind === 'kader') it.photo = PHOTOS[Math.floor(rnd() * PHOTOS.length)];
     items.push(it);
-  }
-  for (let k = 0; k < nH; k++) {
-    const o = take(['horizon']); if (!o) continue;
-    const h = (90 + rnd() * 180) * big(), dx = spot(h * asp(o), taken, false); if (dx === null) continue;
-    items.push({ o, layer: 1, dx, h, sink: .1 + rnd() * .1, flip: rnd() < .35 });
-  }
-  for (let k = 0; k < nS; k++) {
-    const o = take(['lucht']); if (!o) continue;
-    const h = (/oog|eye/i.test(o.label || '') ? 50 + rnd() * 110 : 90 + rnd() * 190) * big(), dx = spot(h * asp(o), takenSky, false); if (dx === null) continue;
-    items.push({ o, layer: 0, dx, y: 40 + rnd() * Math.max(10, 300 - h), h, flip: rnd() < .5 });
   }
   items.sort((p, q) => (p.layer - q.layer) || ((p.depth || 0) - (q.depth || 0)));
   places[i] = { items, night };
@@ -363,6 +390,22 @@ function drawClouds(sun) {
   ctx.globalCompositeOperation = 'source-over';
   ctx = prev; ctx.drawImage(cc, 0, 0);
 }
+// where an element really touches the ground: the filter adds a soft glow around every element,
+// so the bottom of the picture is not the bottom of the object. Measured once per image.
+const footCv = document.createElement('canvas');
+function footOf(img) {
+  if (img._foot) return img._foot;
+  const sc = Math.min(1, 160 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = footCv.width = Math.max(1, Math.round(img.naturalWidth * sc)), h = footCv.height = Math.max(1, Math.round(img.naturalHeight * sc));
+  const g = footCv.getContext('2d', { willReadFrequently: true }); g.clearRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+  let d; try { d = g.getImageData(0, 0, w, h).data; } catch { return (img._foot = { y: 1, x0: .3, x1: .7 }); }
+  let bottom = h - 1;
+  find: for (; bottom > 0; bottom--) for (let x = 0; x < w; x++) if (d[(bottom * w + x) * 4 + 3] > 140) break find;
+  let x0 = w, x1 = 0; const band = Math.max(1, Math.round(h * .06));
+  for (let y = Math.max(0, bottom - band); y <= bottom; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 140) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+  if (x1 < x0) { x0 = w * .3; x1 = w * .7; }
+  return (img._foot = { y: (bottom + 1) / h, x0: x0 / w, x1: (x1 + 1) / w });
+}
 function placeItems(layer) {
   const cam = kx - W / 2;
   for (let i = 0; i < N; i++) for (const it of places[i].items) {
@@ -372,13 +415,23 @@ function placeItems(layer) {
     for (let k = -1; k <= 1; k++) {
       const wx = i * PLACE + PLACE / 2 + it.dx + k * PW, sx = wx - cam - w / 2;
       if (sx > W || sx + w < 0) continue;
+      const f = layer === 0 ? null : footOf(o.img);
       let y;
       if (layer === 0) y = it.y;
-      else if (layer === 1) y = horY(wx) + h * it.sink - h;
-      else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h; }
+      else if (layer === 1) y = horY(wx) + h * it.sink - h * f.y;
+      else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
       ctx.save();
       if (layer === 1) ctx.globalAlpha = .93;
-      if (layer === 2) { ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(sx + w / 2, y + h - 3, w * .38, 6, 0, 0, 7); ctx.fill(); }
+      if (layer === 2) {
+        // soft contact shadow right under the part that touches the ground
+        const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
+        const cx = sx + w * (fx0 + fx1) / 2, cy = y + h * f.y - 1;
+        const rx = Math.max(w * (fx1 - fx0) * .62, w * .1), ry = Math.max(2.5, Math.min(7, rx * .12));
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(1, ry / rx);
+        const sg = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+        sg.addColorStop(0, 'rgba(0,0,0,.26)'); sg.addColorStop(.6, 'rgba(0,0,0,.12)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, rx, 0, 7); ctx.fill(); ctx.restore();
+      }
       if (o.kind === 'kader' || o.sign) { const c = itemCanvas(it, w, h); if (c) ctx.drawImage(c, sx, y, w, h); }
       else drawImg(o.img, sx, y, w, h, it.flip);
       ctx.restore();
