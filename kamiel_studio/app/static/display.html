@@ -6,6 +6,7 @@
 <title>Kamiel</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Titan+One&family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
+<script src="static/outfits.js"></script>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
 .stage{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -13,6 +14,48 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 .scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px)}
 .vig{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 18vmin rgba(0,0,0,.7)}
 .osd{position:absolute;left:3.2vw;top:4.2vh;font-family:'VT323',ui-monospace,monospace;color:#fff;font-size:6vh;line-height:.95;text-shadow:0 0 4px rgba(255,255,255,.6),2px 2px 0 rgba(0,0,0,.35);pointer-events:none;letter-spacing:1px}
+/* old-school windows */
+.desk{position:absolute;inset:0;pointer-events:none;font:clamp(12px,2.1vh,18px)/1.3 Arimo,Tahoma,Arial,sans-serif;color:#000;cursor:default}
+.win{position:absolute;pointer-events:auto;background:#c0c0c0;border:2px solid;border-color:#dfdfdf #404040 #404040 #dfdfdf;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #808080,5px 7px 0 rgba(0,0,30,.28);display:flex;flex-direction:column;animation:pop .14s steps(3)}
+@keyframes pop{from{transform:scale(.6);opacity:.4}to{transform:none;opacity:1}}
+.win .tb{background:linear-gradient(90deg,#000080,#1084d0);color:#fff;font-weight:700;display:flex;align-items:center;gap:.4em;padding:.2em .25em .2em .45em;touch-action:none;user-select:none}
+.win.back .tb{background:linear-gradient(90deg,#7b7b7b,#b4b4b4);color:#d8d8d8}
+.win .tb .tt{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b95{font:inherit;color:#000;background:#c0c0c0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px 0 #808080,inset 1px 1px 0 #dfdfdf;padding:.3em .8em;min-height:2.2em;cursor:pointer}
+.b95:active,.b95.on{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px 0 #808080;background:#b5b5b5}
+.tbtn{width:2.1em;height:1.75em;min-height:0;padding:0;font-weight:700;line-height:1;display:grid;place-items:center}
+.win .bd{padding:.6em;display:flex;flex-direction:column;gap:.55em}
+.inset{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px 0 #404040}
+.lv{width:100%;border-collapse:collapse}
+.lv th{background:#c0c0c0;text-align:left;font-weight:400;padding:.15em .45em;border:1px solid;border-color:#fff #808080 #808080 #fff}
+.lv td{padding:.2em .45em;white-space:nowrap}
+.lv tr.gone td{color:#888;text-decoration:line-through}
+.row95{display:flex;gap:.5em;align-items:center;flex-wrap:wrap}
+.wnow{display:flex;align-items:center;gap:.6em}
+.wico{font-size:2.6em;line-height:1}
+.wtemp{font-size:2em;font-weight:700}
+.kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:.4em}
+.kbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.15em;min-height:4.4em;padding:.3em}
+.kbtn .ki{font-size:1.6em;line-height:1}
+.kbtn .kl{font-size:.85em;max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kbtn .led{width:.55em;height:.55em;border-radius:50%;background:#3a3a3a;border:1px solid #222}
+.kbtn.on .led{background:#36ff5a;box-shadow:0 0 6px #36ff5a}
+.wardrobe{display:flex;flex-direction:column;gap:.4em}
+.slot{display:flex;align-items:center;gap:.4em}
+.slot>span{width:3.6em;font-size:.9em}
+.tiles{display:flex;gap:.3em;flex-wrap:wrap}
+.tile{padding:2px;min-height:0;width:3.9em;height:3.9em;overflow:hidden}
+.tile canvas{position:static;inset:auto;filter:none;object-fit:fill;width:3.3em;height:3.3em;image-rendering:pixelated;display:block;margin:auto;pointer-events:none}
+.amp{background:#232323;color:#36ff5a;font-family:VT323,monospace;padding:.4em;display:flex;gap:.6em;align-items:center;border:2px solid;border-color:#808080 #fff #fff #808080}
+.amp img{width:4.2em;height:4.2em;object-fit:cover;image-rendering:pixelated;background:#111}
+.marq{overflow:hidden;white-space:nowrap;font-size:1.5em;flex:1}
+.marq span{display:inline-block;padding-left:100%;animation:marq 12s linear infinite}
+@keyframes marq{to{transform:translateX(-100%)}}
+.taskbar{position:absolute;left:0;right:0;bottom:0;height:2.6em;background:#c0c0c0;border-top:2px solid #fff;box-shadow:inset 0 1px 0 #dfdfdf;display:flex;align-items:center;gap:.3em;padding:0 .25em;pointer-events:auto}
+.taskbar .b95{min-height:2.05em;padding:.1em .6em;max-width:11em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.taskbar .start{font-weight:700}
+.taskbar .tray{margin-left:auto;padding:.25em .7em;border:2px solid;border-color:#808080 #fff #fff #808080}
+.muted{color:#555;font-size:.9em}
 </style>
 </head>
 <body>
@@ -31,6 +74,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 <div class="stage">
   <canvas id="cv" width="960" height="600" aria-label="Kamiel in zijn droomwereld"></canvas>
   <div class="osd" id="osd"></div>
+  <div class="desk" id="desk"></div>
   <div class="scan"></div><div class="vig"></div>
 </div>
 <script>
@@ -461,6 +505,7 @@ function tryTV(p, o, h, w, extra) {
 async function pollLive() {
   let j; try { j = await (await fetch('api/live', { cache: 'no-store' })).json(); } catch { return; }
   setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
+  if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
   if (playing && m.art && m.art !== coverKey) { coverKey = m.art; coverImg = load('api/cover?v=' + m.art); }
   if (playing !== musicOn) {
@@ -819,7 +864,7 @@ function footOf(img) {
   if (x1 < x0) { x0 = w * .3; x1 = w * .7; }
   return (img._foot = { y: (bottom + 1) / h, x0: x0 / w, x1: (x1 + 1) / w });
 }
-let sunXY = null, moonXY = null;
+let sunXY = null, moonXY = null, outfit = [];
 let hits = [];   // where everything was drawn in the last frame, for tapping
 function placeItems(layer) {
   const cam = kx - W / 2;
@@ -872,7 +917,8 @@ function drawKamiel() {
   const im = K[walking ? 'walk' + (Math.floor(t * 6) % 4 + 1) : (blinkT < 0 ? 'blink' : 'stand')]; if (!ready(im)) return;
   const h = 225, w = im.width * h / im.height, x = W / 2 - w / 2, y = FEET - h;
   ctx.save();
-  if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); } else ctx.drawImage(im, x, y, w, h);
+  if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); KamielOutfits.draw(ctx, outfit, 0, 0, w, h); }
+  else { ctx.drawImage(im, x, y, w, h); KamielOutfits.draw(ctx, outfit, x, y, w, h); }
   ctx.restore();
 }
 let rockets = [], flash = null;
@@ -964,9 +1010,184 @@ pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
 setInterval(pollWorld, 120000);
 setInterval(schedule, 15000);
+
+/* ---------- old-school windows: tap an empty spot ---------- */
+const deskEl = document.getElementById('desk');
+const WIN = S.windows || { weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true };
+const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe' }, S.window_titles || {});
+const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵' };
+const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
+  'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
+const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
+const escH = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let deskOpen = false, deskData = null, deskRows = [], lastTouch = 0, zTop = 10, outfitTouched = 0, deskTimer = null;
+const wins = {};
+function touchDesk() { lastTouch = Date.now(); }
+async function loadDesk() { try { deskData = await (await fetch('api/desk', { cache: 'no-store' })).json(); } catch { deskData = deskData || {}; } }
+async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch { deskRows = []; } }
+function spots(keys) {
+  const layout = S.window_layout || 'verspreid';
+  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [58, 40], muziek: [32, 30] };
+  return keys.map((k, n) => layout === 'netjes'
+    ? [3 + (n % 3) * 32.5, 4 + Math.floor(n / 3) * 46]
+    : [base[k][0] + (rnd() * 6 - 3), base[k][1] + (rnd() * 6 - 3)]);
+}
+async function openDesk(only) {
+  const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player));
+  if (!keys.length) return;
+  closeDesk(true);
+  deskOpen = true; touchDesk();
+  await Promise.all([loadDesk(), keys.includes('vertrek') ? loadRows() : null]);
+  if (!deskOpen) return;
+  const pos = spots(keys);
+  keys.forEach((k, n) => setTimeout(() => { if (deskOpen) makeWin(k, pos[n]); }, 90 * n));
+  setTimeout(() => { if (deskOpen) renderTaskbar(); }, 90 * keys.length);
+  clearInterval(deskTimer);
+  deskTimer = setInterval(async () => {
+    if (!deskOpen) return;
+    if (Date.now() - lastTouch > (S.window_close || 60) * 1000) { closeDesk(); return; }
+    if (wins.vertrek) fillVertrek();
+    if (wins.knoppen || wins.muziek) { await loadDesk(); if (wins.knoppen) fillKnoppen(); if (wins.muziek) fillMuziek(); }
+  }, 5000);
+}
+function closeDesk(quiet) {
+  deskOpen = false; clearInterval(deskTimer);
+  for (const k in wins) delete wins[k];
+  deskEl.innerHTML = '';
+}
+function front(el) { el.style.zIndex = ++zTop; deskEl.querySelectorAll('.win').forEach(w => w.classList.toggle('back', w !== el)); }
+function makeWin(k, [lx, ty]) {
+  const el = document.createElement('div'); el.className = 'win'; el.dataset.k = k;
+  el.style.left = lx + '%'; el.style.top = ty + '%';
+  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '38%', muziek: '33%' }[k];
+  el.innerHTML = `<div class="tb"><span>${ICON[k]}</span><span class="tt">${escH(TITLES[k])}</span>
+    <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div><div class="bd"></div>`;
+  deskEl.appendChild(el); wins[k] = el; front(el);
+  el.addEventListener('pointerdown', () => { front(el); touchDesk(); });
+  el.querySelector('[data-a=close]').addEventListener('click', () => closeWin(k));
+  el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
+  drag(el);
+  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek })[k]();
+  // keep it on screen
+  const r = el.getBoundingClientRect(), dr = deskEl.getBoundingClientRect();
+  if (r.right > dr.right - 4) el.style.left = Math.max(0, dr.width - r.width - 8) + 'px';
+  if (r.bottom > dr.bottom - 50) el.style.top = Math.max(0, dr.height - r.height - 54) + 'px';
+}
+function closeWin(k) {
+  wins[k] && wins[k].remove(); delete wins[k];
+  if (!Object.keys(wins).length) closeDesk(); else renderTaskbar();
+}
+function drag(el) {
+  const tb = el.querySelector('.tb'); let sx, sy, ox, oy, on = false;
+  tb.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    on = true; tb.setPointerCapture(e.pointerId); sx = e.clientX; sy = e.clientY; ox = el.offsetLeft; oy = el.offsetTop;
+  });
+  tb.addEventListener('pointermove', (e) => { if (!on) return; el.style.left = ox + e.clientX - sx + 'px'; el.style.top = Math.max(0, oy + e.clientY - sy) + 'px'; touchDesk(); });
+  tb.addEventListener('pointerup', () => { on = false; });
+}
+function renderTaskbar() {
+  let tb = deskEl.querySelector('.taskbar');
+  if (!tb) { tb = document.createElement('div'); tb.className = 'taskbar'; deskEl.appendChild(tb); }
+  const h = new Date(), clock = String(h.getHours()).padStart(2, '0') + ':' + String(h.getMinutes()).padStart(2, '0');
+  tb.innerHTML = `<button class="b95 start">🦙 Kamiel</button>` +
+    Object.keys(wins).map(k => `<button class="b95 ${wins[k].hidden ? '' : 'on'}" data-w="${k}">${ICON[k]} ${escH(TITLES[k])}</button>`).join('') +
+    `<button class="b95" data-a="all">✕ Alles sluiten</button><span class="tray">${clock}</span>`;
+  tb.querySelector('[data-a=all]').addEventListener('click', () => closeDesk());
+  tb.querySelector('.start').addEventListener('click', () => openDesk());
+  tb.querySelectorAll('[data-w]').forEach(b => b.addEventListener('click', () => {
+    const w = wins[b.dataset.w]; if (!w) return; w.hidden = !w.hidden; if (!w.hidden) front(w); renderTaskbar();
+  }));
+}
+const bodyOf = (k) => wins[k] && wins[k].querySelector('.bd');
+
+function fillWeer() {
+  const b = bodyOf('weer'); if (!b) return; const w = deskData && deskData.weather;
+  if (!w) { b.innerHTML = '<p class="muted">Geen weer ingesteld. Kies een weer-entiteit in Kamiel Studio → Instellingen.</p>'; return; }
+  const num = (v, d = 0) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
+  b.innerHTML = `<div class="wnow"><span class="wico">${COND_ICON[w.cond] || '🌡️'}</span><div><div class="wtemp">${num(w.temp)}${escH(w.unit)}</div><div>${escH(w.nl)}</div></div></div>
+    <div class="muted">Vochtigheid ${num(w.humidity)} % · Wind ${num(w.wind)} ${escH(w.wind_unit)}${w.clouds !== null && w.clouds !== undefined ? ' · Bewolking ' + num(w.clouds) + ' %' : ''}</div>
+    ${w.forecast && w.forecast.length ? `<div class="inset"><table class="lv"><tr><th>Dag</th><th></th><th>Max</th><th>Min</th><th>Regen</th></tr>
+      ${w.forecast.map(f => { const d = new Date(f.dt); return `<tr><td>${DAYS[d.getDay()]} ${d.getDate()}</td><td>${COND_ICON[f.cond] || ''}</td><td>${num(f.hi)}°</td><td>${num(f.lo)}°</td><td>${f.rain ? num(f.rain, 1) + ' mm' : '–'}</td></tr>`; }).join('')}
+    </table></div>` : ''}`;
+}
+function fillVertrek() {
+  const b = bodyOf('vertrek'); if (!b) return;
+  if (!(S.board || []).length) { b.innerHTML = '<p class="muted">Nog geen haltes ingesteld. Dat doe je in Kamiel Studio → Instellingen → Vertrekbord.</p>'; return; }
+  const nowS = Date.now() / 1000;
+  const rows = deskRows.filter(r => r.due > nowS - 60);
+  b.innerHTML = `<div class="inset"><table class="lv"><tr><th>Lijn</th><th>Naar</th><th>Vertrek</th><th>Over</th></tr>
+    ${rows.length ? rows.map(r => { const m = Math.floor((r.due - nowS) / 60);
+      return `<tr class="${r.due < nowS ? 'gone' : ''}"><td>${r.kind === 'tram' ? '🚋' : r.kind === 'bus' ? '🚌' : ''} ${escH(r.line)}</td><td>${escH(r.label || r.dest)}</td><td>${hm2(r.due)}</td><td>${r.due < nowS ? 'weg' : m <= 0 ? '<b>nu</b>' : m + ' min'}</td></tr>`; }).join('')
+      : '<tr><td colspan="4" class="muted">Geen vertrekken gevonden.</td></tr>'}</table></div>
+    <div class="row95"><button class="b95" data-a="ref">↻ Vernieuwen</button><button class="b95" data-a="bord">Op het vertrekbord</button></div>`;
+  b.querySelector('[data-a=ref]').addEventListener('click', async () => { await loadRows(); fillVertrek(); });
+  b.querySelector('[data-a=bord]').addEventListener('click', () => { closeDesk(); showBoard(); });
+}
+function fillKnoppen() {
+  const b = bodyOf('knoppen'); if (!b) return;
+  const btns = (deskData && deskData.buttons) || [];
+  if (!btns.some(x => x.label || x.icon)) { b.innerHTML = '<p class="muted">Nog geen knoppen. Stel ze in via Kamiel Studio → Instellingen → Knoppen.</p>'; return; }
+  const cells = Array.from({ length: 9 }, (_, i) => btns[i] || null);
+  b.innerHTML = `<div class="kgrid">${cells.map((x, i) => x && (x.label || x.icon)
+    ? `<button class="b95 kbtn ${x.on ? 'on' : ''}" data-i="${i}"><span class="ki">${escH(x.icon || '◻')}</span><span class="kl">${escH(x.label)}</span><span class="led"></span></button>`
+    : `<button class="b95 kbtn" disabled style="opacity:.45"><span class="ki">·</span></button>`).join('')}</div>`;
+  b.querySelectorAll('[data-i]').forEach(el => el.addEventListener('click', async () => {
+    el.classList.toggle('on'); touchDesk();
+    await post('api/button/' + el.dataset.i);
+    setTimeout(async () => { await loadDesk(); fillKnoppen(); }, 1200);
+  }));
+}
+function fillKast() {
+  const b = bodyOf('kleerkast'); if (!b) return;
+  const allowed = (S.outfits_on && S.outfits_on.length) ? S.outfits_on : KamielOutfits.OUTFITS.map(o => o.id);
+  const items = KamielOutfits.OUTFITS.filter(o => allowed.includes(o.id));
+  b.innerHTML = `<div class="wardrobe">${KamielOutfits.SLOTS.map(([slot, name]) => {
+      const its = items.filter(o => o.slot === slot); if (!its.length) return '';
+      return `<div class="slot"><span>${name}</span><div class="tiles">${its.map(o => `<button class="b95 tile ${outfit.includes(o.id) ? 'on' : ''}" data-o="${o.id}" aria-label="${escH(o.name)}"><canvas width="72" height="72"></canvas></button>`).join('')}</div></div>`;
+    }).join('')}</div>
+    <div class="row95"><button class="b95" data-a="uit">Uittrekken</button><button class="b95" data-a="verras">🎲 Verras me</button></div>`;
+  b.querySelectorAll('[data-o]').forEach(el => {
+    if (ready(K.stand)) KamielOutfits.preview(el.querySelector('canvas').getContext('2d'), el.dataset.o, K.stand, 72);
+    el.addEventListener('click', () => {
+      const o = KamielOutfits.OUTFITS.find(z => z.id === el.dataset.o);
+      const on = outfit.includes(o.id);
+      outfit = outfit.filter(id => { const z = KamielOutfits.OUTFITS.find(q => q.id === id); return z && z.slot !== o.slot; });
+      if (!on) outfit.push(o.id);
+      saveOutfit(); fillKast();
+    });
+  });
+  b.querySelector('[data-a=uit]').addEventListener('click', () => { outfit = []; saveOutfit(); fillKast(); });
+  b.querySelector('[data-a=verras]').addEventListener('click', () => {
+    outfit = [];
+    for (const [slot] of KamielOutfits.SLOTS) { const its = items.filter(o => o.slot === slot); if (its.length && rnd() < (slot === 'hoofd' ? .9 : .5)) outfit.push(its[Math.floor(rnd() * its.length)].id); }
+    saveOutfit(); fillKast();
+  });
+}
+function saveOutfit() {
+  outfitTouched = Date.now(); touchDesk();
+  fetch('api/outfit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: outfit }) }).catch(() => {});
+}
+function fillMuziek() {
+  const b = bodyOf('muziek'); if (!b) return; const m = deskData && deskData.media;
+  const txt = m && (m.title || m.artist) ? `${m.artist ? m.artist + ' – ' : ''}${m.title}` : (m && m.state === 'playing' ? 'Speelt…' : 'Er speelt niets');
+  const old = b.querySelector('.marq span');
+  if (old && old.textContent === '*** ' + txt + ' ***') { b.querySelector('[data-a=pp]').textContent = m && m.state === 'playing' ? '⏸' : '▶'; return; }
+  b.innerHTML = `<div class="amp">${m && m.art ? `<img src="api/cover?v=${m.art}" alt="">` : '<img alt="">'}<div class="marq"><span>${escH('*** ' + txt + ' ***')}</span></div></div>
+    <div class="row95"><button class="b95" data-a="prev">⏮</button><button class="b95" data-a="pp">${m && m.state === 'playing' ? '⏸' : '▶'}</button><button class="b95" data-a="next">⏭</button>
+    <span style="flex:1"></span><button class="b95" data-a="voldown">🔉</button><button class="b95" data-a="volup">🔊</button></div>
+    <div class="muted">${escH(m ? m.name : '')}${m && typeof m.volume === 'number' ? ' · volume ' + Math.round(m.volume * 100) + ' %' : ''}</div>`;
+  const cmd = { prev: 'prev', pp: 'playpause', next: 'next', voldown: 'voldown', volup: 'volup' };
+  b.querySelectorAll('[data-a]').forEach(el => el.addEventListener('click', async () => {
+    touchDesk(); await post('api/media/' + cmd[el.dataset.a]); setTimeout(async () => { await loadDesk(); b.innerHTML = ''; fillMuziek(); }, 900);
+  }));
+}
+
 /* ---------- tapping: message, sun, moon, an element, or the empty scene ---------- */
 const post = (u) => fetch(u, { method: 'POST' }).catch(() => {});
 document.addEventListener('pointerup', (e) => {
+  if (e.target.closest && e.target.closest('.win, .taskbar')) return;   // the windows handle their own taps
+  if (deskOpen) { closeDesk(); return; }                                // tapping the scene closes them
   const r = cv.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H);
   const x = (e.clientX - r.left - (r.width - W * sc) / 2) / sc, y = (e.clientY - r.top - (r.height - H * sc) / 2) / sc;
   // tapping the sent photo: it goes away and the sender hears it was seen
@@ -997,7 +1218,11 @@ document.addEventListener('pointerup', (e) => {
     if (tap.action === 'vertrek') { showBoard(); return; }
     if (tap.action === 'script') { ring = { x, y, t0: performance.now() }; post('api/tap/el-' + hh.it.o.id); return; }
   }
-  const act = S.empty_tap || 'url';
+  // Kamiel himself: his wardrobe
+  const kw = 128, kxs = W / 2 - kw / 2;
+  if (S.kamiel_tap !== 'niets' && WIN.kleerkast !== false && x > kxs && x < kxs + kw && y > FEET - 225 && y < FEET) { openDesk(['kleerkast']); return; }
+  const act = S.empty_tap || 'vensters';
+  if (act === 'vensters') { openDesk(); return; }
   if (act === 'vertrek') showBoard();
   else if (act === 'url' && S.tap_url) location.href = S.tap_url;
 });

@@ -43,6 +43,9 @@ HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
+WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek")
+OUTFIT_SLOTS = {"feesthoed": "hoofd", "kroon": "hoofd", "muts": "hoofd", "cowboy": "hoofd", "bloemen": "hoofd", "koptelefoon": "hoofd",
+                "zonnebril": "ogen", "nerdbril": "ogen", "sjaal": "nek", "strik": "nek", "rodeneus": "neus", "snor": "neus"}
 PERIODS = ["altijd", "lente", "zomer", "herfst", "winter", "valentijn", "pasen", "halloween",
            "sinterklaas", "kerst", "nieuwjaar", "eigen"]
 
@@ -65,10 +68,18 @@ DEFAULT_SETTINGS = {
     "message_minutes": 60,
     "sun_script": "",
     "moon_script": "",
-    "empty_tap": "url",
+    "empty_tap": "vensters",
     "media_player": "",
     "departures": [],
     "board": [],
+    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True},
+    "window_titles": {"weer": "Weer.exe", "vertrek": "Vertrek.exe", "knoppen": "Knoppen.exe", "kleerkast": "Kleerkast.exe", "muziek": "Muziek.exe"},
+    "window_close": 60,
+    "window_layout": "verspreid",
+    "buttons": [],
+    "outfit_mode": "kiezen",
+    "outfits_on": [],
+    "kamiel_tap": "kleerkast",
     "timer_entities": [],
     "departure_trigger": "",
     "people": [],
@@ -102,6 +113,8 @@ def load_db():
     stored = db.get("settings", {})
     s = copy.deepcopy(DEFAULT_SETTINGS)
     s.update(stored)
+    if stored.get("empty_tap", "url") == "url" and not stored.get("tap_url"):
+        s["empty_tap"] = "vensters"
     if "board" not in stored and stored.get("departures"):
         s["board"] = [{"entity": d["entity"], "label": d.get("label", "")[:14], "lines": d.get("lines", ""),
                        "dest": "", "kind": "alles", "count": 1} for d in stored["departures"]]
@@ -537,10 +550,31 @@ async def api_settings(request):
                 s[k] = str(body[k]).strip()[:120]
         if "message_minutes" in body:
             s["message_minutes"] = max(1, min(24 * 60, int(body["message_minutes"])))
-        if body.get("empty_tap") in ("url", "vertrek", "niets"):
+        if body.get("empty_tap") in ("url", "vertrek", "niets", "vensters"):
             s["empty_tap"] = body["empty_tap"]
         if "season_colors" in body:
             s["season_colors"] = bool(body["season_colors"])
+        if isinstance(body.get("windows"), dict):
+            for k in WINDOWS:
+                if k in body["windows"]:
+                    s["windows"][k] = bool(body["windows"][k])
+        if isinstance(body.get("window_titles"), dict):
+            for k in WINDOWS:
+                if k in body["window_titles"]:
+                    s["window_titles"][k] = str(body["window_titles"][k]).strip()[:24] or DEFAULT_SETTINGS["window_titles"][k]
+        if "window_close" in body:
+            s["window_close"] = max(10, min(600, int(body["window_close"])))
+        if body.get("window_layout") in ("verspreid", "netjes"):
+            s["window_layout"] = body["window_layout"]
+        if isinstance(body.get("buttons"), list):
+            s["buttons"] = [{"label": str(b.get("label", "")).strip()[:16], "icon": str(b.get("icon", "")).strip()[:4],
+                             "entity": str(b.get("entity", "")).strip()[:120]} for b in body["buttons"][:9] if isinstance(b, dict)]
+        if body.get("outfit_mode") in ("kiezen", "dag", "uit"):
+            s["outfit_mode"] = body["outfit_mode"]
+        if isinstance(body.get("outfits_on"), list):
+            s["outfits_on"] = [str(x)[:20] for x in body["outfits_on"]][:40]
+        if body.get("kamiel_tap") in ("kleerkast", "niets"):
+            s["kamiel_tap"] = body["kamiel_tap"]
         if isinstance(body.get("board"), list):
             rows = []
             for d in body["board"][:5]:
@@ -618,7 +652,7 @@ async def api_live(request):
     """Polled every few seconds by the tablet: only things that change quickly."""
     db = load_db()
     s = db["settings"]
-    out = {"message": None, "media": None, "trigger": None,
+    out = {"message": None, "media": None, "trigger": None, "outfit": current_outfit(db),
            "spotlight": ({k: v for k, v in db["spotlight"].items() if k != "chat"}
                          if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
            "snapshot": SNAP.get("id")}
@@ -1045,6 +1079,140 @@ async def api_snapshot(request):
     SNAP["event"].set()
     return web.json_response({"ok": True})
 
+
+# ----------------------------------------------------------------- windows on the tablet
+COND_NL = {"sunny": "Zonnig", "clear-night": "Heldere nacht", "partlycloudy": "Half bewolkt", "cloudy": "Bewolkt",
+           "rainy": "Regen", "pouring": "Stortregen", "lightning": "Onweer", "lightning-rainy": "Onweer en regen",
+           "snowy": "Sneeuw", "snowy-rainy": "Natte sneeuw", "hail": "Hagel", "fog": "Mist", "windy": "Winderig",
+           "windy-variant": "Winderig en bewolkt", "exceptional": "Uitzonderlijk"}
+
+
+def current_outfit(db):
+    s = db["settings"]
+    mode = s.get("outfit_mode", "kiezen")
+    allowed = s.get("outfits_on") or list(OUTFIT_SLOTS)
+    if mode == "uit":
+        return []
+    if mode == "dag" and db.get("outfit_day") == time.strftime("%Y-%m-%d"):
+        mode = "kiezen"   # someone picked something on the tablet today: that wins until tomorrow
+    if mode == "dag":   # a surprise outfit, the same all day
+        import random
+        rnd = random.Random(time.strftime("%Y-%m-%d"))
+        out = []
+        for slot in ("hoofd", "ogen", "nek", "neus"):
+            opts = [o for o in allowed if OUTFIT_SLOTS.get(o) == slot]
+            if opts and rnd.random() < (.8 if slot == "hoofd" else .45):
+                out.append(rnd.choice(opts))
+        return out
+    return [o for o in db.get("outfit", []) if o in OUTFIT_SLOTS]
+
+
+async def ha_service_response(domain, service, data):
+    if not TOKEN:
+        return None
+    async with ClientSession(timeout=ClientTimeout(total=10)) as s:
+        async with s.post(f"{HA_URL}/services/{domain}/{service}?return_response", json=data,
+                          headers={"Authorization": "Bearer " + TOKEN}) as r:
+            if r.status >= 300:
+                return None
+            return await r.json(content_type=None)
+
+
+async def api_desk(request):
+    """Everything the windows show, in one go."""
+    db = load_db()
+    s = db["settings"]
+    out = {"weather": None, "buttons": [], "media": None, "outfit": current_outfit(db)}
+    try:
+        ent = s.get("weather_entity")
+        if ent:
+            w = await ha_get("/states/" + ent)
+            if w:
+                a = w.get("attributes", {})
+                fc = []
+                try:
+                    j = await ha_service_response("weather", "get_forecasts", {"entity_id": ent, "type": "daily"})
+                    items = ((j or {}).get("service_response") or {}).get(ent, {}).get("forecast", [])
+                    for f in items[:4]:
+                        fc.append({"dt": f.get("datetime"), "cond": f.get("condition"), "nl": COND_NL.get(f.get("condition"), ""),
+                                   "hi": f.get("temperature"), "lo": f.get("templow"), "rain": f.get("precipitation")})
+                except Exception:
+                    pass
+                out["weather"] = {"cond": w.get("state"), "nl": COND_NL.get(w.get("state"), w.get("state")),
+                                  "temp": a.get("temperature"), "unit": a.get("temperature_unit", "°C"),
+                                  "humidity": a.get("humidity"), "wind": a.get("wind_speed"), "wind_unit": a.get("wind_speed_unit", "km/h"),
+                                  "pressure": a.get("pressure"), "clouds": a.get("cloud_coverage"), "forecast": fc,
+                                  "name": a.get("friendly_name", "")}
+        for i, b in enumerate(s.get("buttons", [])):
+            st = await ha_get("/states/" + b["entity"]) if b.get("entity") else None
+            out["buttons"].append({"i": i, "label": b.get("label") or ((st or {}).get("attributes", {}).get("friendly_name", "")),
+                                   "icon": b.get("icon", ""), "on": (st or {}).get("state") in ("on", "open", "playing", "home", "unlocked"),
+                                   "ok": bool(st)})
+        if s.get("media_player"):
+            st = await ha_get("/states/" + s["media_player"])
+            if st:
+                a = st.get("attributes", {})
+                pic = a.get("entity_picture") or ""
+                out["media"] = {"state": st.get("state"), "title": a.get("media_title", ""), "artist": a.get("media_artist", ""),
+                                "volume": a.get("volume_level"), "art": str(abs(hash(pic))) if pic else "",
+                                "name": a.get("friendly_name", "")}
+    except Exception as e:
+        out["error"] = str(e)
+    return web.json_response(out)
+
+
+TOGGLE = ("light", "switch", "input_boolean", "fan", "cover", "climate", "humidifier", "siren", "lock")
+
+
+async def api_button(request):
+    """One of the 9 buttons. Only does what was set up in the Studio for that button."""
+    i = int(request.match_info["i"])
+    btns = load_db()["settings"].get("buttons", [])
+    if i >= len(btns) or not btns[i].get("entity"):
+        return web.json_response({"ok": False})
+    ent = btns[i]["entity"]
+    dom = ent.split(".")[0]
+    if dom in TOGGLE:
+        ok = await ha_service("homeassistant", "toggle", {"entity_id": ent})
+    elif dom in ("script", "scene"):
+        ok = await ha_service(dom, "turn_on", {"entity_id": ent})
+    elif dom == "automation":
+        ok = await ha_service("automation", "trigger", {"entity_id": ent})
+    elif dom in ("button", "input_button"):
+        ok = await ha_service(dom, "press", {"entity_id": ent})
+    elif dom == "media_player":
+        ok = await ha_service("media_player", "media_play_pause", {"entity_id": ent})
+    else:
+        ok = False
+    return web.json_response({"ok": ok})
+
+
+MEDIA_CMDS = {"playpause": "media_play_pause", "next": "media_next_track", "prev": "media_previous_track",
+              "volup": "volume_up", "voldown": "volume_down"}
+
+
+async def api_media(request):
+    cmd = MEDIA_CMDS.get(request.match_info["cmd"])
+    ent = load_db()["settings"].get("media_player")
+    if not cmd or not ent:
+        return web.json_response({"ok": False})
+    return web.json_response({"ok": await ha_service("media_player", cmd, {"entity_id": ent})})
+
+
+async def api_outfit(request):
+    body = await request.json()
+    ids = [x for x in body.get("ids", []) if x in OUTFIT_SLOTS]
+    seen, keep = set(), []
+    for x in ids:                      # one piece per slot
+        if OUTFIT_SLOTS[x] not in seen:
+            seen.add(OUTFIT_SLOTS[x]); keep.append(x)
+    async with lock:
+        db = load_db()
+        db["outfit"] = keep
+        db["outfit_day"] = time.strftime("%Y-%m-%d")
+        save_db(db, bump=False)
+    return web.json_response({"ids": keep})
+
 # ----------------------------------------------------------------- reminders
 REPEATS = ("once", "daily", "weekly", "monthly", "yearly")
 POSITIONS = ("midden", "boven", "onder")
@@ -1118,6 +1286,10 @@ def common_routes(app):
     app.router.add_get("/api/departures", api_departures)
     app.router.add_post("/api/tap/{target}", api_tap)
     app.router.add_post("/api/seen/{id}", api_seen)
+    app.router.add_get("/api/desk", api_desk)
+    app.router.add_post("/api/button/{i}", api_button)
+    app.router.add_post("/api/media/{cmd}", api_media)
+    app.router.add_post("/api/outfit", api_outfit)
     app.router.add_post("/api/photo-seen/{id}", api_photo_seen)
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
 

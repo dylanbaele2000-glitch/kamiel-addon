@@ -101,12 +101,17 @@ details.guide .steps{margin-top:10px}
 details.guide pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;font:13px/1.4 var(--f-osd)}
 #boardTable td{padding-right:8px}
 #boardTable input,#boardTable select{min-width:90px}
+.otiles{display:flex;flex-wrap:wrap;gap:10px}
+.otile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px;font-weight:600;cursor:pointer}
+.otile canvas{width:72px;height:72px;image-rendering:pixelated;border-radius:6px;background:#4f86f0}
+.otile input{margin:0}
 .steps{margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .chatchip{display:inline-flex;align-items:center;gap:8px;background:var(--chip);border-radius:999px;padding:4px 6px 4px 12px;font-weight:600}
 .chatchip button{min-height:30px;padding:2px 10px;font-size:13px}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
+<script src="static/outfits.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -368,12 +373,58 @@ details.guide pre{background:var(--card);border:1px solid var(--line);border-rad
         <label class="field" for="sSunScript">Tikken op de zon<select id="sSunScript" class="scriptsel"></select></label>
         <label class="field" for="sMoonScript">Tikken op de maan<select id="sMoonScript" class="scriptsel"></select></label>
         <label class="field" for="sEmpty">Tikken ergens anders
-          <select id="sEmpty"><option value="url">Open het adres hieronder</option><option value="vertrek">Toon het vertrekbord</option><option value="niets">Niets</option></select></label>
+          <select id="sEmpty"><option value="vensters">Open de vensters</option><option value="url">Open het adres hieronder</option><option value="vertrek">Toon het vertrekbord</option><option value="niets">Niets</option></select></label>
       </div>
       <label class="field" for="sTap" style="max-width:640px;margin-top:14px">Adres
         <span>Bijvoorbeeld een Home Assistant-dashboard: http://192.168.1.20:8123/kamiel-knoppen/0.</span>
         <input type="text" id="sTap" placeholder="http://…">
       </label>
+
+      <h2 style="margin-top:18px">Vensters</h2>
+      <p class="hint">Tik op een lege plek in de scène en er gaan oude Windows-vensters open. Sluiten kan met ✕, met "Alles sluiten" onderaan, door op de scène te tikken, of ze gaan vanzelf dicht. Vensters kun je verslepen aan hun blauwe balk.</p>
+      <table class="chances">
+        <thead><tr><th scope="col">Aan</th><th scope="col">Venster</th><th scope="col">Titel</th></tr></thead>
+        <tbody>
+          <tr><td><input type="checkbox" class="wOn" data-k="weer" aria-label="Weer aan"></td><td>Weer</td><td><input type="text" class="wTitle" data-k="weer" maxlength="24" placeholder="Weer.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="vertrek" aria-label="Bus en tram aan"></td><td>Bus en tram</td><td><input type="text" class="wTitle" data-k="vertrek" maxlength="24" placeholder="Vertrek.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="knoppen" aria-label="9 knoppen aan"></td><td>9 knoppen</td><td><input type="text" class="wTitle" data-k="knoppen" maxlength="24" placeholder="Knoppen.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="kleerkast" aria-label="Kleerkast aan"></td><td>Kleerkast</td><td><input type="text" class="wTitle" data-k="kleerkast" maxlength="24" placeholder="Kleerkast.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="muziek" aria-label="Muziek (als er een speaker gekozen is) aan"></td><td>Muziek (als er een speaker gekozen is)</td><td><input type="text" class="wTitle" data-k="muziek" maxlength="24" placeholder="Muziek.exe"></td></tr>
+        </tbody>
+      </table>
+      <div class="settings" style="margin-top:14px">
+        <label class="field" for="sWinClose">Vanzelf sluiten na
+          <select id="sWinClose"><option value="30">30 seconden</option><option value="60">1 minuut</option><option value="120">2 minuten</option><option value="300">5 minuten</option></select></label>
+        <label class="field" for="sWinLayout">Indeling
+          <select id="sWinLayout"><option value="verspreid">Verspreid, een beetje rommelig</option><option value="netjes">Netjes naast elkaar</option></select></label>
+      </div>
+
+      <h2 style="margin-top:18px">Knoppen</h2>
+      <p class="hint">De 9 knoppen in het venster Knoppen. Lampen, stopcontacten en schakelaars gaan aan of uit (met een groen lampje als ze aan staan); scripts, scènes en automatiseringen worden gestart. Als icoon kun je een emoji gebruiken.</p>
+      <div style="overflow-x:auto"><table class="chances" id="btnTable">
+        <thead><tr><th scope="col">#</th><th scope="col">Icoon</th><th scope="col">Naam</th><th scope="col">Wat doet hij</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>2</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>3</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>4</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>5</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>6</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>7</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>8</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+          <tr><td>9</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 style="margin-top:18px">Kleerkast</h2>
+      <p class="hint">Pixel-art kleren voor Kamiel. Op de tablet tik je op Kamiel (of open je het venster Kleerkast) om hem aan te kleden.</p>
+      <div class="settings">
+        <label class="field" for="sOutMode">Wat draagt Kamiel
+          <select id="sOutMode"><option value="kiezen">Wat jullie kiezen op de tablet</option><option value="dag">Elke dag een verrassing (tot je zelf iets kiest)</option><option value="uit">Niets, kleerkast uit</option></select></label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input type="checkbox" id="sKTap"> Tikken op Kamiel opent de kleerkast</label>
+      </div>
+      <p class="hint" style="margin-top:10px">Welke kleren hangen in de kast:</p>
+      <div class="otiles" id="oTiles"></div>
 
       <h2 style="margin-top:18px">Muziek</h2>
       <p class="hint">Speelt deze speaker muziek, dan staat er op elke plek een tv met de hoes van de plaat. Wil je een eigen tv, upload dan een kader en vink in de bibliotheek "Tv voor muziek" aan.</p>
@@ -767,6 +818,23 @@ async function renderSettings() {
     tr.querySelector('.bLines').value = r.lines || ''; tr.querySelector('.bDest').value = r.dest || ''; tr.querySelector('.bCount').value = String(r.count || 1);
   });
   fill('sensor', [...document.querySelectorAll('.tsel')], s.timer_entities || [], 'Geen');
+  const W0 = s.windows || {}, T0 = s.window_titles || {};
+  document.querySelectorAll('.wOn').forEach(el => { el.checked = W0[el.dataset.k] !== false; });
+  document.querySelectorAll('.wTitle').forEach(el => { el.value = T0[el.dataset.k] || ''; });
+  $('sWinClose').value = String(s.window_close || 60); $('sWinLayout').value = s.window_layout || 'verspreid';
+  const BT = s.buttons || [];
+  document.querySelectorAll('#btnTable tbody tr').forEach((tr, i) => { tr.querySelector('.kIcon').value = (BT[i] || {}).icon || ''; tr.querySelector('.kLab').value = (BT[i] || {}).label || ''; });
+  fill('light,switch,input_boolean,fan,cover,script,scene,automation,button,input_button,media_player,climate,lock', [...document.querySelectorAll('.kEnt')], [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => (BT[i] || {}).entity), 'Niets');
+  $('sOutMode').value = s.outfit_mode || 'kiezen'; $('sKTap').checked = s.kamiel_tap !== 'niets';
+  const on = s.outfits_on && s.outfits_on.length ? s.outfits_on : KamielOutfits.OUTFITS.map(o => o.id);
+  const box = $('oTiles'); box.innerHTML = '';
+  const kim = new Image(); kim.src = 'static/kamiel/stand.webp';
+  kim.onload = () => KamielOutfits.OUTFITS.forEach(o => {
+    const el = document.createElement('label'); el.className = 'otile';
+    el.innerHTML = `<canvas width="72" height="72"></canvas><span>${o.name}</span><input type="checkbox" class="oOn" data-o="${o.id}" ${on.includes(o.id) ? 'checked' : ''}>`;
+    KamielOutfits.preview(el.querySelector('canvas').getContext('2d'), o.id, kim, 72);
+    box.appendChild(el);
+  });
   fill('binary_sensor,input_boolean', [$('sTrigger')], [s.departure_trigger], 'Niets');
   fill('input_text', [$('sMsgEnt')], [s.message_entity], 'Geen');
   try {
@@ -787,6 +855,12 @@ $('setForm').addEventListener('submit', async (e) => {
     board: [...document.querySelectorAll('#boardTable tbody tr')].map(tr => ({ entity: tr.querySelector('.bEnt').value, label: tr.querySelector('.bLab').value,
       kind: tr.querySelector('.bKind').value, lines: tr.querySelector('.bLines').value, dest: tr.querySelector('.bDest').value, count: +tr.querySelector('.bCount').value })).filter(r => r.entity),
     timer_entities: [...document.querySelectorAll('.tsel')].map(e => e.value).filter(Boolean),
+    windows: Object.fromEntries([...document.querySelectorAll('.wOn')].map(el => [el.dataset.k, el.checked])),
+    window_titles: Object.fromEntries([...document.querySelectorAll('.wTitle')].map(el => [el.dataset.k, el.value])),
+    window_close: +$('sWinClose').value, window_layout: $('sWinLayout').value,
+    buttons: [...document.querySelectorAll('#btnTable tbody tr')].map(tr => ({ icon: tr.querySelector('.kIcon').value, label: tr.querySelector('.kLab').value, entity: tr.querySelector('.kEnt').value })),
+    outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
+    outfits_on: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => e.checked).map(e => e.dataset.o) : undefined,
     osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
