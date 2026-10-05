@@ -43,6 +43,7 @@ HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
+WEATHER_BUCKETS = ("zon", "bewolkt", "regen", "sneeuw", "mist")
 WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek")
 OUTFIT_SLOTS = {"feesthoed": "hoofd", "kroon": "hoofd", "muts": "hoofd", "cowboy": "hoofd", "bloemen": "hoofd", "koptelefoon": "hoofd",
                 "zonnebril": "ogen", "nerdbril": "ogen", "sjaal": "nek", "strik": "nek", "rodeneus": "neus", "snor": "neus"}
@@ -80,6 +81,7 @@ DEFAULT_SETTINGS = {
     "outfit_mode": "kiezen",
     "outfits_on": [],
     "kamiel_tap": "kleerkast",
+    "nod_bpm": 110,
     "timer_entities": [],
     "departure_trigger": "",
     "people": [],
@@ -235,6 +237,7 @@ async def api_world(request):
         "panorama": db.get("panorama"),
         "settings": db["settings"],
         "reminders": db.get("reminders", []),
+        "dismissed": db.get("dismissed", {}),
     })
 
 
@@ -294,6 +297,9 @@ async def api_upload_assets(request):
         label = os.path.splitext(os.path.basename(fname))[0][:60]
         try:
             asset = await run_blocking(_asset_from_upload, data, kind, moment, rare, is_sign, label)
+            wb = [w for w in fields.get("weer", "").split(",") if w in WEATHER_BUCKETS]
+            if wb:
+                asset["weather"] = wb
             added.append(asset)
         except Exception as e:
             failed.append({"file": fname, "error": str(e)})
@@ -421,6 +427,8 @@ async def api_edit_asset(request):
                     t = body["tap"] or {}
                     act = t.get("action") if t.get("action") in ("niets", "vertrek", "script") else "niets"
                     a["tap"] = {"action": act, "entity": str(t.get("entity", ""))[:120] if act == "script" else ""}
+                if isinstance(body.get("weather"), list):
+                    a["weather"] = [w for w in body["weather"] if w in WEATHER_BUCKETS]
                 if "sink" in body:
                     a["sink"] = None if body["sink"] in (None, "", "standaard") else max(0, min(60, int(body["sink"])))
                 if "scale" in body:
@@ -573,6 +581,8 @@ async def api_settings(request):
             s["outfit_mode"] = body["outfit_mode"]
         if isinstance(body.get("outfits_on"), list):
             s["outfits_on"] = [str(x)[:20] for x in body["outfits_on"]][:40]
+        if "nod_bpm" in body:
+            s["nod_bpm"] = max(0, min(250, int(body["nod_bpm"] or 0)))
         if body.get("kamiel_tap") in ("kleerkast", "niets"):
             s["kamiel_tap"] = body["kamiel_tap"]
         if isinstance(body.get("board"), list):
@@ -652,7 +662,7 @@ async def api_live(request):
     """Polled every few seconds by the tablet: only things that change quickly."""
     db = load_db()
     s = db["settings"]
-    out = {"message": None, "media": None, "trigger": None, "outfit": current_outfit(db),
+    out = {"message": None, "media": None, "trigger": None, "outfit": current_outfit(db), "dismissed": db.get("dismissed", {}),
            "spotlight": ({k: v for k, v in db["spotlight"].items() if k != "chat"}
                          if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
            "snapshot": SNAP.get("id")}
@@ -664,7 +674,9 @@ async def api_live(request):
                 a = st.get("attributes", {})
                 pic = a.get("entity_picture") or ""
                 out["media"] = {"playing": st.get("state") == "playing", "title": a.get("media_title", ""),
-                                "artist": a.get("media_artist", ""), "art": str(abs(hash(pic))) if pic else ""}
+                                "artist": a.get("media_artist", ""), "art": str(abs(hash(pic))) if pic else "",
+                                "bpm": bpm_for(a.get("media_artist", ""), a.get("media_title", "")),
+                                "position": a.get("media_position"), "updated": _ts(a.get("media_position_updated_at") or "")}
         timers = []
         for ent in s.get("timer_entities", []):
             st = await ha_get("/states/" + ent)
@@ -1213,6 +1225,52 @@ async def api_outfit(request):
         save_db(db, bump=False)
     return web.json_response({"ids": keep})
 
+
+# ----------------------------------------------------------------- tempo of the song (for nodding along)
+# Home Assistant doesn't know a song's tempo; Deezer's public catalogue does (no account needed).
+BPM = {}
+
+
+def bpm_for(artist, title):
+    key = (str(artist).lower().strip(), str(title).lower().strip())
+    if not key[1]:
+        return None
+    if key not in BPM:
+        BPM[key] = None
+        asyncio.ensure_future(_fetch_bpm(key))
+    return BPM.get(key)
+
+
+async def _fetch_bpm(key):
+    artist, title = key
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=8)) as s:
+            q = f'track:"{title}"' + (f' artist:"{artist}"' if artist else "")
+            async with s.get("https://api.deezer.com/search", params={"q": q, "limit": "1"}) as r:
+                hits = (await r.json(content_type=None)).get("data") or []
+            if not hits:
+                async with s.get("https://api.deezer.com/search", params={"q": f"{artist} {title}", "limit": "1"}) as r:
+                    hits = (await r.json(content_type=None)).get("data") or []
+            if hits:
+                async with s.get(f"https://api.deezer.com/track/{hits[0]['id']}") as r:
+                    v = (await r.json(content_type=None)).get("bpm") or 0
+                BPM[key] = float(v) if v and 40 < float(v) < 260 else None
+    except Exception as e:
+        print("Tempo opzoeken mislukt: " + str(e), flush=True)
+    if len(BPM) > 500:
+        BPM.clear()
+
+
+async def api_dismiss_reminder(request):
+    """Someone tapped a reminder away: gone until its next time."""
+    rid = request.match_info["id"]
+    body = await request.json()
+    async with lock:
+        db = load_db()
+        db.setdefault("dismissed", {})[rid] = str(body.get("key", ""))[:40]
+        save_db(db, bump=False)
+    return web.json_response({"ok": True})
+
 # ----------------------------------------------------------------- reminders
 REPEATS = ("once", "daily", "weekly", "monthly", "yearly")
 POSITIONS = ("midden", "boven", "onder")
@@ -1290,6 +1348,7 @@ def common_routes(app):
     app.router.add_post("/api/button/{i}", api_button)
     app.router.add_post("/api/media/{cmd}", api_media)
     app.router.add_post("/api/outfit", api_outfit)
+    app.router.add_post("/api/reminder-dismiss/{id}", api_dismiss_reminder)
     app.router.add_post("/api/photo-seen/{id}", api_photo_seen)
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
 

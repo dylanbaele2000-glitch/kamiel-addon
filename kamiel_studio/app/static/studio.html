@@ -101,6 +101,8 @@ details.guide .steps{margin-top:10px}
 details.guide pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;font:13px/1.4 var(--f-osd)}
 #boardTable td{padding-right:8px}
 #boardTable input,#boardTable select{min-width:90px}
+.wxs{display:flex;flex-wrap:wrap;gap:2px 8px;width:100%}
+.wx{display:inline-flex;align-items:center;gap:2px;font-size:14px}
 .otiles{display:flex;flex-wrap:wrap;gap:10px}
 .otile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px;font-weight:600;cursor:pointer}
 .otile canvas{width:72px;height:72px;image-rendering:pixelated;border-radius:6px;background:#4f86f0}
@@ -198,6 +200,14 @@ details.guide pre{background:var(--card);border:1px solid var(--line);border-rad
           <div class="row">
             <label class="choice"><input type="checkbox" id="upDag" checked><div><b>Overdag</b></div></label>
             <label class="choice"><input type="checkbox" id="upNacht" checked><div><b>'s Nachts</b></div></label>
+          </div>
+          <p class="hint" style="margin:10px 0 6px">Bij welk weer? Niets aangevinkt = bij elk weer.</p>
+          <div class="row wxrow">
+            <label class="choice"><input type="checkbox" class="upWx" value="zon"><div><b>☀️ Zon</b></div></label>
+            <label class="choice"><input type="checkbox" class="upWx" value="bewolkt"><div><b>☁️ Bewolkt</b></div></label>
+            <label class="choice"><input type="checkbox" class="upWx" value="regen"><div><b>🌧️ Regen</b></div></label>
+            <label class="choice"><input type="checkbox" class="upWx" value="sneeuw"><div><b>❄️ Sneeuw</b></div></label>
+            <label class="choice"><input type="checkbox" class="upWx" value="mist"><div><b>🌫️ Mist</b></div></label>
           </div>
         </fieldset>
         <fieldset>
@@ -428,7 +438,10 @@ details.guide pre{background:var(--card);border:1px solid var(--line);border-rad
 
       <h2 style="margin-top:18px">Muziek</h2>
       <p class="hint">Speelt deze speaker muziek, dan staat er op elke plek een tv met de hoes van de plaat. Wil je een eigen tv, upload dan een kader en vink in de bibliotheek "Tv voor muziek" aan.</p>
-      <div class="settings"><label class="field" for="sMedia">Speaker<select id="sMedia"></select></label></div>
+      <div class="settings"><label class="field" for="sMedia">Speaker<select id="sMedia"></select></label>
+        <label class="field" for="sNod">Kamiel knikt mee vanaf
+          <span>Tempo van het nummer in BPM (slagen per minuut), opgezocht via Deezer. 0 = nooit meeknikken. Rustige nummers zitten rond 70–100, dansnummers rond 120–130.</span>
+          <label class="pct"><input type="number" id="sNod" min="0" max="250" step="5"> BPM</label></label></div>
 
       <h2 style="margin-top:18px">Vertrekbord</h2>
       <p class="hint">Tik op de klok linksboven en er verschijnt een vertrekbord zoals in de luchthaven, met hoe lang het nog duurt. Het verdwijnt vanzelf zodra alles erop vertrokken is (of als je erop tikt). Elke rij hieronder is één regel op het bord.</p>
@@ -619,6 +632,7 @@ $('upForm').addEventListener('submit', async (e) => {
   if (!files.length) { status($('upStatus'), 'Kies eerst een of meer afbeeldingen.', 'err'); return; }
   if (!$('upDag').checked && !$('upNacht').checked) { status($('upStatus'), 'Vink overdag, \'s nachts of allebei aan.', 'err'); return; }
   const extra = { kind: kindNow(), dag: $('upDag').checked ? '1' : '0', nacht: $('upNacht').checked ? '1' : '0',
+    weer: [...document.querySelectorAll('.upWx:checked')].map(i => i.value).join(','),
     rare: document.querySelector('input[name=rare]:checked').value, sign: $('upSign').checked && kindNow() === 'grond' ? '1' : '0' };
   $('upBtn').disabled = true;
   const { added, failed } = await uploadEach(files, 'api/assets', extra, f => shrink(f, 1400, 'image/png'),
@@ -648,6 +662,7 @@ function renderLib() {
         <div class="edit">
           <label><input type="checkbox" data-k="dag" ${a.moment !== 'nacht' ? 'checked' : ''}> Overdag</label>
           <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
+          ${a.kind !== 'wolk' ? `<span class="wxs" title="Bij welk weer (niets aangevinkt = altijd)">${[['zon', '☀️'], ['bewolkt', '☁️'], ['regen', '🌧️'], ['sneeuw', '❄️'], ['mist', '🌫️']].map(([k, e]) => `<label class="wx"><input type="checkbox" data-wx="${k}" ${(a.weather || []).includes(k) ? 'checked' : ''}> ${e}</label>`).join('')}</span>` : ''}
           ${a.kind === 'grond' ? `<label><input type="checkbox" data-sign ${a.sign ? 'checked' : ''}> Tekstbord</label>` : ''}
           <label>Soort <select data-kind>${Object.entries(KIND_NL).map(([k, v]) => `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
           ${a.kind !== 'wolk' ? `<label>Wanneer <select data-period>${PERIOD_NL.map(([k, n]) => `<option value="${k}" ${(a.period || 'altijd') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -691,6 +706,8 @@ function renderLib() {
     if (tp) tp.addEventListener('change', () => {
       const v = tp.value; patch({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } });
     });
+    el.querySelectorAll('[data-wx]').forEach(i => i.addEventListener('change', () =>
+      patch({ weather: [...el.querySelectorAll('[data-wx]:checked')].map(x => x.dataset.wx) })));
     const sk = el.querySelector('[data-sink]');
     if (sk) sk.addEventListener('change', () => patch({ sink: sk.value === '' ? null : +sk.value }));
     const tv = el.querySelector('[data-tv]');
@@ -825,6 +842,7 @@ async function renderSettings() {
   const BT = s.buttons || [];
   document.querySelectorAll('#btnTable tbody tr').forEach((tr, i) => { tr.querySelector('.kIcon').value = (BT[i] || {}).icon || ''; tr.querySelector('.kLab').value = (BT[i] || {}).label || ''; });
   fill('light,switch,input_boolean,fan,cover,script,scene,automation,button,input_button,media_player,climate,lock', [...document.querySelectorAll('.kEnt')], [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => (BT[i] || {}).entity), 'Niets');
+  $('sNod').value = s.nod_bpm === undefined ? 110 : s.nod_bpm;
   $('sOutMode').value = s.outfit_mode || 'kiezen'; $('sKTap').checked = s.kamiel_tap !== 'niets';
   const on = s.outfits_on && s.outfits_on.length ? s.outfits_on : KamielOutfits.OUTFITS.map(o => o.id);
   const box = $('oTiles'); box.innerHTML = '';
@@ -859,6 +877,7 @@ $('setForm').addEventListener('submit', async (e) => {
     window_titles: Object.fromEntries([...document.querySelectorAll('.wTitle')].map(el => [el.dataset.k, el.value])),
     window_close: +$('sWinClose').value, window_layout: $('sWinLayout').value,
     buttons: [...document.querySelectorAll('#btnTable tbody tr')].map(tr => ({ icon: tr.querySelector('.kIcon').value, label: tr.querySelector('.kLab').value, entity: tr.querySelector('.kEnt').value })),
+    nod_bpm: +$('sNod').value || 0,
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
     outfits_on: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => e.checked).map(e => e.dataset.o) : undefined,
     osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };

@@ -44,6 +44,13 @@
     return false;
   }
 
+  // which occurrence is on now ("2026-10-05"): tapping a reminder away hides only this one
+  function occurrence(r, d) {
+    const from = r.from || '00:00', to = r.to || '23:59', t = hm(d);
+    if (from > to && t <= to) { const y = new Date(d); y.setDate(y.getDate() - 1); return ymd(y); }
+    return ymd(d);
+  }
+
   // the next moment it switches on (for the Studio), or null
   function nextStart(r, d) {
     if (!r || r.active === false) return null;
@@ -111,5 +118,5 @@
     return `rgb(${f(r)},${f(g)},${f(b)})`;
   }
 
-  window.KamielReminder = { isActive, nextStart, render, onDay, FONT };
+  window.KamielReminder = { isActive, nextStart, render, onDay, occurrence, FONT };
 })();

@@ -154,6 +154,7 @@ const WORDS = S.words && S.words.length ? S.words : ['WELKOM IN KAMIELLAND'];
 /* ---------- time, sun, moon, weather ---------- */
 let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [], cloudCover = null;
 const rainy = () => weather === 'regen' || weather === 'onweer';
+const WEATHER_BUCKET = { helder: 'zon', licht: 'zon', bewolkt: 'bewolkt', regen: 'regen', onweer: 'regen', sneeuw: 'sneeuw', mist: 'mist' };
 function now() {
   const d = new Date();
   const dd = params.get('d'); if (dd) { const [y, mo, da] = dd.split('-').map(Number); d.setFullYear(y, mo - 1, da); }
@@ -266,7 +267,7 @@ const places = [];
 const recent = [];
 function pickFrom(list) {
   // seasonal and holiday elements show up a lot more during their own period
-  const w = list.map(o => (o.rare === 'zeldzaam' ? 0.25 : o.rare === 'heelzeldzaam' ? 0.06 : 1) * (o.period && o.period !== 'altijd' ? 3 : 1));
+  const w = list.map(o => (o.rare === 'zeldzaam' ? 0.25 : o.rare === 'heelzeldzaam' ? 0.06 : 1) * (o.period && o.period !== 'altijd' ? 3 : 1) * (o.weather && o.weather.length ? 3 : 1));
   let r = rnd() * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
   return list[list.length - 1];
@@ -274,7 +275,9 @@ function pickFrom(list) {
 function compose(i) {
   const night = isNightTime(now());
   const today = now();
-  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv;
+  const wb = WEATHER_BUCKET[weather] || 'zon';
+  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv
+    && (!o.weather || !o.weather.length || o.weather.includes(wb));
   const used = new Set();
   const take = (kinds) => {
     let pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o) && !recent.includes(o.id));
@@ -291,7 +294,7 @@ function compose(i) {
   let nS = on('lucht') ? { rustig: 1, normaal: 1, vol: 1 + (rnd() < .6) }[dens] : 0;
   let nG = on('grond') ? { rustig: 1, normaal: 2, vol: 3 + (rnd() < .4) }[dens] : 0;
   let nF = on('kader') ? 1 : 0;
-  const nT = musicOn ? 1 : 0;   // while music plays, every place gets the tv
+  const nT = 0;   // the music tv is added afterwards, in a free spot (see addTV)
   // never more than the maximum number of objects per place: drop random ones
   const maxO = Math.max(1, +(S.max_objects || 9));
   while (nH + nS + nG + nF + nT > maxO && nH + nS + nG + nF > 0) {
@@ -336,7 +339,6 @@ function compose(i) {
   };
   // gather everything first, then place the biggest pieces first so they get the good spots
   const want = [];
-  if (nT) want.push({ o: TV(), layer: 2, tv: true });
   if (nF) { const o = take(['kader']); if (o) want.push({ o, layer: 2 }); }
   for (let k = 0; k < nG; k++) { const o = take(['grond']); if (o) want.push({ o, layer: 2 }); }
   for (let k = 0; k < nH; k++) { const o = take(['horizon']); if (o) want.push({ o, layer: 1 }); }
@@ -383,7 +385,7 @@ function compose(i) {
     items.push(it);
   }
   items.sort((p, q) => (p.layer - q.layer) || ((p.depth || 0) - (q.depth || 0)));
-  places[i] = { items, night };
+  places[i] = { items, night, weather };
   if (musicOn) addTV(i);
   if (spotlight && spotlight.until * 1000 > Date.now()) addSpot(i);
 }
@@ -433,11 +435,12 @@ if (params.get('demo')) setInterval(() => go(rnd() < .5 ? -1 : 1), +params.get('
 
 /* ---------- reminders: on every Nth place Kamiel arrives at, while a reminder is on ---------- */
 const REM = world.reminders || [];
+let remDismissed = world.dismissed || {};   // reminders tapped away, until their next time
 let arrivals = 0, remShown = null, remCanvas = null, remAlpha = 0, remTurn = 0;
 function pickReminder() {
   const d = now();
   if (params.get('r')) { const r = REM.find(x => (x.text || '').trim()); return r || null; }
-  const on = REM.filter(r => KamielReminder.isActive(r, d) && arrivals % Math.max(1, r.scenes || 3) === 0);
+  const on = REM.filter(r => KamielReminder.isActive(r, d) && arrivals % Math.max(1, r.scenes || 3) === 0 && remDismissed[r.id] !== KamielReminder.occurrence(r, d));
   if (!on.length) return null;
   return on[(remTurn++) % on.length];
 }
@@ -459,7 +462,23 @@ function setMessage(m) {
   message = m;
   if (m) msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign: m.sign });
 }
-function addTV(i) { addThing(i, TV(), { tv: true }, (x) => x.tv); }
+// the music tv: sometimes small, sometimes huge on the horizon, sometimes floating on a cloud;
+// it only takes a free spot and never pushes other things away
+function addTV(i) {
+  const p = places[i]; if (!p || p.items.some(x => x.tv)) return;
+  const o = TV(), asp0 = o.size[0] / o.size[1];
+  const looks = [['grond', .45], ['wolk', .3], ['horizon', .25]].map(([k, w]) => [k, rnd() * w]).sort((a, b) => b[1] - a[1]).map(a => a[0]);
+  for (const look of looks) {
+    if (look === 'grond') { const h = H * (.15 + rnd() * .2); if (tryTV(p, o, h, h * asp0, { tv: true }, 2)) return; }
+    if (look === 'horizon') { const h = H * (.3 + rnd() * .22); if (tryTV(p, o, h, h * asp0, { tv: true }, 1)) return; }
+    if (look === 'wolk') { const h = H * (.13 + rnd() * .08); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return; }
+  }
+  // the sky always has room for a floating tv
+  const h = H * .13, w = h * asp0, side = rnd() < .5 ? -1 : 1;
+  p.items.push({ o, layer: 0, dx: side * (120 + rnd() * (PLACE / 2 - 160 - w / 2)), y: side < 0 ? 160 : 40 + rnd() * 80, h, flip: false, born: performance.now(), tv: true,
+    cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null });
+  p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
+}
 // a photo sent via Telegram: into a frame on this place (an existing frame gets the photo, otherwise one is added)
 function addSpot(i) {
   const p = places[i]; if (!p || !spotlight) return;
@@ -489,13 +508,16 @@ function addThing(i, o, extra, has, size) {
     }
   }
 }
-function tryTV(p, o, h, w, extra) {
-  const used = p.items.filter(x => x.layer > 0).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
+function tryTV(p, o, h, w, extra, layer = 2) {
+  const sky = layer === 0;
+  const used = p.items.filter(x => sky ? x.layer === 0 : x.layer > 0).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
   for (let tries = 0; tries < 30; tries++) {
-    const side = rnd() < .5 ? -1 : 1, lo = 94 + w / 2, hi = PLACE / 2 - 24 - w / 2; if (hi < lo) return;
+    const side = rnd() < .5 ? -1 : 1, lo = (sky ? 0 : 94) + w / 2, hi = PLACE / 2 - 24 - w / 2; if (hi < lo) return false;
     const dx = side * (lo + rnd() * (hi - lo));
     if (used.every(([l, r]) => dx + w / 2 + 30 < l || dx - w / 2 - 30 > r)) {
-      p.items.push(Object.assign({ o, layer: 2, dx, depth: .55 + rnd() * .35, h, flip: false, born: performance.now() }, extra));
+      const it = Object.assign({ o, layer, dx, depth: .55 + rnd() * .35, h, flip: false, born: performance.now() }, extra);
+      if (sky && W / 2 + dx - w / 2 < 330) it.y = Math.max(it.y || 0, 160);   // keep the clock corner free
+      p.items.push(it);
       p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
       return true;
     }
@@ -507,6 +529,7 @@ async function pollLive() {
   setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
+  media = m; if (j.dismissed) remDismissed = j.dismissed;
   if (playing && m.art && m.art !== coverKey) { coverKey = m.art; coverImg = load('api/cover?v=' + m.art); }
   if (playing !== musicOn) {
     musicOn = playing;
@@ -701,7 +724,7 @@ function step(dt) {
   const night = isNightTime(now());
   for (let i = 0; i < N; i++) {
     const v = visible(i);
-    if (!v && (places[i].seen || places[i].night !== night)) compose(i);
+    if (!v && (places[i].seen || places[i].night !== night || places[i].weather !== weather)) compose(i);
     if (v) places[i].seen = true;
   }
   for (const c of clouds) c.x += wind * dt;
@@ -903,6 +926,10 @@ function placeItems(layer) {
       }
       if (o.kind === 'kader' || o.sign) { const c = itemCanvas(it, w, h); if (c) ctx.drawImage(c, sx, y, w, h); }
       else drawImg(o.img, sx, y, w, h, it.flip);
+      if (it.cloud && ready(it.cloud.img)) {   // the tv sits in a cloud
+        const cw = w * 2.3, ch = cw * it.cloud.img.height / it.cloud.img.width;
+        drawImg(it.cloud.img, sx + w / 2 - cw / 2, y + h * .62, cw, Math.min(ch, h * 1.1), false);
+      }
       ctx.restore();
     }
   }
@@ -913,12 +940,33 @@ function drawGround() {
   ctx.drawImage(pano, cam, 0, w1, H, 0, 0, w1, H);
   if (w1 < W) ctx.drawImage(pano, 0, 0, W - w1, H, w1, 0, W - w1, H);
 }
+// with a fast song on, Kamiel nods along: a quick dip of the head on every beat
+let media = null;
+function nodAngle() {
+  const th = S.nod_bpm === undefined ? 110 : +S.nod_bpm;
+  const bpm = +params.get('bpm') || (media && media.bpm);   // ?bpm=128 to try it out
+  if (!musicOn || !bpm || !th || bpm < th) return 0;
+  const pos = media && media.position !== null && media.position !== undefined && media.updated
+    ? media.position + (Date.now() / 1000 - media.updated) : performance.now() / 1000;
+  const beat = pos * bpm / 60, ph = beat - Math.floor(beat);
+  return Math.exp(-ph * 4.5) * 0.16;   // radians: about 9 degrees on the beat, easing back up
+}
+function kamielAt(g, im, X, Y, w, h, nod) {
+  if (!nod) { g.drawImage(im, X, Y, w, h); KamielOutfits.draw(g, outfit, X, Y, w, h); return; }
+  const neck = KamielOutfits.OUTFITS, seam = Y + h * 470 / 1370, px = X + w * 230 / 780;
+  const nekIds = outfit.filter(id => (neck.find(o => o.id === id) || {}).slot === 'nek'), headIds = outfit.filter(id => !nekIds.includes(id));
+  g.save(); g.beginPath(); g.rect(X - 40, seam, w + 80, h); g.clip();
+  g.drawImage(im, X, Y, w, h); KamielOutfits.draw(g, nekIds, X, Y, w, h); g.restore();
+  g.save(); g.translate(px, seam); g.rotate(-nod); g.translate(-px, -seam + nod * 10);
+  g.beginPath(); g.rect(X - 40, Y - 60, w + 80, seam - Y + 60 + h * 30 / 1370); g.clip();
+  g.drawImage(im, X, Y, w, h); KamielOutfits.draw(g, headIds, X, Y, w, h); g.restore();
+}
 function drawKamiel() {
   const im = K[walking ? 'walk' + (Math.floor(t * 6) % 4 + 1) : (blinkT < 0 ? 'blink' : 'stand')]; if (!ready(im)) return;
-  const h = 225, w = im.width * h / im.height, x = W / 2 - w / 2, y = FEET - h;
+  const h = 225, w = im.width * h / im.height, x = W / 2 - w / 2, y = FEET - h, nod = nodAngle();
   ctx.save();
-  if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); KamielOutfits.draw(ctx, outfit, 0, 0, w, h); }
-  else { ctx.drawImage(im, x, y, w, h); KamielOutfits.draw(ctx, outfit, x, y, w, h); }
+  if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); kamielAt(ctx, im, 0, 0, w, h, nod); }
+  else kamielAt(ctx, im, x, y, w, h, nod);
   ctx.restore();
 }
 let rockets = [], flash = null;
@@ -1199,6 +1247,12 @@ document.addEventListener('pointerup', (e) => {
     }
   }
   if (message && msgAlpha > .3) { dismissed.add(message.id); post('api/seen/' + message.id); message = null; return; }   // "read it"
+  if (remShown && remAlpha > .3) {   // a reminder: gone until its next time
+    const key = KamielReminder.occurrence(remShown, now());
+    remDismissed[remShown.id] = key;
+    fetch('api/reminder-dismiss/' + remShown.id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) }).catch(() => {});
+    remShown = null; return;
+  }
   // the clock (top left) opens the departure board; tapping the board closes it
   const ob = document.getElementById('osd').getBoundingClientRect();
   if (e.clientX >= ob.left - 20 && e.clientX <= ob.right + 20 && e.clientY >= ob.top - 20 && e.clientY <= ob.top + ob.height * .55 + 20) {
