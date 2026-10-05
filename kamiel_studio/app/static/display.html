@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kamiel</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Titan+One&family=Arimo:wght@700&display=swap">
+<script>
+  // if Kamiel can't start, say why on the screen instead of staying black
+  window.onerror = function (msg, src, line) {
+    var d = document.getElementById('kerr');
+    if (!d) { d = document.createElement('div'); d.id = 'kerr'; d.style.cssText = 'position:fixed;left:3vw;bottom:4vh;right:3vw;z-index:99;font:16px monospace;color:#fff;background:rgba(160,0,0,.85);padding:12px;white-space:pre-wrap'; (document.body || document.documentElement).appendChild(d); }
+    d.textContent += 'Kamiel kon niet starten: ' + msg + ' (' + String(src).split('/').pop() + ':' + line + ')\n';
+  };
+  window.addEventListener('unhandledrejection', function (e) { window.onerror(String(e.reason && e.reason.message || e.reason), 'display', 0); });
+</script>
 <script src="static/reminder.js"></script>
 <script src="static/outfits.js"></script>
 <style>
@@ -90,7 +99,13 @@ const load = (src) => { const i = new Image(); i.src = src; return i; };
 const ready = (i) => !!i && (i instanceof HTMLCanvasElement || (i.complete && i.naturalWidth > 0));
 
 /* ---------- data from the add-on ---------- */
-let world = await (await fetch('api/world', { cache: 'no-store' })).json();
+// wait for the add-on (it may still be starting after an update) instead of giving up
+let world = null;
+for (let tries = 0; !world; tries++) {
+  try { const r = await fetch('api/world', { cache: 'no-store' }); if (r.ok) world = await r.json(); else throw new Error('status ' + r.status); }
+  catch (e) { if (tries === 3) window.onerror('Kamiel Studio antwoordt niet (' + e.message + '), ik blijf het proberen…', 'display.html', 0); await new Promise(res => setTimeout(res, 5000)); }
+}
+const kerr = document.getElementById('kerr'); if (kerr && kerr.textContent.indexOf('antwoordt niet') >= 0) kerr.remove();
 const S = world.settings;
 const SINK = (S.horizon_sink === undefined ? 3 : +S.horizon_sink) / 100;   // how far horizon objects sink behind the ground
 const pano = world.panorama ? load('media/' + world.panorama.file) : null;
@@ -525,7 +540,7 @@ function tryTV(p, o, h, w, extra, layer = 2) {
   return false;
 }
 async function pollLive() {
-  let j; try { j = await (await fetch('api/live', { cache: 'no-store' })).json(); } catch { return; }
+  let j; try { j = await (await fetch('api/live', { cache: 'no-store' })).json(); } catch (e) { return; }
   setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
@@ -643,7 +658,7 @@ function dropSign(key) {
 let board = null;   // { flap, rows, shownAt, fetched }
 async function showBoard() {
   let rows = [];
-  try { rows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch { }
+  try { rows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { }
   const n = Math.max(1, Math.min(5, rows.length));
   if (board) dropSign('board');
   const flap = new Flap(17, n, '#ffc93c', 'VERTREK', 70);
@@ -879,7 +894,7 @@ function footOf(img) {
   const sc = Math.min(1, 160 / Math.max(iw, ih));
   const w = footCv.width = Math.max(1, Math.round(iw * sc)), h = footCv.height = Math.max(1, Math.round(ih * sc));
   const g = footCv.getContext('2d', { willReadFrequently: true }); g.clearRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
-  let d; try { d = g.getImageData(0, 0, w, h).data; } catch { return (img._foot = { y: 1, x0: .3, x1: .7 }); }
+  let d; try { d = g.getImageData(0, 0, w, h).data; } catch (e) { return (img._foot = { y: 1, x0: .3, x1: .7 }); }
   let bottom = h - 1;
   find: for (; bottom > 0; bottom--) for (let x = 0; x < w; x++) if (d[(bottom * w + x) * 4 + 3] > 140) break find;
   let x0 = w, x1 = 0; const band = Math.max(1, Math.round(h * .06));
@@ -1052,7 +1067,14 @@ function frame() {
   drawRing();
   drawVHS(); osd(d);
 }
-function loop(ts) { const dt = Math.min(.05, (ts - last) / 1000); last = ts; step(dt); frame(); requestAnimationFrame(loop); }
+// one broken piece (bad data from a sensor, say) may never stop Kamiel: keep drawing, and say once what went wrong
+let loopErr = 0;
+function loop(ts) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(.05, (ts - last) / 1000); last = ts;
+  try { step(dt); frame(); }
+  catch (e) { if (loopErr++ === 0) window.onerror(e.message, 'display.html', (e.stack || '').split('\n')[1] || 0); }
+}
 requestAnimationFrame(loop);
 pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
@@ -1067,12 +1089,12 @@ const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔'
 const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
   'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
 const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
-const escH = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const escH = (t) => String(t === null || t === undefined ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let deskOpen = false, deskData = null, deskRows = [], lastTouch = 0, zTop = 10, outfitTouched = 0, deskTimer = null;
 const wins = {};
 function touchDesk() { lastTouch = Date.now(); }
-async function loadDesk() { try { deskData = await (await fetch('api/desk', { cache: 'no-store' })).json(); } catch { deskData = deskData || {}; } }
-async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch { deskRows = []; } }
+async function loadDesk() { try { deskData = await (await fetch('api/desk', { cache: 'no-store' })).json(); } catch (e) { deskData = deskData || {}; } }
+async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { deskRows = []; } }
 function spots(keys) {
   const layout = S.window_layout || 'verspreid';
   const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [58, 40], muziek: [32, 30] };
