@@ -250,9 +250,29 @@ async def media(request):
 
 
 def page(name):
+    """Serve a page; every script it loads gets its own version in the address (static/x.js?v=…),
+    so after an update browsers can never mix a new page with an old, remembered script."""
+    import re
+
+    def stamp(m):
+        f = os.path.join(APP, "static", m.group(2))
+        v = int(os.path.getmtime(f)) if os.path.exists(f) else 0
+        return f'{m.group(1)}static/{m.group(2)}?v={v}"'
+
     async def handler(request):
-        return web.FileResponse(os.path.join(APP, "static", name), headers={"Cache-Control": "no-cache"})
+        with open(os.path.join(APP, "static", name), encoding="utf-8") as f:
+            html = re.sub(r'(src=")static/([\w.-]+\.js)"', stamp, f.read())
+        return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
     return handler
+
+
+@web.middleware
+async def fresh_scripts(request, handler):
+    """Scripts and styles: the browser must check for a newer version every time (cheap: unchanged = 304)."""
+    resp = await handler(request)
+    if request.path.startswith("/static/") and request.path.endswith((".js", ".css", ".html")):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 # ----------------------------------------------------------------- studio (write)
@@ -1354,7 +1374,7 @@ def common_routes(app):
 
 
 def make_studio():
-    app = web.Application(client_max_size=60 * 1024 * 1024)
+    app = web.Application(client_max_size=60 * 1024 * 1024, middlewares=[fresh_scripts])
     app.router.add_get("/", page("studio.html"))
     common_routes(app)
     app.router.add_get("/api/entities", api_entities)
@@ -1378,7 +1398,7 @@ def make_studio():
 
 
 def make_display():
-    app = web.Application(client_max_size=5 * 1024 * 1024)   # room for a /kijk snapshot
+    app = web.Application(client_max_size=5 * 1024 * 1024, middlewares=[fresh_scripts])   # room for a /kijk snapshot
     app.router.add_get("/", page("display.html"))
     common_routes(app)
     return app
