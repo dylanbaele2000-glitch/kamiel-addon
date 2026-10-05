@@ -95,6 +95,12 @@ label.pct input{width:76px}
 .days label{display:inline-flex;align-items:center;gap:4px;font-weight:500;background:var(--chip);border-radius:8px;padding:4px 8px}
 .rem .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .rem input[type=color]{width:100%;height:40px;padding:2px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
+details.guide{background:var(--chip);border-radius:12px;padding:10px 14px;margin:6px 0 14px}
+details.guide summary{cursor:pointer;font-weight:600}
+details.guide .steps{margin-top:10px}
+details.guide pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;font:13px/1.4 var(--f-osd)}
+#boardTable td{padding-right:8px}
+#boardTable input,#boardTable select{min-width:90px}
 .steps{margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .chatchip{display:inline-flex;align-items:center;gap:8px;background:var(--chip);border-radius:999px;padding:4px 6px 4px 12px;font-weight:600}
 .chatchip button{min-height:30px;padding:2px 10px;font-size:13px}
@@ -362,7 +368,7 @@ label.pct input{width:76px}
         <label class="field" for="sSunScript">Tikken op de zon<select id="sSunScript" class="scriptsel"></select></label>
         <label class="field" for="sMoonScript">Tikken op de maan<select id="sMoonScript" class="scriptsel"></select></label>
         <label class="field" for="sEmpty">Tikken ergens anders
-          <select id="sEmpty"><option value="url">Open het adres hieronder</option><option value="vertrek">Toon bus en tram</option><option value="niets">Niets</option></select></label>
+          <select id="sEmpty"><option value="url">Open het adres hieronder</option><option value="vertrek">Toon het vertrekbord</option><option value="niets">Niets</option></select></label>
       </div>
       <label class="field" for="sTap" style="max-width:640px;margin-top:14px">Adres
         <span>Bijvoorbeeld een Home Assistant-dashboard: http://192.168.1.20:8123/kamiel-knoppen/0.</span>
@@ -373,28 +379,94 @@ label.pct input{width:76px}
       <p class="hint">Speelt deze speaker muziek, dan staat er op elke plek een tv met de hoes van de plaat. Wil je een eigen tv, upload dan een kader en vink in de bibliotheek "Tv voor muziek" aan.</p>
       <div class="settings"><label class="field" for="sMedia">Speaker<select id="sMedia"></select></label></div>
 
-      <h2 style="margin-top:18px">Bus en tram</h2>
-      <p class="hint">Kies tot drie haltes uit de De Lijn-integratie van Home Assistant. Bij "Lijnen" kun je filteren, bijvoorbeeld 1, 4. De vertrekken verschijnen 25 seconden.</p>
-      <table class="chances" id="depTable">
-        <thead><tr><th scope="col">Halte</th><th scope="col">Naam op het scherm</th><th scope="col">Lijnen</th></tr></thead>
+      <h2 style="margin-top:18px">Vertrekbord</h2>
+      <p class="hint">Tik op de klok linksboven en er verschijnt een vertrekbord zoals in de luchthaven, met hoe lang het nog duurt. Het verdwijnt vanzelf zodra alles erop vertrokken is (of als je erop tikt). Elke rij hieronder is één regel op het bord.</p>
+      <details class="guide">
+        <summary>Hoe stel ik dit in? (eenmalig, ongeveer 15 minuten)</summary>
+        <ol class="steps">
+          <li><b>Sleutel aanvragen bij De Lijn.</b> Ga naar <i>data.delijn.be</i>, maak een gratis account, en abonneer je op het product <i>"Open Data Free Subscription"</i>. Op je profielpagina staat dan je <b>primaire sleutel</b>.</li>
+          <li><b>Je halte opzoeken.</b> Elke halte heeft een nummer van 6 cijfers. Het staat op het haltebordje, of zoek je halte op <i>delijn.be</i>: het nummer staat in de webadresbalk en bij de haltegegevens. Let op: de overkant van de straat is een andere halte (andere richting).</li>
+          <li><b>De Lijn toevoegen aan Home Assistant.</b> Installeer de add-on <i>File editor</i> (Add-on-winkel), open <i>configuration.yaml</i> en plak onderaan:
+<pre>sensor:
+  - platform: delijn
+    api_key: "JOUW_SLEUTEL"
+    next_departure:
+      - stop_id: "123456"
+      - stop_id: "654321"</pre>
+            Eén regel <i>stop_id</i> per halte. Heb je al een regel <i>sensor:</i>, zet dan alleen het deel vanaf <i>- platform</i> eronder.<br>
+            <i>Vind je De Lijn bij Instellingen → Apparaten en diensten → Integratie toevoegen? Gebruik dan die weg: dan hoef je niets te plakken.</i></li>
+          <li><b>Home Assistant herstarten</b> (Instellingen → drie puntjes rechtsboven → Herstarten). Daarna bestaat er per halte een sensor met de naam van de halte.</li>
+          <li><b>Hier invullen.</b> Kies per rij de halte, en filter zodat alleen de juiste richting overblijft:
+            <ul>
+              <li><b>Naam op het bord</b>: wat er op het bord staat, bijvoorbeeld CENTRUM.</li>
+              <li><b>Soort</b>: alleen tram, alleen bus, of alles.</li>
+              <li><b>Lijnen</b>: bijvoorbeeld <i>1, 4</i>. Leeg = elke lijn.</li>
+              <li><b>Bestemming bevat</b>: woorden uit de eindbestemming, bijvoorbeeld <i>Korenmarkt, Zuid</i>. Eén ervan volstaat. Leeg = elke bestemming.</li>
+              <li><b>Aantal</b>: hoeveel vertrekken van die rij op het bord komen.</li>
+            </ul>
+            Andere bestemming nodig? Voeg gewoon een rij toe of pas de filters aan. Je kunt dezelfde halte in meerdere rijen gebruiken.</li>
+        </ol>
+      </details>
+      <div style="overflow-x:auto">
+      <table class="chances" id="boardTable">
+        <thead><tr><th scope="col">Naam op het bord</th><th scope="col">Halte</th><th scope="col">Soort</th><th scope="col">Lijnen</th><th scope="col">Bestemming bevat</th><th scope="col">Aantal</th></tr></thead>
         <tbody>
-          <tr><td><select class="depent" data-i="0"></select></td><td><input type="text" class="deplab" data-i="0" placeholder="NAAR CENTRUM"></td><td><input type="text" class="deplin" data-i="0" placeholder="1, 4"></td></tr>
-          <tr><td><select class="depent" data-i="1"></select></td><td><input type="text" class="deplab" data-i="1" placeholder="NAAR STATION"></td><td><input type="text" class="deplin" data-i="1"></td></tr>
-          <tr><td><select class="depent" data-i="2"></select></td><td><input type="text" class="deplab" data-i="2"></td><td><input type="text" class="deplin" data-i="2"></td></tr>
+          <tr>
+            <td><input type="text" class="bLab" maxlength="14" placeholder="CENTRUM"></td>
+            <td><select class="bEnt"></select></td>
+            <td><select class="bKind"><option value="alles">Alles</option><option value="tram">Tram</option><option value="bus">Bus</option><option value="metro">Metro</option></select></td>
+            <td><input type="text" class="bLines" placeholder="1, 4" size="6"></td>
+            <td><input type="text" class="bDest" placeholder="Korenmarkt, Zuid"></td>
+            <td><select class="bCount"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></td>
+          </tr>
+          <tr>
+            <td><input type="text" class="bLab" maxlength="14" placeholder="STATION"></td>
+            <td><select class="bEnt"></select></td>
+            <td><select class="bKind"><option value="alles">Alles</option><option value="tram">Tram</option><option value="bus">Bus</option><option value="metro">Metro</option></select></td>
+            <td><input type="text" class="bLines" placeholder="" size="6"></td>
+            <td><input type="text" class="bDest" placeholder="Station"></td>
+            <td><select class="bCount"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></td>
+          </tr>
+          <tr>
+            <td><input type="text" class="bLab" maxlength="14" placeholder=""></td>
+            <td><select class="bEnt"></select></td>
+            <td><select class="bKind"><option value="alles">Alles</option><option value="tram">Tram</option><option value="bus">Bus</option><option value="metro">Metro</option></select></td>
+            <td><input type="text" class="bLines" placeholder="" size="6"></td>
+            <td><input type="text" class="bDest" placeholder=""></td>
+            <td><select class="bCount"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></td>
+          </tr>
+          <tr>
+            <td><input type="text" class="bLab" maxlength="14" placeholder=""></td>
+            <td><select class="bEnt"></select></td>
+            <td><select class="bKind"><option value="alles">Alles</option><option value="tram">Tram</option><option value="bus">Bus</option><option value="metro">Metro</option></select></td>
+            <td><input type="text" class="bLines" placeholder="" size="6"></td>
+            <td><input type="text" class="bDest" placeholder=""></td>
+            <td><select class="bCount"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></td>
+          </tr>
         </tbody>
       </table>
+      </div>
       <div class="settings" style="margin-top:14px">
         <label class="field" for="sTrigger">Ook tonen wanneer dit aangaat
-          <span>Bijvoorbeeld de bewegingssensor in de gang of het contact van de voordeur.</span>
+          <span>Optioneel, bijvoorbeeld de bewegingssensor in de gang of de voordeur.</span>
           <select id="sTrigger"></select></label>
       </div>
 
-      <h2 style="margin-top:18px">Waar zijn we</h2>
-      <p class="hint">Onder de datum: "THUIS" of hoe ver iemand van huis is, via de Home Assistant-app op jullie gsm.</p>
+      <h2 style="margin-top:18px">Timers van Google Home</h2>
+      <p class="hint">Zet je een timer op een Google Home ("Hey Google, zet een timer van 10 minuten voor de pasta"), dan staat er in Kamiels wereld een bord dat aftelt. Als de timer afgaat, knippert het.</p>
+      <details class="guide">
+        <summary>Hoe stel ik dit in?</summary>
+        <ol class="steps">
+          <li>Installeer <b>HACS</b> in Home Assistant als je dat nog niet hebt (zie <i>hacs.xyz</i>).</li>
+          <li>Zoek in HACS de integratie <b>Google Home</b> en installeer ze. Herstart Home Assistant.</li>
+          <li>Instellingen → Apparaten en diensten → Integratie toevoegen → <b>Google Home</b>, en log in met het Google-account van je speakers.</li>
+          <li>Per speaker verschijnt een sensor die eindigt op <b>_timers</b>. Kies die hieronder.</li>
+        </ol>
+      </details>
       <div class="settings">
-        <label class="field" for="sP0">Persoon 1<select id="sP0" class="psel"></select></label>
-        <label class="field" for="sP1">Persoon 2<select id="sP1" class="psel"></select></label>
-        <label class="field" for="sP2">Persoon 3<select id="sP2" class="psel"></select></label>
+        <label class="field" for="sT0">Speaker 1<select id="sT0" class="tsel"></select></label>
+        <label class="field" for="sT1">Speaker 2<select id="sT1" class="tsel"></select></label>
+        <label class="field" for="sT2">Speaker 3<select id="sT2" class="tsel"></select></label>
       </div>
 
       <h2 style="margin-top:18px">Berichten via Home Assistant</h2>
@@ -529,8 +601,9 @@ function renderLib() {
           <label>Soort <select data-kind>${Object.entries(KIND_NL).map(([k, v]) => `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
           ${a.kind !== 'wolk' ? `<label>Wanneer <select data-period>${PERIOD_NL.map(([k, n]) => `<option value="${k}" ${(a.period || 'altijd') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
           <span data-own ${a.period === 'eigen' ? '' : 'hidden'}><label>Van <input type="text" data-pf placeholder="dd-mm" size="5" value="${a.period_from ? a.period_from.split('-').reverse().join('-') : ''}"></label> <label>tot <input type="text" data-pt placeholder="dd-mm" size="5" value="${a.period_to ? a.period_to.split('-').reverse().join('-') : ''}"></label></span>
-          <label>Bij tikken <select data-tap><option value="niets">Niets</option><option value="vertrek" ${(a.tap || {}).action === 'vertrek' ? 'selected' : ''}>Toon bus en tram</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${(a.tap || {}).action === 'script' && a.tap.entity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>
+          <label>Bij tikken <select data-tap><option value="niets">Niets</option><option value="vertrek" ${(a.tap || {}).action === 'vertrek' ? 'selected' : ''}>Toon het vertrekbord</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${(a.tap || {}).action === 'script' && a.tap.entity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>
           ${a.kind === 'kader' ? `<label><input type="checkbox" data-tv ${a.tv ? 'checked' : ''}> Tv voor muziek</label>` : ''}` : ''}
+          ${a.kind === 'horizon' ? `<label>Zakt in de grond <select data-sink><option value="">Standaard</option>${[0, 3, 5, 8, 10, 15, 20, 25, 30, 40].map(v => `<option value="${v}" ${a.sink === v ? 'selected' : ''}>${v} %</option>`).join('')}</select></label>` : ''}
           ${a.kind !== 'wolk' ? `<label>Grootte <select data-scale>${SCALE_NL.map(([v, n]) => `<option value="${v}" ${Math.abs((a.scale || 1) - v) < .01 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
           <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         </div>
@@ -567,6 +640,8 @@ function renderLib() {
     if (tp) tp.addEventListener('change', () => {
       const v = tp.value; patch({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } });
     });
+    const sk = el.querySelector('[data-sink]');
+    if (sk) sk.addEventListener('change', () => patch({ sink: sk.value === '' ? null : +sk.value }));
     const tv = el.querySelector('[data-tv]');
     if (tv) tv.addEventListener('change', () => patch({ tv: tv.checked }));
     const sc = el.querySelector('[data-scale]');
@@ -684,11 +759,15 @@ async function renderSettings() {
   };
   fill('script,scene,automation,input_button,button', [$('sSunScript'), $('sMoonScript')], [s.sun_script, s.moon_script], 'Niets');
   fill('media_player', [$('sMedia')], [s.media_player], 'Geen');
-  fill('sensor', [...document.querySelectorAll('.depent')], [0, 1, 2].map(i => (s.departures[i] || {}).entity), 'Geen');
-  document.querySelectorAll('.deplab').forEach((el, i) => { el.value = (s.departures[i] || {}).label || ''; });
-  document.querySelectorAll('.deplin').forEach((el, i) => { el.value = (s.departures[i] || {}).lines || ''; });
+  const B = s.board || [];
+  fill('sensor', [...document.querySelectorAll('.bEnt')], [0, 1, 2, 3].map(i => (B[i] || {}).entity), 'Geen');
+  document.querySelectorAll('#boardTable tbody tr').forEach((tr, i) => {
+    const r = B[i] || {};
+    tr.querySelector('.bLab').value = r.label || ''; tr.querySelector('.bKind').value = r.kind || 'alles';
+    tr.querySelector('.bLines').value = r.lines || ''; tr.querySelector('.bDest').value = r.dest || ''; tr.querySelector('.bCount').value = String(r.count || 1);
+  });
+  fill('sensor', [...document.querySelectorAll('.tsel')], s.timer_entities || [], 'Geen');
   fill('binary_sensor,input_boolean', [$('sTrigger')], [s.departure_trigger], 'Niets');
-  fill('person', [...document.querySelectorAll('.psel')], s.people || [], 'Niemand');
   fill('input_text', [$('sMsgEnt')], [s.message_entity], 'Geen');
   try {
     const j = await (await fetch('api/entities?domain=sensor')).json();
@@ -705,8 +784,9 @@ $('setForm').addEventListener('submit', async (e) => {
     tap_url: $('sTap').value, empty_tap: $('sEmpty').value, sun_script: $('sSunScript').value, moon_script: $('sMoonScript').value,
     media_player: $('sMedia').value, departure_trigger: $('sTrigger').value, message_entity: $('sMsgEnt').value,
     message_minutes: +$('sMsgMin').value || 60, season_colors: $('sSeason').checked,
-    people: [...document.querySelectorAll('.psel')].map(e => e.value).filter(Boolean),
-    departures: [0, 1, 2].map(i => ({ entity: document.querySelector(`.depent[data-i="${i}"]`).value, label: document.querySelector(`.deplab[data-i="${i}"]`).value, lines: document.querySelector(`.deplin[data-i="${i}"]`).value })).filter(d => d.entity),
+    board: [...document.querySelectorAll('#boardTable tbody tr')].map(tr => ({ entity: tr.querySelector('.bEnt').value, label: tr.querySelector('.bLab').value,
+      kind: tr.querySelector('.bKind').value, lines: tr.querySelector('.bLines').value, dest: tr.querySelector('.bDest').value, count: +tr.querySelector('.bCount').value })).filter(r => r.entity),
+    timer_entities: [...document.querySelectorAll('.tsel')].map(e => e.value).filter(Boolean),
     osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');

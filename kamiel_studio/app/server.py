@@ -68,6 +68,8 @@ DEFAULT_SETTINGS = {
     "empty_tap": "url",
     "media_player": "",
     "departures": [],
+    "board": [],
+    "timer_entities": [],
     "departure_trigger": "",
     "people": [],
     "horizon_sink": 3,
@@ -100,6 +102,9 @@ def load_db():
     stored = db.get("settings", {})
     s = copy.deepcopy(DEFAULT_SETTINGS)
     s.update(stored)
+    if "board" not in stored and stored.get("departures"):
+        s["board"] = [{"entity": d["entity"], "label": d.get("label", "")[:14], "lines": d.get("lines", ""),
+                       "dest": "", "kind": "alles", "count": 1} for d in stored["departures"]]
     if "chances" not in stored:
         # older versions had "1 frame in N places"; carry that over
         r = int(stored.get("frame_ratio", 2))
@@ -146,7 +151,7 @@ async def run_blocking(fn, *args):
 WEATHER_MAP = {
     "sunny": "helder", "clear-night": "helder", "partlycloudy": "licht", "windy": "licht",
     "windy-variant": "bewolkt", "cloudy": "bewolkt", "rainy": "regen", "pouring": "regen",
-    "lightning": "regen", "lightning-rainy": "regen", "snowy": "bewolkt", "snowy-rainy": "regen",
+    "lightning": "onweer", "lightning-rainy": "onweer", "snowy": "bewolkt", "snowy-rainy": "regen",
     "hail": "regen", "fog": "mist", "exceptional": "bewolkt",
 }
 WEATHER_MAP["snowy"] = "sneeuw"
@@ -176,7 +181,9 @@ async def api_state(request):
             w = await ha_get("/states/" + ent)
             if w:
                 out["weather"] = WEATHER_MAP.get(w.get("state"), "licht")
-                out["wind"] = w.get("attributes", {}).get("wind_speed")
+                wa = w.get("attributes", {})
+                out["wind"] = wa.get("wind_speed")
+                out["clouds"] = wa.get("cloud_coverage")
         lines = []
         for ent in db["settings"].get("osd_entities", []):
             st = await ha_get("/states/" + ent)
@@ -190,8 +197,6 @@ async def api_state(request):
                 pass
             unit = st.get("attributes", {}).get("unit_of_measurement", "")
             lines.append((val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper())
-        if db["settings"].get("people"):
-            lines += await people_lines(db["settings"]["people"])
         out["osd"] = lines
     except Exception as e:  # never break the tablet over a missing value
         out["error"] = str(e)
@@ -403,6 +408,8 @@ async def api_edit_asset(request):
                     t = body["tap"] or {}
                     act = t.get("action") if t.get("action") in ("niets", "vertrek", "script") else "niets"
                     a["tap"] = {"action": act, "entity": str(t.get("entity", ""))[:120] if act == "script" else ""}
+                if "sink" in body:
+                    a["sink"] = None if body["sink"] in (None, "", "standaard") else max(0, min(60, int(body["sink"])))
                 if "scale" in body:
                     a["scale"] = max(0.3, min(3.0, float(body["scale"])))
                 if "active" in body:
@@ -534,8 +541,17 @@ async def api_settings(request):
             s["empty_tap"] = body["empty_tap"]
         if "season_colors" in body:
             s["season_colors"] = bool(body["season_colors"])
-        if isinstance(body.get("people"), list):
-            s["people"] = [str(e) for e in body["people"] if str(e).strip()][:3]
+        if isinstance(body.get("board"), list):
+            rows = []
+            for d in body["board"][:5]:
+                if isinstance(d, dict) and str(d.get("entity", "")).strip():
+                    rows.append({"entity": str(d["entity"]).strip()[:120], "label": str(d.get("label", "")).strip()[:14],
+                                 "lines": str(d.get("lines", "")).strip()[:60], "dest": str(d.get("dest", "")).strip()[:80],
+                                 "kind": d.get("kind") if d.get("kind") in ("alles", "tram", "bus", "metro") else "alles",
+                                 "count": max(1, min(3, int(d.get("count", 1) or 1)))})
+            s["board"] = rows
+        if isinstance(body.get("timer_entities"), list):
+            s["timer_entities"] = [str(e) for e in body["timer_entities"] if str(e).strip()][:3]
         if isinstance(body.get("departures"), list):
             deps = []
             for d in body["departures"][:3]:
@@ -615,6 +631,20 @@ async def api_live(request):
                 pic = a.get("entity_picture") or ""
                 out["media"] = {"playing": st.get("state") == "playing", "title": a.get("media_title", ""),
                                 "artist": a.get("media_artist", ""), "art": str(abs(hash(pic))) if pic else ""}
+        timers = []
+        for ent in s.get("timer_entities", []):
+            st = await ha_get("/states/" + ent)
+            for t in ((st or {}).get("attributes", {}).get("timers") or []):
+                status = t.get("status", "set")
+                if status not in ("set", "ringing", "paused"):
+                    continue
+                end = _ts(t.get("local_time_iso") or "") if t.get("local_time_iso") else None
+                if end is None and isinstance(t.get("fire_time"), (int, float)):
+                    end = time.time() + t["fire_time"]
+                timers.append({"id": str(t.get("timer_id", ""))[-12:], "label": str(t.get("label") or "")[:14],
+                               "end": end, "status": status, "duration": t.get("duration"),
+                               "left": t.get("fire_time") if status == "paused" else None})
+        out["timers"] = timers
         if s.get("departure_trigger"):
             st = await ha_get("/states/" + s["departure_trigger"])
             if st:
@@ -670,46 +700,52 @@ async def api_cover(request):
 TRANSPORT = {"TRAM": "TRAM", "BUS": "BUS", "METRO": "METRO"}
 
 
-async def api_departures(request):
-    """Next departures, already as short camcorder-style lines."""
-    return web.json_response({"blocks": await departure_blocks(load_db())})
+KIND_OF = {"TRAM": "tram", "BUS": "bus", "METRO": "metro"}
 
 
-async def departure_blocks(db):
+async def board_rows(db):
+    """The departure board: per row you chose in the Studio, the next departure(s) that match.
+    Each row: a name for the board (CENTRUM), a stop sensor, and optional filters
+    (line numbers, words in the destination, tram or bus)."""
     now = time.time()
-    blocks = []
-    for d in db["settings"].get("departures", []):
-        st = await ha_get("/states/" + d["entity"])
+    rows = []
+    for r in db["settings"].get("board", []):
+        st = await ha_get("/states/" + r["entity"]) if r.get("entity") else None
         if not st:
             continue
         a = st.get("attributes", {})
         passages = a.get("next_passages") or ([a] if a.get("line_number_public") else [])
-        want = {x.strip().upper() for x in d.get("lines", "").split(",") if x.strip()}
-        lines = []
+        lines = {x.strip().upper() for x in r.get("lines", "").replace(";", ",").split(",") if x.strip()}
+        words = [x.strip().upper() for x in r.get("dest", "").replace(";", ",").split(",") if x.strip()]
+        kind_want = r.get("kind", "alles")
+        found = []
         for p in passages:
             num = str(p.get("line_number_public", "")).upper()
-            if want and num not in want:
-                continue
+            kind = KIND_OF.get(str(p.get("line_transport_type", "")).upper(), "")
+            dest = str(p.get("final_destination", "")).upper()
             due = _ts(p.get("due_at_realtime") or p.get("due_at_schedule") or "")
-            if due is None:
+            if due is None or due < now - 30:
                 continue
-            mins = int((due - now) // 60)
-            if mins < 0:
+            if lines and num not in lines:
                 continue
-            kind = TRANSPORT.get(str(p.get("line_transport_type", "")).upper(), "")
-            dest = str(p.get("final_destination", "")).upper()[:22]
-            lines.append({"line": (kind + " " + num).strip(), "dest": dest, "min": mins})
-            if len(lines) >= 3:
+            if words and not any(w in dest for w in words):
+                continue
+            if kind_want != "alles" and kind and kind != kind_want:
+                continue
+            found.append({"label": r.get("label", "")[:14].upper() or dest[:14], "line": num, "kind": kind,
+                          "dest": dest[:22], "due": due, "realtime": bool(p.get("due_at_realtime"))})
+            if len(found) >= r.get("count", 1):
                 break
-        if not lines and not passages:
+        if not passages:   # any other sensor whose state is a time: use it as is
             due = _ts(st.get("state"))
-            if due:
-                lines.append({"line": "", "dest": "", "min": max(0, int((due - now) // 60))})
-            elif st.get("state") not in (None, "unknown", "unavailable"):
-                lines.append({"line": str(st["state"]).upper()[:30], "dest": "", "min": None})
-        name = d.get("label") or a.get("stopname") or a.get("friendly_name") or d["entity"]
-        blocks.append({"label": str(name).upper()[:30], "lines": lines})
-    return blocks
+            if due and due > now - 30:
+                found.append({"label": r.get("label", "")[:14].upper(), "line": "", "kind": "", "dest": "", "due": due, "realtime": False})
+        rows += found
+    return rows
+
+
+async def api_departures(request):
+    return web.json_response({"rows": await board_rows(load_db())})
 
 
 async def api_tap(request):
@@ -760,34 +796,6 @@ async def api_clear_message(request):
         db.pop("spotlight", None)
         save_db(db, bump=False)
     return web.json_response({"ok": True})
-
-
-def _km(lat1, lon1, lat2, lon2):
-    from math import radians, sin, cos, asin, sqrt
-    p1, p2 = radians(lat1), radians(lat2)
-    h = sin((p2 - p1) / 2) ** 2 + cos(p1) * cos(p2) * sin(radians(lon2 - lon1) / 2) ** 2
-    return 12742 * asin(sqrt(h))
-
-
-async def people_lines(ents):
-    home = await ha_get("/states/zone.home")
-    ha = (home or {}).get("attributes", {})
-    out = []
-    for e in ents:
-        st = await ha_get("/states/" + e)
-        if not st:
-            continue
-        a = st.get("attributes", {})
-        name = str(a.get("friendly_name", e.split(".")[-1])).split(" ")[0].upper()[:12]
-        if st.get("state") == "home":
-            out.append(f"{name} THUIS")
-        elif a.get("latitude") is not None and ha.get("latitude") is not None:
-            km = _km(ha["latitude"], ha["longitude"], a["latitude"], a["longitude"])
-            dist = f"{km:.1f}".replace(".", ",") if km < 10 else str(round(km))
-            out.append(f"{name} {dist} KM")
-        elif st.get("state") not in (None, "unknown", "unavailable", "not_home"):
-            out.append(f"{name} {str(st['state']).upper()[:14]}")
-    return out
 
 
 # ----------------------------------------------------------------- Telegram
@@ -865,16 +873,17 @@ async def tg_handle(token, upd):
             db = load_db(); db.pop("message", None); db.pop("spotlight", None); save_db(db, bump=False)
         return await tg_say(chat, "Weg van het scherm.")
     if cmd == "/bus":
-        blocks = await departure_blocks(load_db())
-        if not blocks:
-            return await tg_say(chat, "Er zijn nog geen haltes ingesteld in Kamiel Studio.")
+        db = load_db()
+        if not db["settings"].get("board"):
+            return await tg_say(chat, "Er staat nog niets op het vertrekbord. Stel het in bij Instellingen in Kamiel Studio.")
+        rows = await board_rows(db)
+        if not rows:
+            return await tg_say(chat, "Er vertrekt de komende tijd niets.")
         out = []
-        for b in blocks:
-            out.append(b["label"].capitalize())
-            for l in b["lines"] or [{"line": "niets in de komende tijd", "dest": "", "min": None}]:
-                when = "" if l["min"] is None else (" nu" if l["min"] == 0 else f" over {l['min']} min")
-                out.append(f"  {l['line']} {l['dest'].title()}{when}".rstrip())
-        return await tg_say(chat, "\n".join(out))
+        for r in rows:
+            m = max(0, int((r["due"] - time.time()) // 60))
+            out.append(f"{r['label'].capitalize()}: {r['kind']} {r['line']} om {_hm(r['due'])}" + (" (nu)" if m == 0 else f" (over {m} min)"))
+        return await tg_say(chat, "\n".join(x.replace("  ", " ") for x in out))
     if cmd == "/kijk":
         if SNAP.get("id"):
             return await tg_say(chat, "Even geduld, ik ben al een foto aan het maken.")

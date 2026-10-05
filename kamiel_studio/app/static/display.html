@@ -108,7 +108,8 @@ const photoImg = (url) => photoCache[url] || (photoCache[url] = load(url));
 const WORDS = S.words && S.words.length ? S.words : ['WELKOM IN KAMIELLAND'];
 
 /* ---------- time, sun, moon, weather ---------- */
-let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [];
+let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [], cloudCover = null;
+const rainy = () => weather === 'regen' || weather === 'onweer';
 function now() {
   const d = new Date();
   const dd = params.get('d'); if (dd) { const [y, mo, da] = dd.split('-').map(Number); d.setFullYear(y, mo - 1, da); }
@@ -178,7 +179,7 @@ function skyColors(alt) {
   else if (alt < 6) { const t = (alt + 4) / 10; c = [mix(blue[0], gold[0], t), mix(blue[1], gold[1], t)]; }
   else if (alt < 20) { const t = (alt - 6) / 14; c = [mix(gold[0], day[0], t), mix(gold[1], day[1], t)]; }
   else c = day;
-  const grey = { helder: 0, licht: 0.03, bewolkt: 0.5, regen: 0.65, mist: 0.55 }[weather] || 0;
+  const grey = { helder: 0, licht: 0.03, bewolkt: 0.5, regen: 0.65, onweer: 0.75, mist: 0.55, sneeuw: 0.45 }[weather] || 0;
   const lum = (x) => x[0] * .3 + x[1] * .59 + x[2] * .11;
   return c.map(x => mix(x, [lum(x), lum(x), lum(x) * 1.05], grey));
 }
@@ -190,8 +191,13 @@ async function pollState() {
     const s = await (await fetch('api/state', { cache: 'no-store' })).json();
     if (s.sun) haSun = s.sun;
     osdLines = s.osd || [];
-    if (s.weather && !params.get('w')) { if (s.weather !== weather) { weather = s.weather; makeClouds(); } }
-    wind = weather === 'regen' ? 12 : weather === 'bewolkt' ? 7 : 4;
+    const cov = typeof s.clouds === 'number' ? s.clouds : null;
+    if (s.weather && !params.get('w')) {
+      // new clouds only when it really changes (weather type, or cloud cover by more than a fifth)
+      if (s.weather !== weather || (cov !== null && (cloudCover === null || Math.abs(cov - cloudCover) > 20))) { weather = s.weather; cloudCover = cov; makeClouds(); }
+    }
+    // real wind (km/h) moves the clouds; otherwise a guess from the weather
+    wind = typeof s.wind === 'number' ? Math.max(2, Math.min(30, 2 + s.wind * .5)) : rainy() ? 12 : weather === 'bewolkt' ? 7 : 4;
   } catch (e) { /* keep going with what we have */ }
 }
 async function pollWorld() {
@@ -344,7 +350,8 @@ let clouds = [];
 function makeClouds() {
   clouds = [];
   if (!CL.length) return;
-  const n = { helder: 2, licht: 8, bewolkt: 16, regen: 18, mist: 6, sneeuw: 14 }[weather] || 6;
+  let n = { helder: 2, licht: 8, bewolkt: 16, regen: 18, onweer: 18, mist: 6, sneeuw: 14 }[weather] || 6;
+  if (cloudCover !== null && (weather === 'helder' || weather === 'licht' || weather === 'bewolkt')) n = Math.round(1 + cloudCover / 100 * 17);
   let prev = null;
   for (let k = 0; k < n; k++) {
     let c = CL[Math.floor(rnd() * CL.length)];
@@ -393,13 +400,15 @@ function pickReminder() {
 function showReminder(r) {
   remShown = r; remCanvas = r ? KamielReminder.render(r.text, { width: W, height: H, color: r.color, position: r.position }) : null;
 }
-function arrived() { arrivals++; showReminder(pickReminder()); }
+function arrived() {
+  if (timerSign) { dropSign('timer'); placeSign('timer', signObj('timer', timerSign.flap), .2 + timerSign.flap.rows * .045); }   // the timer walks along
+  arrivals++; showReminder(pickReminder()); }
 showReminder(pickReminder());   // on start-up too
 if (document.fonts) document.fonts.load(`700 40px Arimo`).then(() => { if (remShown) showReminder(remShown); }).catch(() => {});
 
 /* ---------- live: messages, music, departures ---------- */
 let message = null, msgCanvas = null, msgAlpha = 0, dismissed = new Set(), lastTrigger = null;
-let deps = null, depsUntil = 0, depsAlpha = 0, ring = null;
+let ring = null;
 function setMessage(m) {
   if (m && dismissed.has(m.id)) m = null;
   if ((m && m.id) === (message && message.id)) return;
@@ -429,7 +438,7 @@ function addThing(i, o, extra, has, size) {
     const h = H * (size ? (round < 2 ? size : size * .8) : (round < 2 ? .24 + rnd() * .1 : .2)), w = h * asp0;
     if (tryTV(p, o, h, w, extra)) return;
     if (round >= 1) {
-      const standing = p.items.filter(x => x.layer > 0 && !x.tv && !x.spot);
+      const standing = p.items.filter(x => x.layer > 0 && !x.tv && !x.spot && !x.board && !x.timer);   // live things never make way
       if (!standing.length) continue;
       standing.sort((a, b) => a.h * a.o.size[0] / a.o.size[1] - b.h * b.o.size[0] / b.o.size[1]);
       p.items.splice(p.items.indexOf(standing[0]), 1);
@@ -469,7 +478,8 @@ async function pollLive() {
   if (!j.spotlight && spotlight) dropSpot();   // /wis, wissen in the Studio, or its time is over
   if (j.snapshot && j.snapshot !== lastSnap) { lastSnap = j.snapshot; sendSnapshot(j.snapshot); }
   const tr = j.trigger;
-  if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showDepartures();
+  if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showBoard();
+  setTimers(j.timers);
   if (tr) lastTrigger = tr.changed;
 }
 let lastSnap = null;
@@ -483,32 +493,145 @@ function sendSnapshot(id) {
   lines.forEach((l, k) => g.fillText(l, 30, 52 + k * 34));
   c.toBlob(b => { if (b) fetch('api/snapshot/' + id, { method: 'POST', body: b, headers: { 'Content-Type': 'image/jpeg' } }).catch(() => {}); }, 'image/jpeg', .88);
 }
-async function showDepartures() {
-  try { deps = (await (await fetch('api/departures', { cache: 'no-store' })).json()).blocks; } catch { deps = []; }
-  depsUntil = performance.now() + 25000;
-}
-function drawDepartures() {
-  const want = performance.now() < depsUntil ? 1 : 0;
-  depsAlpha += Math.sign(want - depsAlpha) * Math.min(Math.abs(want - depsAlpha), .05);
-  if (depsAlpha <= 0 || !deps) return;
-  const rows = [];
-  if (!deps.length) rows.push(['', 'GEEN VERTREKKEN GEVONDEN', '']);
-  for (const b of deps) {
-    rows.push(['▶ ' + b.label, '', '']);
-    if (!b.lines.length) rows.push(['', 'NIETS IN DE KOMENDE TIJD', '']);
-    for (const l of b.lines) rows.push([l.line, l.dest, l.min === null ? '' : l.min === 0 ? 'NU' : l.min + ' MIN']);
+/* ---------- split-flap signs: the departure board and the timer sign ---------- */
+const FLAP_CHARS = ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:\'-!.';
+class Flap {
+  // cols: characters per row; ink: letter colour; title: small text on top
+  constructor(cols, rows, ink, title, legs) {
+    this.cols = cols; this.rows = rows; this.ink = ink; this.title = title; this.legs = legs;
+    this.cw = 19; this.chh = 28; this.gap = 2; this.pad = 12; this.head = 30;
+    const w = this.pad * 2 + cols * (this.cw + this.gap), h = this.head + this.pad + rows * (this.chh + 6) + 6 + legs;
+    this.c = document.createElement('canvas'); this.c.width = w; this.c.height = h;
+    this.cells = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ t: ' ', c: ' ', until: 0 })));
+    this.dirty = true; this.blink = false; this.right = '';
+    this.draw();
   }
-  const lh = 34, top = Math.max(150, H - 60 - rows.length * lh);
-  ctx.save(); ctx.globalAlpha = depsAlpha;
-  ctx.fillStyle = 'rgba(0,0,30,.45)'; ctx.fillRect(40, top - 30, W - 80, rows.length * lh + 30);
-  ctx.font = "34px 'VT323', ui-monospace, monospace"; ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(255,255,255,.6)'; ctx.shadowBlur = 4; ctx.fillStyle = '#fff';
-  rows.forEach((r, k) => {
-    const y = top + k * lh;
-    ctx.textAlign = 'left'; ctx.fillText(r[0], 70, y); ctx.fillText(r[1], r[0] && !r[1] ? 70 : 220, y);
-    ctx.textAlign = 'right'; ctx.fillText(r[2], W - 70, y);
+  set(row, text, fast) {
+    const now = performance.now(), str = String(text).toUpperCase().padEnd(this.cols).slice(0, this.cols);
+    this.cells[row].forEach((cell, k) => {
+      const ch = FLAP_CHARS.includes(str[k]) ? str[k] : ' ';
+      if (cell.t !== ch) { cell.t = ch; cell.until = now + (fast ? 90 : 250 + k * 45 + rnd() * 500); this.dirty = true; }
+    });
+  }
+  tick() {
+    const now = performance.now();
+    for (const row of this.cells) for (const cell of row) {
+      if (cell.c === cell.t) continue;
+      cell.c = now >= cell.until ? cell.t : FLAP_CHARS[Math.floor(rnd() * FLAP_CHARS.length)];
+      this.dirty = true;
+    }
+    if (this.dirty) { this.draw(); this.dirty = false; }
+  }
+  draw() {
+    const g = this.c.getContext('2d'), w = this.c.width, h = this.c.height, bh = h - this.legs;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#55585e'; g.fillRect(w * .18, bh - 4, 9, this.legs + 4); g.fillRect(w * .82 - 9, bh - 4, 9, this.legs + 4);
+    g.fillStyle = '#1f2024'; g.fillRect(0, 0, w, bh);
+    g.strokeStyle = '#4a4c52'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, w - 3, bh - 3);
+    g.fillStyle = '#e9e9e9'; g.font = "700 17px Arimo, Arial, sans-serif"; g.textBaseline = 'middle';
+    g.textAlign = 'left'; g.fillText(this.title, this.pad, this.head / 2 + 4);
+    g.textAlign = 'right'; g.fillStyle = this.ink; g.fillText(this.right, w - this.pad, this.head / 2 + 4);
+    g.textAlign = 'center';
+    this.cells.forEach((row, r) => row.forEach((cell, k) => {
+      const x = this.pad + k * (this.cw + this.gap), y = this.head + this.pad / 2 + r * (this.chh + 6);
+      g.fillStyle = '#0d0d0f'; g.fillRect(x, y, this.cw, this.chh);
+      g.fillStyle = '#18181b'; g.fillRect(x, y, this.cw, this.chh / 2);
+      if (cell.c !== ' ' && !(this.blink && Math.floor(performance.now() / 400) % 2)) {
+        g.fillStyle = this.ink; g.font = `700 ${Math.round(this.chh * .78)}px Arimo, Arial, sans-serif`;
+        g.fillText(cell.c, x + this.cw / 2, y + this.chh / 2 + 1);
+      }
+      g.fillStyle = 'rgba(0,0,0,.85)'; g.fillRect(x, y + this.chh / 2 - .5, this.cw, 1.2);
+    }));
+  }
+}
+const hm2 = (ts) => { const d = new Date(ts * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+function signObj(id, flap) { return { id, kind: 'grond', size: [flap.c.width, flap.c.height], img: flap.c, moment: 'altijd' }; }
+// a sign always gets a spot right next to Kamiel; whatever stands there steps aside until the sign is gone
+function placeSign(key, obj, size) {
+  const i = mod(Math.round((kx - PLACE / 2) / PLACE), N), p = places[i]; if (!p) return;
+  const asp0 = obj.size[0] / obj.size[1];
+  size = Math.min(size, 340 / asp0 / H);
+  const h = H * size, w = h * asp0;
+  const other = p.items.find(x => (x.board || x.timer) && !x[key]);
+  const weight = (sd) => p.items.filter(x => x.layer > 0 && Math.sign(x.dx) === sd && !x.hiddenBy).reduce((a, x) => a + x.h * x.o.size[0] / x.o.size[1], 0);
+  const side = other ? -Math.sign(other.dx) : (weight(-1) <= weight(1) ? -1 : 1);
+  const dx = side * Math.min(94 + w / 2 + 8, PLACE / 2 - 24 - w / 2);
+  for (const x of p.items) {
+    if (x.layer === 0 || x.board || x.timer || x.hiddenBy) continue;
+    const xw = x.h * x.o.size[0] / x.o.size[1];
+    if (x.dx + xw / 2 > dx - w / 2 - 20 && x.dx - xw / 2 < dx + w / 2 + 20) x.hiddenBy = key;
+  }
+  p.items.push({ o: obj, layer: 2, dx, depth: .97, h, flip: false, born: performance.now(), [key]: true });
+  p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
+}
+function dropSign(key) {
+  for (const p of places) if (p) {
+    p.items = p.items.filter(x => !x[key]);
+    for (const x of p.items) if (x.hiddenBy === key) { delete x.hiddenBy; x.born = performance.now(); }
+  }
+}
+
+/* departure board: tap the clock */
+let board = null;   // { flap, rows, shownAt, fetched }
+async function showBoard() {
+  let rows = [];
+  try { rows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch { }
+  const n = Math.max(1, Math.min(5, rows.length));
+  if (board) dropSign('board');
+  const flap = new Flap(17, n, '#ffc93c', 'VERTREK', 70);
+  board = { flap, rows, shownAt: Date.now(), fetched: Date.now(), empty: !rows.length };
+  updateBoard(true);
+  placeSign('board', signObj('board', flap), Math.min(.42, .22 + n * .05));
+}
+function updateBoard(first) {
+  if (!board) return;
+  const nowS = Date.now() / 1000, f = board.flap;
+  f.right = hm2(nowS);
+  if (board.empty) { f.set(0, 'GEEN VERTREK'); if (Date.now() - board.shownAt > 15000) hideBoard(); return; }
+  // gone as soon as everything on it has left
+  if (board.rows.every(r => r.due < nowS - 30)) { hideBoard(); return; }
+  board.rows.forEach((r, k) => {
+    const m = Math.floor((r.due - nowS) / 60);
+    const line = ((r.kind === 'tram' ? 'T' : r.kind === 'bus' ? 'B' : r.kind === 'metro' ? 'M' : '') + r.line).slice(0, 3).padEnd(3);
+    const when = r.due < nowS - 30 ? 'WEG' : m <= 0 ? ' NU' : (m > 99 ? hm2(r.due).slice(0, 5) : String(m).padStart(2) + "'");
+    f.set(k, line + ' ' + (r.label || r.dest).slice(0, 9).padEnd(9) + ' ' + when.padStart(3), first);
   });
-  ctx.restore();
+}
+function hideBoard() { board = null; dropSign('board'); }
+
+/* timer sign: Google Home timers counting down */
+let timerSign = null, timers = [];
+function setTimers(list) {
+  timers = list || [];
+  if (!timers.length) { if (timerSign) { timerSign = null; dropSign('timer'); } return; }
+  const n = Math.min(3, timers.length);
+  if (!timerSign || timerSign.flap.rows !== n) {
+    if (timerSign) dropSign('timer');
+    const flap = new Flap(13, n, '#ff4b3e', 'TIMER', 80);
+    timerSign = { flap };
+    updateTimers();
+    placeSign('timer', signObj('timer', flap), .2 + n * .045);
+  }
+}
+const clock = (sec) => { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s2 = sec % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(s2).padStart(2, '0'); };
+function updateTimers() {
+  if (!timerSign) return;
+  const nowS = Date.now() / 1000, f = timerSign.flap;
+  let ringing = false;
+  timers.slice(0, f.rows).forEach((tm, k) => {
+    const left = tm.status === 'paused' && tm.left !== null ? tm.left : (tm.end || nowS) - nowS;
+    const ring = tm.status === 'ringing' || left <= 0;
+    ringing = ringing || ring;
+    const label = (tm.label || (tm.status === 'paused' ? 'PAUZE' : 'TIMER ' + (k + 1))).slice(0, 6).padEnd(6);
+    f.set(k, label + ' ' + (ring ? '  TIJD!' : clock(left).padStart(7)), true);
+  });
+  f.blink = ringing;
+  if (ringing) f.dirty = true;
+}
+function tickSigns() {
+  if (board) { updateBoard(false); board.flap.tick(); }
+  if (timerSign) { updateTimers(); timerSign.flap.tick(); }
 }
 // a soft ring where a tap started something
 function drawRing() {
@@ -520,6 +643,7 @@ function drawRing() {
 
 function step(dt) {
   t += dt;
+  tickSigns();
   if (walking) {
     kx += dir * 70 * dt;
     if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); arrived(); }
@@ -615,11 +739,15 @@ function drawSky(sun, moon) {
     ctx.fillStyle = `rgba(255,${250 - tint * 60},${225 - tint * 120},${.95 * dim})`;
     ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
   }
-  if (moon.alt > -4 && L < .8) {
-    const x = azX(moon.az), y = altY(moon.alt), r = 22, a = (1 - L) * (weather === 'bewolkt' || weather === 'regen' ? .35 : 1);
+  const clear = weather === 'helder' || weather === 'licht';
+  const veil = clear ? 1 : weather === 'bewolkt' ? .35 : weather === 'mist' || weather === 'sneeuw' ? .25 : .15;
+  // by night it glows; by day, like the real one, a pale disc in a clear sky
+  const a = moon.alt > -4 ? (L < .8 ? (1 - L) * veil : (clear && moon.alt > 4 ? .5 : 0)) : 0;
+  if (a > .02) {
+    const x = azX(moon.az), y = altY(moon.alt), r = 22;
     ctx.save(); ctx.globalAlpha = a;
-    const gl = ctx.createRadialGradient(x, y, r, x, y, r * 4); gl.addColorStop(0, 'rgba(220,230,255,.25)'); gl.addColorStop(1, 'rgba(220,230,255,0)');
-    ctx.fillStyle = gl; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8);
+    if (L < .8) { const gl = ctx.createRadialGradient(x, y, r, x, y, r * 4); gl.addColorStop(0, 'rgba(220,230,255,.25)'); gl.addColorStop(1, 'rgba(220,230,255,0)');
+      ctx.fillStyle = gl; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8); }
     // the lit side points to where the sun is (even when the sun is below the horizon)
     if (a > .3) moonXY = { x, y };
     const sp = sunCalc(now());
@@ -657,7 +785,7 @@ function moonDisc(p, ang, r, col) {
 }
 function drawClouds(sun) {
   const L = light(sun.alt), warm = tintFor(sun.alt), cam = kx * .25;
-  const dark = weather === 'regen' ? .55 : weather === 'bewolkt' ? .3 : weather === 'sneeuw' ? .2 : 0;
+  const dark = rainy() ? .55 : weather === 'bewolkt' ? .3 : weather === 'sneeuw' ? .2 : 0;
   const prev = ctx; ctx = cctx; ctx.clearRect(0, 0, W, H);
   for (const cl of clouds) {
     const img = cl.c.img; if (!ready(img)) continue;
@@ -696,7 +824,7 @@ let hits = [];   // where everything was drawn in the last frame, for tapping
 function placeItems(layer) {
   const cam = kx - W / 2;
   for (let i = 0; i < N; i++) for (const it of places[i].items) {
-    if (it.layer !== layer) continue;
+    if (it.layer !== layer || it.hiddenBy) continue;
     const o = it.o; if (!ready(o.img)) continue;
     const h = it.h, w = h * o.size[0] / o.size[1];
     for (let k = -1; k <= 1; k++) {
@@ -711,7 +839,7 @@ function placeItems(layer) {
           const fw = Math.max(8, w * (fx1 - fx0)), fc = wx - w / 2 + w * (fx0 + fx1) / 2;
           it.base = baseY(fc - k * PW, fw);
         }
-        y = it.base + h * SINK - h * f.y;
+        y = it.base + h * (o.sink !== null && o.sink !== undefined ? o.sink / 100 : SINK) - h * f.y;
       }
       else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
       ctx.save();
@@ -747,7 +875,7 @@ function drawKamiel() {
   if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); } else ctx.drawImage(im, x, y, w, h);
   ctx.restore();
 }
-let rockets = [];
+let rockets = [], flash = null;
 function drawFireworks() {
   if (rockets.length < 4 && rnd() < .03) rockets.push({ x: 120 + rnd() * (W - 240), y: 80 + rnd() * 160, t0: t, hue: Math.floor(rnd() * 360) });
   rockets = rockets.filter(r => t - r.t0 < 2.2);
@@ -762,10 +890,18 @@ function drawFireworks() {
 }
 function drawWeather(sun) {
   const L = light(sun.alt);
-  if (weather === 'regen') {
+  if (rainy()) {
     ctx.strokeStyle = 'rgba(210,225,255,.35)'; ctx.lineWidth = 1.2; ctx.beginPath();
     for (let i = 0; i < 140; i++) { const x = mod(i * 71.3 + t * 40, W), y = mod(i * 37.1 + t * 640, H); ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); }
     ctx.stroke();
+  }
+  if (weather === 'onweer') {
+    if (!flash && rnd() < .004) flash = { t0: t, twice: rnd() < .6 };
+    if (flash) {
+      const a = t - flash.t0, f = a < .12 ? 1 - a / .12 : (flash.twice && a > .2 && a < .3) ? 1 - (a - .2) / .1 : 0;
+      if (f > 0) { ctx.fillStyle = `rgba(235,240,255,${.55 * f})`; ctx.fillRect(0, 0, W, H); }
+      if (a > .4) flash = null;
+    }
   }
   const snowing = weather === 'sneeuw' ? 160 : (kerstNow && L < .5 ? 45 : 0);
   if (snowing) {
@@ -819,7 +955,7 @@ function frame() {
   drawWeather(sun);
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
   if (msgCanvas && msgAlpha > 0) { ctx.globalAlpha = msgAlpha; ctx.drawImage(msgCanvas, 0, 0); ctx.globalAlpha = 1; }
-  drawDepartures(); drawRing();
+  drawRing();
   drawVHS(); osd(d);
 }
 function loop(ts) { const dt = Math.min(.05, (ts - last) / 1000); last = ts; step(dt); frame(); requestAnimationFrame(loop); }
@@ -842,18 +978,27 @@ document.addEventListener('pointerup', (e) => {
     }
   }
   if (message && msgAlpha > .3) { dismissed.add(message.id); post('api/seen/' + message.id); message = null; return; }   // "read it"
-  if (performance.now() < depsUntil) { depsUntil = 0; return; }
+  // the clock (top left) opens the departure board; tapping the board closes it
+  const ob = document.getElementById('osd').getBoundingClientRect();
+  if (e.clientX >= ob.left - 20 && e.clientX <= ob.right + 20 && e.clientY >= ob.top - 20 && e.clientY <= ob.top + ob.height * .55 + 20) {
+    if (board) hideBoard(); else showBoard();
+    return;
+  }
+  for (let k = hits.length - 1; k >= 0; k--) {
+    const hh = hits[k];
+    if (hh.it.board && x >= hh.x && x <= hh.x + hh.w && y >= hh.y && y <= hh.y + hh.h) { hideBoard(); return; }
+  }
   const near = (p, rad) => p && Math.hypot(x - p.x, y - p.y) < rad;
   if (S.sun_script && near(sunXY, 70)) { ring = { x: sunXY.x, y: sunXY.y, t0: performance.now() }; post('api/tap/sun'); return; }
   if (S.moon_script && near(moonXY, 60)) { ring = { x: moonXY.x, y: moonXY.y, t0: performance.now() }; post('api/tap/moon'); return; }
   for (let k = hits.length - 1; k >= 0; k--) {
     const hh = hits[k], tap = hh.it.o.tap;
     if (!tap || tap.action === 'niets' || x < hh.x || x > hh.x + hh.w || y < hh.y || y > hh.y + hh.h) continue;
-    if (tap.action === 'vertrek') { showDepartures(); return; }
+    if (tap.action === 'vertrek') { showBoard(); return; }
     if (tap.action === 'script') { ring = { x, y, t0: performance.now() }; post('api/tap/el-' + hh.it.o.id); return; }
   }
   const act = S.empty_tap || 'url';
-  if (act === 'vertrek') showDepartures();
+  if (act === 'vertrek') showBoard();
   else if (act === 'url' && S.tap_url) location.href = S.tap_url;
 });
 pollLive(); setInterval(pollLive, 5000);

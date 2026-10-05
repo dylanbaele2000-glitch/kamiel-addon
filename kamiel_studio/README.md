@@ -33,8 +33,8 @@ Alles stel je in via **Instellingen** in Kamiel Studio.
 - **Telegram**: tabblad *Bericht* → *Berichten via Telegram*. Maak een bot bij @BotFather, plak de sleutel, koppel jullie gsm met de code. Stuur tekst, een foto, /bus, /kijk of /wis.
 - **Berichten**: tabblad *Bericht* (werkt ook van op afstand via de Home Assistant-app). Wil je berichten uit automatiseringen, maak dan een tekst-helper aan (Instellingen → Apparaten en diensten → Helpers → Tekst) en kies die in Kamiel Studio.
 - **Muziek-tv**: kies de speaker (bijvoorbeeld je Google Home). Een eigen tv: upload een kader en vink "Tv voor muziek" aan.
-- **Bus en tram**: installeer de De Lijn-integratie met een gratis sleutel van het De Lijn Open Data-portaal en kies de haltes.
-- **Waar zijn we**: kies personen; de afstand komt van de Home Assistant-app op jullie gsm.
+- **Vertrekbord**: tik op de klok. Instellen bij Instellingen → Vertrekbord (met uitleg, De Lijn-integratie nodig).
+- **Timers**: de HACS-integratie Google Home; kies de _timers-sensor bij Instellingen.
 - **Tikken op zon, maan of een element**: kies een script, scène of automatisering.
 
 Testen in de browser: `?d=2026-12-24` doet alsof het die datum is, `?w=sneeuw` laat het sneeuwen.
