@@ -1,6 +1,6 @@
 # Kamiel: technische handleiding
 
-Stand: 6 oktober 2026 (versie 0.7.2)
+Stand: 6 oktober 2026 (versie 0.8.0)
 
 ## Voor wie dit is
 
@@ -40,7 +40,7 @@ Alle logica zit in één Home Assistant-add-on, **Kamiel Studio**, op de Home As
 ```
 Tablet (Fully Kiosk) ──:8100──▶ ┌──────── Home Assistant Green ────────┐ ◀── GitHub (nieuwe versie = update)
                                 │  Kamiel Studio (add-on, server.py)   │ ──▶ Telegram (berichten ophalen)
-Gsm: HA-app ──:8099 (ingress)─▶ │  /data: kamiel.json, media, origineel│ ──▶ Deezer (tempo van nummers)
+Gsm: HA-app ──:8099 (ingress)─▶ │  /data: kamiel.json, media, origineel│
                                 │          ▲ REST API met token        │
                                 │          ▼                           │
                                 │  Home Assistant Core: weer, zon,     │
@@ -48,7 +48,7 @@ Gsm: HA-app ──:8099 (ingress)─▶ │  /data: kamiel.json, media, originee
                                 └──────────────────────────────────────┘
 ```
 
-De tablet praat alleen met de add-on (poort 8100); de add-on praat met Home Assistant via zijn token en haalt zelf Telegram-berichten en tempo's op, dus er hoeft niets op de router opengezet te worden. Updates komen van GitHub: Home Assistant bouwt de add-on opnieuw wanneer het versienummer stijgt.
+De tablet praat alleen met de add-on (poort 8100); de add-on praat met Home Assistant via zijn token en haalt zelf Telegram-berichten op, dus er hoeft niets op de router opengezet te worden. Updates komen van GitHub: Home Assistant bouwt de add-on opnieuw wanneer het versienummer stijgt.
 
 - **Hardware:** Home Assistant Green (aarch64), een Android-tablet aan de muur met Fully Kiosk Browser, Google Home-speakers (Cast).
 - **Taal en techniek:** Python 3.12 op Alpine 3.20 (aiohttp, numpy, scipy, Pillow) voor de server; gewone HTML, CSS en JavaScript (canvas) voor tablet en Studio, zonder frameworks of buildstap.
@@ -64,7 +64,8 @@ Alles staat in één Home Assistant-add-on-repository, ongeveer 4300 regels code
 | `kamiel_studio/build.yaml` | Basisimages `ghcr.io/home-assistant/{arch}-base:3.20` (Alpine 3.20). |
 | `kamiel_studio/Dockerfile` | `apk add python3 py3-aiohttp py3-numpy py3-scipy py3-pillow tzdata`, kopieert `app/` en `run.sh`. |
 | `kamiel_studio/run.sh` | `#!/usr/bin/with-contenv bashio` + `exec python3 /app/server.py` (with-contenv is nodig om de token door te geven). |
-| `app/server.py` | De volledige server (aiohttp): opslag, API, Home Assistant, Telegram, Deezer, beeldverwerking aansturen. |
+| `app/server.py` | De volledige server (aiohttp): opslag, API, Home Assistant, Telegram, nummerlijst, gebeurtenissen, beeldverwerking aansturen. |
+| `app/static/events.js` | De wereldgebeurtenissen (lijst, planning per dag/week, alle animaties). De lijst bovenaan wordt ook door de server gelezen. |
 | `app/process.py` | Beeldverwerking met numpy/scipy/Pillow: uitknippen, dreamcore-filter, fotovlak in kaders, kleurvarianten van borden, panorama-naden. |
 | `app/static/display.html` | De tablet: één HTML-pagina met canvas-renderer en alle live-functies (±1300 regels). |
 | `app/static/studio.html` | Kamiel Studio: het beheerscherm in Home Assistant. |
@@ -128,11 +129,14 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | Sleutel | Standaard | Betekenis |
 | --- | --- | --- |
 | `weather_entity` | "" | Weer-entiteit (bv. Met.no). |
-| `walk_minutes` | 20 | Overdag verder wandelen na zoveel minuten. |
-| `night_start` / `night_end` | 22:00 / 06:00 | Nachtperiode. |
-| `night_walks` | 00:00, 03:00 | Wandeltijden 's nachts. |
-| `chances` | grond 100, horizon 100, lucht 60/75, kader 50 | % van de plekken met die soort, per dag/nacht. |
-| `max_objects` | 9 | Maximum objecten per plek (wolken en live-dingen niet meegeteld). |
+| `walk_minutes` | 20 | Verder wandelen na zoveel minuten, dag én nacht. |
+| `night_start` / `night_end` | 22:00 / 06:00 | Nachtperiode (voor dag/nacht-elementen). |
+| `counts` | dag: grond 2–4, horizon 1–3, lucht 1–2, kader 0–1; nacht: lucht 1–3 | Hoeveel objecten per soort: `[minstens, hoogstens]`, per dag/nacht. |
+| `max_objects` | 12 | Maximum objecten per plek (wolken en live-dingen niet meegeteld). |
+| `spacing` | 30 | Pixels tussen objecten (negatief = overlappen). |
+| `lane` | 94 | Vrije ruimte links en rechts van Kamiels midden. |
+| `mix_layers` | true | Grondobjecten mogen vóór horizonobjecten staan. |
+| `events` | aan, lama 1/dag, vaak 3/dag, soms 4/week, avond aan, `off` [] | Wereldgebeurtenissen. |
 | `sizes` | grond 10–40, horizon 15–42, lucht 12–38, kader 18–42 | Hoogte in % van de schermhoogte. |
 | `giant_chance` | 10 | % kans op een reuzenobject. |
 | `horizon_sink` | 3 | Hoeveel % een horizon-object in de grond zakt. |
@@ -147,13 +151,14 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | `buttons` | \[\] | 9 knoppen: `icon`, `label`, `entity`. |
 | `outfit_mode`, `outfits_on` | kiezen, alle | Kleerkast: `kiezen` / `dag` / `uit`, welke kleren beschikbaar. |
 | `media_player` | "" | Speaker voor de muziek-tv. |
-| `nod_bpm` | 110 | Meeknikken vanaf dit tempo (0 = nooit). |
 | `board` | \[\] | Vertrekbordrijen: `label`, `entity`, `kind`, `lines`, `dest`, `count`. |
 | `departure_trigger` | "" | Sensor die het vertrekbord automatisch toont. |
 | `timer_entities` | \[\] | Google Home `_timers`-sensoren. |
 | `message_entity`, `message_minutes` | "", 60 | Tekst-helper voor berichten uit automatiseringen. |
 
-Oude, ongebruikte sleutels die nog kunnen voorkomen: `min_frames`, `frame_ratio` (vervangen door `chances.kader`), `departures` (vervangen door `board`), `people` (afstand-functie, verwijderd).
+Buiten `settings` staan ook `songs` (de nummerlijst: `id`, `title`, `bpm`; vooraf gevuld met 13 nummers) en `event_req` (`n`, `id`, `at`: het laatst gevraagde event).
+
+Oude, ongebruikte sleutels die nog kunnen voorkomen: `night_walks` (0.8.0: Kamiel wandelt nu ook 's nachts gewoon om de `walk_minutes`), `chances` (vervangen door `counts`; een soort die op 0 % stond, krijgt 0–0), `nod_bpm`, `min_frames`, `frame_ratio`, `departures` (vervangen door `board`), `people` (afstand-functie, verwijderd).
 
 ## API-overzicht
 
@@ -184,6 +189,8 @@ De tablet gebruikt poort 8100, de Studio 8099; de "gedeelde" endpoints bestaan o
 | `POST/DELETE /api/message` | 8099 | Bericht sturen of wissen (wissen haalt ook een Telegram-foto weg). |
 | `GET/PUT /api/telegram`, `POST /api/telegram/pair`, `DELETE /api/telegram/chats/{id}` | 8099 | Telegram instellen, koppelcode maken, iemand ontkoppelen. |
 | `POST/PUT/DELETE /api/reminders[/id]` | 8099 | Herinneringen. |
+| `GET/POST /api/songs`, `PUT/DELETE /api/songs/{id}` | 8099 | Nummerlijst om mee te knikken (titel + BPM). |
+| `POST /api/event` | 8099 | Een event vragen (`{"id": "mol"}` of leeg = willekeurig); de tablet ziet het via `api/live` → `event`. |
 
 ## De tablet: hoe de wereld getekend wordt
 
@@ -203,48 +210,51 @@ De tablet gebruikt poort 8100, de Studio 8099; de "gedeelde" endpoints bestaan o
 **Een plek samenstellen (`compose(i)`):**
 
 - Alleen elementen die nu mogen: dag/nacht, periode (seizoen/feestdag, met Pasen berekend), weertype, niet de muziek-tv. Zeldzaamheid weegt mee; periode- en weer-gebonden elementen ×3. De laatste 3 keuzes worden vermeden.
-- Een drukte (rustig/normaal/vol) bepaalt hoeveel grond-, horizon- en lucht-objecten; per soort beslist het percentage of die soort er überhaupt is; het maximum wordt afgedwongen.
+- Per soort een willekeurig aantal tussen `counts[dag|nacht][soort]` minstens en hoogstens; het maximum wordt afgedwongen. Zijn er minder elementen dan gevraagd, dan mag een grond- of horizon-element twee keer (nooit in de lucht). De laatste 6 keuzes worden vermeden.
 - Grootte: tussen de ingestelde min/max (% van de schermhoogte), grond-objecten vooraan groter (diepte), soms een reus, maal de eigen `scale`. Te brede dingen worden kleiner zodat ze naast Kamiel passen.
-- Plaatsing: grootste eerst, afwisselend naar de leegste kant, minimaal 40 px tussenruimte, en een **vrije baan rond Kamiel** (94 px aan elke kant). Lucht-objecten komen als laatste en mogen niets raken dat staat.
+- Plaatsing: grootste eerst, afwisselend naar de leegste kant, `spacing` px tussenruimte, en een **vrije baan rond Kamiel** (`lane`, 94 px aan elke kant). Met `mix_layers` houden grond en horizon elk hun eigen rij bij (voller). Lucht-objecten komen als laatste en mogen niets raken dat staat.
 - Horizon-objecten staan op het **laagste grondpunt onder hun voet** (uit het horizonprofiel) en zakken dan `sink`% in. Grond-objecten staan tussen horizon+14 en `FEET` = 548, op hun echte voet (`footOf()` meet de onderste ondoorzichtige rij, want de dreamcore-gloed maakt de afbeelding groter), met een zachte schaduw eronder.
 - Borden krijgen een willekeurig woord + kleur; kaders een willekeurige foto.
-- Een plek wordt opnieuw samengesteld zodra ze niet zichtbaar is en al gezien werd, of als dag/nacht of het weer veranderde. Komt Kamiel terug, dan staat er dus iets nieuws.
+- Een plek wordt opnieuw samengesteld zodra ze niet zichtbaar is en al gezien werd, of als dag/nacht of het weer veranderde. Komt Kamiel terug, dan staat er dus iets nieuws. **Let op:** `visible()` rekent zonder marge. Tot 0.7.2 stond er 40 px marge, en omdat een plek precies één scherm breed is, telden de buren dan altijd als zichtbaar: A→B→A gaf hetzelfde A (opgelost in 0.8.0, getest).
 - Afbeeldingen laden pas als een element echt gebruikt wordt (lazy getters), zodat een grote bibliotheek de tablet niet vertraagt.
 
 **Zon, maan en lucht:**
 
 - Zon: liefst `sun.sun` uit Home Assistant (elevation/azimuth), anders zelf berekend uit de locatie van Home Assistant. Azimut 180° (zuid) = midden van het scherm.
 - Overdag diep elektrisch blauw (`[[6,40,196],[38,98,236]]`), goudkleurig bij lage zon, donkerblauw 's nachts; grijzer bij slecht weer.
-- Maan: echte fase uit de ecliptische lengtes van zon en maan (met evectie en variatie, nauwkeurig tot ruim binnen een uur), de verlichte kant wijst naar de zon, aardschijn op het donkere deel. Overdag een bleke schijf als het helder is. Oranje tijdens Halloween.
+- Maan: echte fase uit de ecliptische lengtes van zon en maan (met evectie en variatie), maar **niet** de echte positie: `moonArc()` laat ze 's nachts een eigen boog maken, opkomend in het oosten bij zonsondergang, hoogst halverwege de nacht, ondergaand in het westen bij zonsopgang (zoals de zon overdag). Overdag geen maan. Wassend = rechts verlicht, afnemend = links. Aardschijn op het donkere deel, oranje tijdens Halloween.
 
 **Weer:** Home Assistant-condities worden `helder`, `licht`, `bewolkt`, `regen`, `onweer`, `sneeuw` of `mist`. Het aantal wolken volgt `cloud_coverage` als dat er is, de windsnelheid bepaalt hoe snel ze drijven. Seizoenstint (lente roze, zomer geel, herfst oranje, winter koel), lichte sneeuw rond Kerst 's nachts, vuurwerk op 31/12 vanaf 23:30.
 
 **Kamiel:**
 
 - Frames 225 px hoog, voeten op `FEET` = 548, midden van het scherm. Loopt 70 px/s met 6 beelden per seconde, knippert om de 2 tot 6 seconden, gespiegeld als hij naar rechts loopt.
-- `schedule()` (elke 15 s): overdag na `walk_minutes`, 's nachts op de `night_walks`-tijden één plek verder.
-- Kleren: rasters in `outfits.js`, in coördinaten van het volle frame (780×1370, blokjes van 20 = zijn eigen pixelgrootte); ze bewegen mee in elke houding omdat zijn hoofd nooit verschuift (alleen de poten).
+- `schedule()` (elke 15 s): dag en nacht na `walk_minutes` één plek verder (soms als wandel-event), tenzij er al een event bezig is.
+- Tekenen gaat via `drawLlama(g, o)` (ook voor de witte lama en de tweeling): houding, schaal, draaiing, rek, hoofdhoek, ogen (`dicht`, `vies`, `rol`, `groot`, `hart`, `spiraal`, `x`, `blij`, `triest`, `boos`), open mond, kleren, tint (`wit`, `tweeling`), kou, wazig, uiteenvallen. De toestand van Kamiel zit in `kam` (`x`, `y`, `s`, `face`, `pose`, `layer` far/mid/front …); buiten events staat die op de standaard.
+- Kleren: rasters in `outfits.js` (25 stuks, sloten hoofd/ogen/nek/neus/lijf; lijf-kleren zoals het ruimtepak zijn een `paint`-functie die over zijn eigen pixels kleurt, zodat ze met de poten meelopen), in coördinaten van het volle frame (780×1370, blokjes van 20 = zijn eigen pixelgrootte); ze bewegen mee in elke houding omdat zijn hoofd nooit verschuift (alleen de poten).
 - Meeknikken: het frame wordt op y = 470 (onder het hoofd) in twee getekend; het hoofd draait rond de nek tot ±9° op elke tel.
 
 **Hoe vaak de tablet vraagt:** `api/live` elke 5 s, `api/state` elke 60 s, `api/world` elke 120 s (herladen bij nieuwe `version`), planning elke 15 s, vensters elke 5 s als ze open staan.
 
 ## Live-functies en tikken
 
-Alles hieronder komt binnen via `api/live` (elke 5 s) of wordt door tikken gestart. Live-dingen die in de wereld staan (tv, borden, Telegram-foto) duwen nooit andere objecten weg, behalve de Telegram-foto (die mag klein spul opzij zetten) en de borden (die verbergen tijdelijk wat op hun plek staat).
+Alles hieronder komt binnen via `api/live` (elke 5 s) of wordt door tikken gestart. Nieuwe dingen in de wereld (muziek-tv, vertrekbord, timerbord, Telegram-kader) mogen altijd vóór horizon- en luchtobjecten staan; die blijven gewoon staan. Alleen als er op de grond echt geen plaats is, maakt het kleinste grondobject plaats (borden verbergen het tijdelijk).
 
 **Berichten en herinneringen (memestijl):** `KamielReminder.render()` tekent tekst in laag-resolutie, vet (lettertype Arimo), rood met een cyaan "spook" en een donkere rand, en schaalt dat wazig op, zoals een te vaak opgeslagen meme. Berichten staan er meteen en blijven tot ze verlopen of weggetikt worden (dan meldt Telegram "gezien"). Herinneringen verschijnen alleen als ze aan staan (`isActive`), op elke N-de plek waar Kamiel aankomt, faden uit als hij wandelt, en kunnen weggetikt worden tot hun volgende keer (`occurrence()` = de dag van die keer; vensters over middernacht horen bij de dag waarop ze begonnen).
 
-**Telegram-foto:** komt als `spotlight` binnen, hangt groot vooraan in een kader (een eigen kader-element, of een ingebouwd goudkleurig kader) op de huidige en volgende plekken. Weg door `/wis`, "Bericht wissen" in de Studio, erop tikken (meldt "Foto gezien"), of als de tijd om is.
+**Telegram-foto:** komt als `spotlight` binnen. Staat er op een plek al een kader, dan komt de foto **in dat kader** (de oude foto komt terug als de spotlight weg is); anders komt er een kader bij (eigen kader-element of ingebouwd goudkleurig kader). Weg door `/wis`, "Bericht wissen" in de Studio, erop tikken (meldt "Foto gezien"), of als de tijd om is.
 
 **Muziek-tv:** speelt de gekozen speaker, dan krijgt elke plek een tv (`addTV`) op een **vrije** plek, in een van drie vormen: op de grond (klein tot groot), reusachtig op de horizon, of zwevend op een wolk (nooit in de klokhoek). De tv is een kader met `tv: true`, of een ingebouwde retro-tv getekend in code. Het scherm toont de albumhoes (`api/cover`, met filter); bij pauze sneeuw. Stopt de muziek, dan verdwijnt de tv uit plekken die niet in beeld zijn.
 
-**Meeknikken:** de server zoekt het tempo op bij Deezer (`api.deezer.com/search` → `/track/{id}` → `bpm`, gratis, zonder sleutel, in geheugen gecachet). Vanaf `nod_bpm` knikt Kamiel op de tel; de fase komt uit `media_position` + `media_position_updated_at` van de speaker.
+**Meeknikken:** alleen op nummers uit de eigen lijst (`songs`, in de Studio onder Muziek, of via Telegram `/muziek Titel 127`). `song_bpm()` vergelijkt hele woorden, zonder hoofdletters, leestekens en `(feat. …)`; een titel die met de andere begint telt ook als het minstens twee woorden zijn ("Everything Is Romantic" ↔ "Everything is Romantic (reimagined)"). De Deezer-opzoeking is weg (0.8.0). De fase komt uit `media_position` + `media_position_updated_at`.
+
+**Wereldgebeurtenissen (`events.js`):** 65 korte events (max. 1 minuut): de witte lama (elke dag), 48 "vaak" en 16 "soms". Planning per dag (lama + vaak) en per week (soms) met een vaste toevalsgenerator op de datum, zodat herladen niets verdubbelt; 17:00–19:30 is drie keer zo waarschijnlijk. Events met `walk: true` (verkeerde kant, camera volgt niet, vergeten, moonwalk, dronken, wolkrit) wachten op de wandeltimer en vervangen die wandeling; de andere gebeuren midden in een verblijf (niet als de wandeling binnen 70 s valt). Elk event is een generator (`function*`) die per frame een stap zet, met hulpjes `walkTo`, `travel`, `tween`, `approach`, `emote`, `say`, `particles`, `view` (zoom/kantelen/schudden), `itemOff`/`cloudOff` (objecten laten schuiven of vallen). Lagen: `sky`, `ground`, `back`, `front`, `screen` en `post`. Na een event staat Kamiel altijd weer midden op een plek. Starten op vraag: Telegram `/event` (willekeurig) of `/event mol`, de ▶-knop in de Studio, of `?ev=mol` in het adres van de tablet. Uitvinken in de Studio geldt alleen voor vanzelf.
 
 **Vertrekbord (tik op de klok):** een split-flap-bord zoals in de luchthaven (klasse `Flap`: tegeltjes met een middenlijn, letters die klapperen voor ze stilvallen). 17 tekens per rij: lijn (T1/B38), naam op het bord, minuten (`NU`, `WEG`). Het verdwijnt zodra alles erop vertrokken is, na 15 s als er niets is, of bij tikken. Ook via een trigger-sensor, een element met tikactie "vertrekbord", of de knop in Vertrek.exe.
 
 **Timerbord:** zelfde `Flap`-klasse maar met rode letters, één rij per Google Home-timer (`PASTA 04:12`), telt per seconde af, knippert `TIJD!` als hij afgaat, wandelt mee met Kamiel, verdwijnt als er geen timers meer zijn.
 
-**Vensters (tik op een lege plek):** HTML in een `#desk`-laag boven het canvas, in Windows 95-stijl. Weer.exe (nu + 4 dagen voorspelling), Vertrek.exe, Knoppen.exe (3×3, groen lampje als iets aan staat), Kleerkast.exe (voorbeeldjes van Kamiel met elk kledingstuk, "Uittrekken", "Verras me") en Muziek.exe (Winamp-achtig). Sluiten met ✕, "Alles sluiten", tikken op de scène, of vanzelf na `window_close` seconden. Slepen aan de titelbalk; minimaliseren naar de taakbalk.
+**Vensters (tik op een lege plek):** HTML in een `#desk`-laag boven het canvas, in Windows 95-stijl. Weer.exe (nu + 4 dagen voorspelling), Vertrek.exe, Knoppen.exe (3×3, groen lampje als iets aan staat), Kleerkast.exe (voorbeeldjes van Kamiel met elk kledingstuk, "Uittrekken", "Verras me") en Muziek.exe (Winamp-achtig) en Wandel.exe (aftellen tot de volgende plek, ◀ ▶ om Kamiel meteen te sturen). Sluiten met ✕, "Alles sluiten", tikken op de scène, of vanzelf na `window_close` seconden. Slepen aan de titelbalk; minimaliseren naar de taakbalk.
 
 **Volgorde bij tikken** (het eerste dat past, wint):
 
@@ -274,7 +284,7 @@ Kamiel Studio staat in de zijbalk van Home Assistant (ingress). Het is een gewon
 | Foto's | Foto's voor de kaders (ook die uit Telegram komen hier terecht). |
 | Bordteksten | De woorden op de tekstborden, één per regel. |
 | Herinneringen | Herinneringen met live voorbeeld en "volgende keer: …". |
-| Instellingen | Weer, wandeltijden, wat er op een plek staat (% per soort, dag/nacht), hoe groot, reuzen, zakdiepte, maximum, sensoren onder de datum, tikken (zon, maan, elders, adres), vensters, 9 knoppen, kleerkast, muziek (speaker, meeknikken), vertrekbord (met stappenplan voor De Lijn), Google Home-timers (met stappenplan), berichten via een tekst-helper, seizoenskleuren. |
+| Instellingen | Weer, wandeltijd, hoeveel objecten per soort (minstens–hoogstens, dag/nacht), ruimte tussen objecten, vrije ruimte rond Kamiel, hoe groot, reuzen, zakdiepte, maximum, sensoren onder de datum, tikken (zon, maan, elders, adres), vensters, 9 knoppen, kleerkast, muziek (speaker, nummerlijst om mee te knikken), gebeurtenissen (hoe vaak, aan/uit per event, ▶ om te testen), vertrekbord (met stappenplan voor De Lijn), Google Home-timers (met stappenplan), berichten via een tekst-helper, seizoenskleuren. |
 
 Keuzelijsten met Home Assistant-entiteiten komen uit `api/entities?domain=…` (meerdere domeinen met komma's). Staat er "Niet verbonden met Home Assistant", dan heeft de add-on geen token (zie Valkuilen).
 
@@ -289,8 +299,7 @@ Alles behalve Home Assistant zelf is optioneel; zonder koppeling valt alleen die
 | Speaker | `media_player.*` (Google Home/Cast): `entity_picture`, `media_title`, `media_artist`, `media_position` | Muziek-tv, Muziek.exe, meeknikken. Hoes via HA-proxy (`HA_ROOT + entity_picture`, met token). |
 | De Lijn | Home Assistant-integratie `delijn` (YAML `sensor: - platform: delijn`, gratis sleutel van het De Lijn Open Data-portaal, `stop_id` per halte van 6 cijfers). Attributen: `next_passages` met `line_number_public`, `line_transport_type`, `final_destination`, `due_at_realtime`/`due_at_schedule`. | Vertrekbord, Vertrek.exe, Telegram `/bus`. De eigenaar had al De Lijn-sensoren + eigen sjablonen. De Lijn geeft af en toe een `http error`: normaal. |
 | Google Home-timers | HACS-integratie "Google Home" (leikoilja/ha-google-home): `sensor.<speaker>_timers`, attribuut `timers` met `local_time_iso`, `fire_time`, `status` (set/ringing/paused), `label`. | Timerbord. |
-| Telegram | Eigen bot via @BotFather; Kamiel doet **long polling** (`getUpdates`), dus niets openzetten op de router. Alleen gekoppelde chats (koppelcode van 6 cijfers, 10 min geldig) mogen iets. Commando's: tekst, foto, `/bus`, `/kijk`, `/wis`, `/help`. | Berichten en foto's van op afstand, "gezien"-meldingen, screenshot van het scherm. |
-| Deezer | Publieke API, geen sleutel | Tempo (BPM) van een nummer om mee te knikken. Niet elk nummer heeft een BPM. |
+| Telegram | Eigen bot via @BotFather; Kamiel doet **long polling** (`getUpdates`), dus niets openzetten op de router. Alleen gekoppelde chats (koppelcode van 6 cijfers, 10 min geldig) mogen iets. Commando's: tekst, foto, `/bus`, `/kijk`, `/wis`, `/muziek Titel 127`, `/muziek`, `/event`, `/event lijst`, `/event <naam>`, `/help`. | Berichten en foto's van op afstand, "gezien"-meldingen, screenshot van het scherm. |
 | Tekst-helper | Een `input_text.*` gekozen in de Studio | Berichten uit automatiseringen ("de was is klaar"). |
 | Fully Kiosk Browser | Op de Android-tablet, Start URL `http://<ip-HA>:8100`, Keep Screen On, Launch on Boot, Reload on network reconnect, Reload on idle | Kamiel permanent tonen. Fully PLUS (betalend) nodig voor kiosk-vergrendeling, bewegingsdetectie en bediening vanuit HA. |
 
@@ -315,7 +324,7 @@ De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zond
 
 **Gegevens bij updates:** `/data` blijft altijd bewaard; nooit opnieuw uploaden. Alleen verwijderen van de add-on wist alles. Nieuwe instellingen krijgen hun standaardwaarde via `DEFAULT_SETTINGS`; schrijf migraties in `load_db()` als een sleutel van betekenis verandert.
 
-**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers.
+**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
 
 ## Testen en debuggen
 
@@ -352,6 +361,7 @@ KAMIEL_DATA=/tmp/kamieldata KAMIEL_HA_URL=http://localhost:8123/api \
 - Een rode balk "Kamiel kon niet starten: …" op de tablet (sinds 0.7.1) geeft de fout en het bestand.
 - Logboek van de add-on: Instellingen → Add-ons → Kamiel Studio → Logboek.
 - Logboek van Home Assistant zelf: Instellingen → Systeem → Logboeken (bv. fouten in `configuration.yaml`).
+- `?ev=<id>` start een event, `?t=23:00`, `?d=2026-12-24`, `?w=regen`, `?bpm=120`, `?demo=5` (elke 5 s wandelen) en `?debug=1` (`window.__kamiel` met plekken en events) helpen bij testen. Let op: in een trage browser loopt alles trager (stap per frame is begrensd op 0,05 s).
 - `http://<ip-HA>:8100` op een computer openen: zo zie je of het aan de tablet of aan de add-on ligt.
 
 ## Aandachtspunten en valkuilen
@@ -374,6 +384,8 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 | Kamiel liep achteruit / knipperde met één oog | Frames waren van de verkeerde houding gemaakt. | Frames uit de houding "hoofd links", gespiegeld voor rechts; beide ogen knipperen. |
 | Tekstbord zonder tekst | Bord geüpload zonder het vinkje "tekstbord". | Vinkje achteraf aan te zetten (verwerkt het origineel opnieuw); kan niet voor uploads van vóór 0.1.4 (geen origineel bewaard). |
 | Home Assistant start in herstelmodus | Een losse `'` op regel 29 van `configuration.yaml` (door de eigenaar zelf, bij De Lijn toevoegen). | Fout lezen in het HA-logboek: regel en kolom staan erbij. |
+| Terugkomende scène bleef hetzelfde | `visible()` had 40 px marge; met plekken van één schermbreedte bleven de buren altijd "zichtbaar". | Marge weg (0.8.0). |
+| Meeknikken deed niets | Deezer gaf geen tempo (of niet bereikbaar). | Eigen nummerlijst (0.8.0). |
 | Lokale testservers vielen weg | Achtergrondprocessen stierven tussen shell-aanroepen. | Starten met `setsid nohup … < /dev/null &`. |
 
 **Verder goed om te weten:**
@@ -403,7 +415,7 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 - [ ] Diepte door een lichte blauwe waas op horizon-objecten; schaduwen die van de zon weg vallen en langer worden bij lage zon.
 - [ ] Kleurharmonie per scène (hoofdkleur bij upload bepalen) en thema-labels per element.
 - [ ] Boodschappen.txt (HA-boodschappenlijst), Agenda.exe, Kamiel.exe ("over Kamiel"), een zeldzame nep-foutmelding.
-- [ ] Kleren per seizoen of feestdag (muts in de winter, rode neus met Kerst, feesthoedje op verjaardagen).
+- [ ] Kleren per seizoen of feestdag automatisch (de kerstmuts, paasoortjes en heksenhoed bestaan sinds 0.8.0).
 - [ ] Kamiels dagboek: elke dag automatisch een screenshot bewaren als postkaart.
 - [ ] Foto's "vandaag, x jaar geleden" in de kaders (EXIF-datum).
 - [ ] Berichten per e-mail als tweede weg naast Telegram (met goedkeuring vooraf voor vreemden).

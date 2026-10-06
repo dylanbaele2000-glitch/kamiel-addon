@@ -16,6 +16,7 @@
 </script>
 <script src="static/reminder.js"></script>
 <script src="static/outfits.js"></script>
+<script src="static/events.js"></script>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
 .stage{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -33,7 +34,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 .b95{font:inherit;color:#000;background:#c0c0c0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px 0 #808080,inset 1px 1px 0 #dfdfdf;padding:.3em .8em;min-height:2.2em;cursor:pointer}
 .b95:active,.b95.on{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px 0 #808080;background:#b5b5b5}
 .tbtn{width:2.1em;height:1.75em;min-height:0;padding:0;font-weight:700;line-height:1;display:grid;place-items:center}
-.win .bd{padding:.6em;display:flex;flex-direction:column;gap:.55em}
+.win .bd{padding:.6em;display:flex;flex-direction:column;gap:.55em;max-height:76vh;overflow:auto}
 .inset{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px 0 #404040}
 .lv{width:100%;border-collapse:collapse}
 .lv th{background:#c0c0c0;text-align:left;font-weight:400;padding:.15em .45em;border:1px solid;border-color:#fff #808080 #808080 #fff}
@@ -53,8 +54,8 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 .slot{display:flex;align-items:center;gap:.4em}
 .slot>span{width:3.6em;font-size:.9em}
 .tiles{display:flex;gap:.3em;flex-wrap:wrap}
-.tile{padding:2px;min-height:0;width:3.9em;height:3.9em;overflow:hidden}
-.tile canvas{position:static;inset:auto;filter:none;object-fit:fill;width:3.3em;height:3.3em;image-rendering:pixelated;display:block;margin:auto;pointer-events:none}
+.tile{padding:2px;min-height:0;width:3.5em;height:3.5em;overflow:hidden}
+.tile canvas{position:static;inset:auto;filter:none;object-fit:fill;width:2.9em;height:2.9em;image-rendering:pixelated;display:block;margin:auto;pointer-events:none}
 .amp{background:#232323;color:#36ff5a;font-family:VT323,monospace;padding:.4em;display:flex;gap:.6em;align-items:center;border:2px solid;border-color:#808080 #fff #fff #808080}
 .amp img{width:4.2em;height:4.2em;object-fit:cover;image-rendering:pixelated;background:#111}
 .marq{overflow:hidden;white-space:nowrap;font-size:1.5em;flex:1}
@@ -227,6 +228,21 @@ function moonPos(d) {
   const phase = mod(l - Ls, 2 * Math.PI) / (2 * Math.PI);   // 0 new, .25 first quarter, .5 full, .75 last quarter
   return { ...horizontal(days, ra, dec), phase };
 }
+// the moon keeps the real phase, but walks its own arc: rising in the east at sunset, highest halfway
+// through the night, setting in the west at sunrise (just like the sun does by day)
+let moonArcKey = -1, moonArcVal = null;
+function moonArc(d) {
+  const key = Math.floor(d.valueOf() / 60000);
+  if (key === moonArcKey) return moonArcVal;
+  moonArcKey = key;
+  const H0 = -0.8, step = 5 * 60000;
+  if (sunCalc(d).alt >= H0) return (moonArcVal = null);
+  let a = d.valueOf(), b = a;
+  for (let k = 0; k < 300 && sunCalc(new Date(a - step)).alt < H0; k++) a -= step;
+  for (let k = 0; k < 300 && sunCalc(new Date(b + step)).alt < H0; k++) b += step;
+  const f = Math.max(0, Math.min(1, (d.valueOf() - a) / Math.max(1, b - a)));
+  return (moonArcVal = { f, az: 95 + f * 170, alt: -3 + 50 * Math.sin(Math.PI * f) });
+}
 const azX = (az) => W / 2 + (mod(az, 360) - 180) / 100 * (W / 2);
 const altY = (alt) => HOR0 - Math.max(-12, alt) / 62 * (HOR0 - 70);
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
@@ -277,6 +293,10 @@ function updateSeason() {
 updateSeason();
 const SEASON_TINT = { lente: 'rgba(255,170,215,.05)', zomer: 'rgba(255,225,140,.05)', herfst: 'rgba(255,135,40,.07)', winter: 'rgba(205,225,255,.08)' };
 
+/* ---------- world events (see events.js): a stub until the engine starts below ---------- */
+let EV = { active: false, check() {}, walkNow() { return false; }, pump() {}, tick() {}, draw() {}, post() {}, itemOff() { return null; },
+  cloudOff() { return null; }, hideWorld() { return false; }, walkPending() { return false; }, request() {} };
+
 /* ---------- composing each place ---------- */
 const places = [];
 const recent = [];
@@ -297,21 +317,19 @@ function compose(i) {
   const take = (kinds) => {
     let pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o) && !recent.includes(o.id));
     if (!pool.length) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o));
+    // asked for more than there are: a ground or horizon element may come twice (never in the sky: one Jupiter is enough)
+    if (!pool.length && !kinds.includes('lucht')) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o));
     if (!pool.length) return null;
-    const o = pickFrom(pool); used.add(o); recent.push(o.id); if (recent.length > 3) recent.shift(); return o;
+    const o = pickFrom(pool); used.add(o); recent.push(o.id); if (recent.length > 6) recent.shift(); return o;
   };
-  // how often each kind shows up (percent, separately for day and night, set in the Studio)
-  const DEFCH = { dag: { grond: 100, horizon: 100, lucht: 60, kader: 50 }, nacht: { grond: 100, horizon: 100, lucht: 75, kader: 50 } };
-  const ch = ((S.chances || DEFCH)[night ? 'nacht' : 'dag']) || DEFCH.dag;
-  const on = (k) => rnd() * 100 < (ch[k] === undefined ? DEFCH.dag[k] : +ch[k]);
-  const r = rnd(), dens = r < .25 ? 'rustig' : r < .7 ? 'normaal' : 'vol';
-  let nH = on('horizon') ? { rustig: 1, normaal: 1 + (rnd() < .5), vol: 2 + (rnd() < .5) }[dens] : 0;
-  let nS = on('lucht') ? { rustig: 1, normaal: 1, vol: 1 + (rnd() < .6) }[dens] : 0;
-  let nG = on('grond') ? { rustig: 1, normaal: 2, vol: 3 + (rnd() < .4) }[dens] : 0;
-  let nF = on('kader') ? 1 : 0;
+  // how many of each kind: a number between "at least" and "at most", by day and by night (set in the Studio)
+  const DEFC = { grond: [2, 4], horizon: [1, 3], lucht: [1, 2], kader: [0, 1] };
+  const cnt = (S.counts && S.counts[night ? 'nacht' : 'dag']) || {};
+  const num = (k) => { const r = cnt[k] || DEFC[k], lo = Math.max(0, +r[0] || 0), hi = Math.max(lo, +r[1] || 0); return lo + Math.floor(rnd() * (hi - lo + 1)); };
+  let nH = num('horizon'), nS = num('lucht'), nG = num('grond'), nF = num('kader');
   const nT = 0;   // the music tv is added afterwards, in a free spot (see addTV)
   // never more than the maximum number of objects per place: drop random ones
-  const maxO = Math.max(1, +(S.max_objects || 9));
+  const maxO = Math.max(1, +(S.max_objects || 12));
   while (nH + nS + nG + nF + nT > maxO && nH + nS + nG + nF > 0) {
     const opts = [];
     if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF) opts.push('f');
@@ -319,13 +337,15 @@ function compose(i) {
     if (d === 'h') nH--; else if (d === 's') nS--; else if (d === 'g') nG--; else nF--;
   }
   const items = [], taken = [], takenSky = [];
+  // horizon objects stand far behind: with "mix" on, ground objects may stand in front of them
+  const takenH = S.mix_layers === false ? taken : [];
   // sizes from the Studio: [smallest, largest] in % of the screen height, per kind; each element can have its own factor
   const DEFSZ = { grond: [10, 40], horizon: [15, 42], lucht: [12, 38], kader: [18, 42] };
   const SZ = Object.assign({}, DEFSZ, S.sizes || {});
   const giantP = (S.giant_chance === undefined ? 10 : +S.giant_chance) / 100;
   const asp = (o) => o.size[0] / o.size[1];
-  const GAP = 40, HALF = PLACE / 2, EDGE = 24;
-  const LANE = 64 + 30;            // Kamiel is ~128 px wide; keep a clear lane around him
+  const GAP = S.spacing === undefined ? 30 : +S.spacing, HALF = PLACE / 2, EDGE = 24;
+  const LANE = Math.max(64, +(S.lane || 94));   // Kamiel is ~128 px wide; keep a clear lane around him
   const KTOP = FEET - 225;         // top of Kamiel's ears
   const sizeFor = (o, t) => {
     const [lo, hi] = SZ[o.kind] || DEFSZ.grond;
@@ -343,7 +363,7 @@ function compose(i) {
     for (const side of [first, -first]) {
       const lo = (lane ? LANE : 0) + w / 2, hi = HALF - EDGE - w / 2;
       if (hi < lo) continue;
-      for (let tries = 0; tries < 14; tries++) {
+      for (let tries = 0; tries < 30; tries++) {
         const dx = side * (lo + rnd() * (hi - lo));
         if (list.every(([l, r]) => dx + w / 2 + GAP < l || dx - w / 2 - GAP > r)) {
           list.push([dx - w / 2, dx + w / 2]); weight[side] += w; return dx;
@@ -354,7 +374,7 @@ function compose(i) {
   };
   // gather everything first, then place the biggest pieces first so they get the good spots
   const want = [];
-  if (nF) { const o = take(['kader']); if (o) want.push({ o, layer: 2 }); }
+  for (let k = 0; k < nF; k++) { const o = take(['kader']); if (o) want.push({ o, layer: 2 }); }
   for (let k = 0; k < nG; k++) { const o = take(['grond']); if (o) want.push({ o, layer: 2 }); }
   for (let k = 0; k < nH; k++) { const o = take(['horizon']); if (o) want.push({ o, layer: 1 }); }
   for (let k = 0; k < nS; k++) { const o = take(['lucht']); if (o) want.push({ o, layer: 0 }); }
@@ -372,7 +392,7 @@ function compose(i) {
     const o = c.o;
     if (c.layer === 0) {
       let done = false;
-      for (let tries = 0; tries < 18 && !done; tries++) {
+      for (let tries = 0; tries < 40 && !done; tries++) {
         const y = 30 + rnd() * Math.max(10, 320 - c.h);
         const lane = y + c.h > KTOP - 10;
         const side = rnd() < .5 ? -1 : 1, lo = (lane ? LANE : 0) + c.w / 2, hi = HALF - EDGE - c.w / 2;
@@ -386,7 +406,7 @@ function compose(i) {
       }
       continue;
     }
-    const dx = spot(c.w, taken, true); if (dx === null) continue;
+    const dx = spot(c.w, c.layer === 1 ? takenH : taken, true); if (dx === null) continue;
     if (c.layer === 1) {
       const top = baseY(wx0 + dx, c.w) - c.h;
       rects.push([dx - c.w / 2, top, dx + c.w / 2, H]);
@@ -429,22 +449,27 @@ makeClouds();
 let kx = PLACE / 2, target = kx, dir = -1, walking = false, t = 0, blinkT = 2, last = performance.now();
 let lastWalk = Date.now(), lastNightCheck = '';
 function go(d) {
-  if (walking) return;
+  if (walking || EV.active) return;
   dir = d; target = (Math.round((kx - PLACE / 2) / PLACE) + d) * PLACE + PLACE / 2; walking = true;
 }
+// on screen right now? Exactly, without a margin: a place is one screen wide, so with a margin
+// the places left and right of Kamiel always counted as "visible" and were never made new
 function visible(i) {
   const cam = kx - W / 2;
-  for (let k = -1; k <= 1; k++) { const x0 = i * PLACE + k * PW; if (x0 + PLACE > cam - 40 && x0 < cam + W + 40) return true; }
+  for (let k = -1; k <= 1; k++) { const x0 = i * PLACE + k * PW; if (x0 + PLACE > cam + 1 && x0 < cam + W - 1) return true; }
   return false;
 }
+const placeIndex = () => mod(Math.round((kx - PLACE / 2) / PLACE), N);
+// day and night alike: every "walk_minutes" Kamiel walks on (sometimes as one of the world events)
+const walkMs = () => Math.max(1, +S.walk_minutes || 20) * 60000;
+const msToWalk = () => lastWalk + walkMs() - Date.now();
 function schedule() {
   const d = now();
   updateSeason();
   if (remShown && !params.get('r') && !KamielReminder.isActive(remShown, d)) remShown = null;
-  if (isNightTime(d)) {
-    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    if (S.night_walks.includes(hm) && lastNightCheck !== hm) { lastNightCheck = hm; go(rnd() < .5 ? -1 : 1); }
-  } else if (Date.now() - lastWalk > (S.walk_minutes || 20) * 60000) { lastWalk = Date.now(); go(rnd() < .5 ? -1 : 1); }
+  EV.check(d);
+  if (walking || EV.active) return;
+  if (msToWalk() <= 0) { lastWalk = Date.now(); if (!EV.walkNow()) go(rnd() < .5 ? -1 : 1); }
 }
 if (params.get('demo')) setInterval(() => go(rnd() < .5 ? -1 : 1), +params.get('demo') * 1000);
 
@@ -494,29 +519,38 @@ function addTV(i) {
     cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null });
   p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
 }
-// a photo sent via Telegram: into a frame on this place (an existing frame gets the photo, otherwise one is added)
+// a photo sent via Telegram: a frame that already stands here gets it; only without one a frame is added
 function addSpot(i) {
   const p = places[i]; if (!p || !spotlight) return;
   const url = 'media/' + spotlight.file;
   if (p.items.some(x => x.photo === url && x.spot)) return;
-  // a fresh photo deserves a big frame up front: other frames on this place make way
-  p.items = p.items.filter(x => !(x.o.kind === 'kader' && !x.tv));
+  const fr = p.items.filter(x => x.o.kind === 'kader' && !x.tv && x.photo !== undefined && !x.hiddenBy)
+    .sort((a, b) => b.h - a.h)[0];
+  if (fr) {
+    if (!fr.spot) fr.oldPhoto = fr.photo;
+    fr.photo = url; fr.spot = true; fr.cache = null; fr.born = performance.now();
+    return;
+  }
   addThing(i, FRAME(), { photo: url, spot: true, depth: .9 }, (x) => x.spot && x.photo === url, .36);
 }
-// the sent photo leaves every place; the frame simply disappears
+// the sent photo leaves every place: a frame that was already there gets its own photo back, an added one disappears
 function dropSpot() {
   spotlight = null;
-  for (const p of places) if (p) p.items = p.items.filter(x => !x.spot);
+  for (const p of places) if (p) {
+    p.items = p.items.filter(x => !x.spot || x.oldPhoto !== undefined);
+    for (const x of p.items) if (x.spot) { x.photo = x.oldPhoto; delete x.oldPhoto; x.spot = false; x.cache = null; }
+  }
 }
 function addThing(i, o, extra, has, size) {
   const p = places[i]; if (!p || p.items.some(has)) return;
   const asp0 = o.size[0] / o.size[1];
-  // the tv always gets a spot: if the place is full, the smallest standing objects make room
-  for (let round = 0; round < 6; round++) {
-    const h = H * (size ? (round < 2 ? size : size * .8) : (round < 2 ? .24 + rnd() * .1 : .2)), w = h * asp0;
+  // it always gets a spot; it may stand in front of horizon and sky objects, and only if there's
+  // really no room left does the smallest ground object make way
+  for (let round = 0; round < 8; round++) {
+    const h = H * (size ? (round < 3 ? size : size * .8) : (round < 3 ? .24 + rnd() * .1 : .2)), w = h * asp0;
     if (tryTV(p, o, h, w, extra)) return;
-    if (round >= 1) {
-      const standing = p.items.filter(x => x.layer > 0 && !x.tv && !x.spot && !x.board && !x.timer);   // live things never make way
+    if (round >= 2) {
+      const standing = p.items.filter(x => x.layer === 2 && !x.tv && !x.spot && !x.board && !x.timer);   // live things never make way
       if (!standing.length) continue;
       standing.sort((a, b) => a.h * a.o.size[0] / a.o.size[1] - b.h * b.o.size[0] / b.o.size[1]);
       p.items.splice(p.items.indexOf(standing[0]), 1);
@@ -525,11 +559,12 @@ function addThing(i, o, extra, has, size) {
 }
 function tryTV(p, o, h, w, extra, layer = 2) {
   const sky = layer === 0;
-  const used = p.items.filter(x => sky ? x.layer === 0 : x.layer > 0).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
+  // only things on the same layer count: a new thing on the ground may stand in front of the horizon
+  const used = p.items.filter(x => x.layer === layer && !x.hiddenBy).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
   for (let tries = 0; tries < 30; tries++) {
     const side = rnd() < .5 ? -1 : 1, lo = (sky ? 0 : 94) + w / 2, hi = PLACE / 2 - 24 - w / 2; if (hi < lo) return false;
     const dx = side * (lo + rnd() * (hi - lo));
-    if (used.every(([l, r]) => dx + w / 2 + 30 < l || dx - w / 2 - 30 > r)) {
+    if (used.every(([l, r]) => dx + w / 2 + 20 < l || dx - w / 2 - 20 > r)) {
       const it = Object.assign({ o, layer, dx, depth: .55 + rnd() * .35, h, flip: false, born: performance.now() }, extra);
       if (sky && W / 2 + dx - w / 2 < 330) it.y = Math.max(it.y || 0, 160);   // keep the clock corner free
       p.items.push(it);
@@ -560,12 +595,17 @@ async function pollLive() {
   }
   if (!j.spotlight && spotlight) dropSpot();   // /wis, wissen in the Studio, or its time is over
   if (j.snapshot && j.snapshot !== lastSnap) { lastSnap = j.snapshot; sendSnapshot(j.snapshot); }
+  // an event asked for via /event or the Studio (only new ones: not again after a reload)
+  if (j.event) {
+    if (lastEventN !== null && j.event.n !== lastEventN) EV.request(j.event.id || '');
+    lastEventN = j.event.n;
+  } else if (lastEventN === null) lastEventN = 0;
   const tr = j.trigger;
   if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showBoard();
   setTimers(j.timers);
   if (tr) lastTrigger = tr.changed;
 }
-let lastSnap = null;
+let lastSnap = null, lastEventN = null;
 // /kijk on Telegram: a still of the screen, with the camcorder text on it
 function sendSnapshot(id) {
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
@@ -631,16 +671,16 @@ const hm2 = (ts) => { const d = new Date(ts * 1000); return String(d.getHours())
 function signObj(id, flap) { return { id, kind: 'grond', size: [flap.c.width, flap.c.height], img: flap.c, moment: 'altijd' }; }
 // a sign always gets a spot right next to Kamiel; whatever stands there steps aside until the sign is gone
 function placeSign(key, obj, size) {
-  const i = mod(Math.round((kx - PLACE / 2) / PLACE), N), p = places[i]; if (!p) return;
+  const i = placeIndex(), p = places[i]; if (!p) return;
   const asp0 = obj.size[0] / obj.size[1];
   size = Math.min(size, 340 / asp0 / H);
   const h = H * size, w = h * asp0;
   const other = p.items.find(x => (x.board || x.timer) && !x[key]);
-  const weight = (sd) => p.items.filter(x => x.layer > 0 && Math.sign(x.dx) === sd && !x.hiddenBy).reduce((a, x) => a + x.h * x.o.size[0] / x.o.size[1], 0);
+  const weight = (sd) => p.items.filter(x => x.layer === 2 && Math.sign(x.dx) === sd && !x.hiddenBy).reduce((a, x) => a + x.h * x.o.size[0] / x.o.size[1], 0);
   const side = other ? -Math.sign(other.dx) : (weight(-1) <= weight(1) ? -1 : 1);
   const dx = side * Math.min(94 + w / 2 + 8, PLACE / 2 - 24 - w / 2);
   for (const x of p.items) {
-    if (x.layer === 0 || x.board || x.timer || x.hiddenBy) continue;
+    if (x.layer !== 2 || x.board || x.timer || x.hiddenBy) continue;   // horizon and sky stay: the sign stands in front
     const xw = x.h * x.o.size[0] / x.o.size[1];
     if (x.dx + xw / 2 > dx - w / 2 - 20 && x.dx - xw / 2 < dx + w / 2 + 20) x.hiddenBy = key;
   }
@@ -731,8 +771,10 @@ function step(dt) {
     kx += dir * 70 * dt;
     if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); arrived(); }
   }
+  EV.tick(dt);
+  if (!walking) EV.pump(msToWalk());
   // fade in when he stands still, out as soon as he walks on or the reminder's time is over
-  const want = remShown && !walking && !message ? 1 : 0;
+  const want = remShown && !walking && !message && !EV.active ? 1 : 0;
   if (message && message.until * 1000 < Date.now()) message = null;
   msgAlpha += Math.sign((message ? 1 : 0) - msgAlpha) * Math.min(Math.abs((message ? 1 : 0) - msgAlpha), dt / 1);
   remAlpha += Math.sign(want - remAlpha) * Math.min(Math.abs(want - remAlpha), dt / 1.2);
@@ -811,11 +853,12 @@ function drawSky(sun, moon) {
       ctx.fillRect(mod(i * 97.13 - kx * .05, W), (i * 53.7) % (HOR0 - 40), 1.6, 1.6);
     }
   }
-  sunXY = null; moonXY = null;
+  sunXY = null; moonXY = null; lastSun = null; lastMoon = null;
   if (sun.alt > -6) {
     const x = azX(sun.az), y = altY(sun.alt), tint = tintFor(sun.alt);
     const dim = weather === 'helder' || weather === 'licht' ? 1 : weather === 'mist' ? .3 : .1, r = 30 + tint * 8;
     if (dim >= .3 && sun.alt > 0) sunXY = { x, y };   // only tappable when you can see it
+    if (sun.alt > 0) lastSun = { x, y };
     const gl = ctx.createRadialGradient(x, y, r * .5, x, y, r * 5);
     gl.addColorStop(0, `rgba(255,${230 - tint * 70},${190 - tint * 110},${.55 * dim})`); gl.addColorStop(1, 'rgba(255,220,180,0)');
     ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
@@ -824,18 +867,17 @@ function drawSky(sun, moon) {
   }
   const clear = weather === 'helder' || weather === 'licht';
   const veil = clear ? 1 : weather === 'bewolkt' ? .35 : weather === 'mist' || weather === 'sneeuw' ? .25 : .15;
-  // by night it glows; by day, like the real one, a pale disc in a clear sky
-  const a = moon.alt > -4 ? (L < .8 ? (1 - L) * veil : (clear && moon.alt > 4 ? .5 : 0)) : 0;
+  // only by night, on its own arc (see moonArc)
+  const a = moon.alt > -4 ? (L < .8 ? (1 - L) * veil : 0) : 0;
   if (a > .02) {
     const x = azX(moon.az), y = altY(moon.alt), r = 22;
     ctx.save(); ctx.globalAlpha = a;
     if (L < .8) { const gl = ctx.createRadialGradient(x, y, r, x, y, r * 4); gl.addColorStop(0, 'rgba(220,230,255,.25)'); gl.addColorStop(1, 'rgba(220,230,255,0)');
       ctx.fillStyle = gl; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8); }
-    // the lit side points to where the sun is (even when the sun is below the horizon)
+    // waxing: lit on the right; waning: lit on the left (tipped a little toward the sun below the horizon)
     if (a > .3) moonXY = { x, y };
-    const sp = sunCalc(now());
-    let daz = mod(sp.az - moon.az + 180, 360) - 180;
-    const ang = Math.atan2(-(sp.alt - moon.alt), daz);
+    lastMoon = { x, y };
+    const ang = moon.phase < .5 ? .3 : Math.PI - .3;
     ctx.drawImage(moonDisc(moon.phase, ang, r, halloweenNow ? [255, 176, 92] : [238, 240, 255]), x - r - 2, y - r - 2);
     ctx.restore();
   }
@@ -873,10 +915,12 @@ function drawClouds(sun) {
   for (const cl of clouds) {
     const img = cl.c.img; if (!ready(img)) continue;
     const w = cl.w, h = w * img.height / img.width * cl.sq;
-    const x = mod(cl.x - cam + 400, Math.max(PW / 2, W + 800)) - 400;
+    let x = mod(cl.x - cam + 400, Math.max(PW / 2, W + 800)) - 400, y = cl.y;
+    const off = EV.cloudOff(cl, x, y, w, h); if (off) { x += off.x || 0; y += off.y || 0; }
+    cl.sx = x; cl.sy = y; cl.sw = w; cl.sh = h;
     if (x > W + 50) continue;
     ctx.globalAlpha = weather === 'mist' ? .55 : .95;
-    drawImg(img, x, cl.y, w, h, cl.flip);
+    drawImg(img, x, y, w, h, cl.flip);
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-atop';
@@ -902,7 +946,7 @@ function footOf(img) {
   if (x1 < x0) { x0 = w * .3; x1 = w * .7; }
   return (img._foot = { y: (bottom + 1) / h, x0: x0 / w, x1: (x1 + 1) / w });
 }
-let sunXY = null, moonXY = null, outfit = [];
+let sunXY = null, moonXY = null, lastSun = null, lastMoon = null, outfit = [];
 let hits = [];   // where everything was drawn in the last frame, for tapping
 function placeItems(layer) {
   const cam = kx - W / 2;
@@ -926,9 +970,16 @@ function placeItems(layer) {
       }
       else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
       ctx.save();
+      const off = EV.itemOff(it, layer, sx, y, w, h);
+      let sx2 = sx;
+      if (off) {
+        sx2 += off.x || 0; y += off.y || 0;
+        if (off.r) { ctx.translate(sx2 + w / 2, y + h / 2); ctx.rotate(off.r); ctx.translate(-(sx2 + w / 2), -(y + h / 2)); }
+      }
       if (layer === 1) ctx.globalAlpha = .93;
       if (it.born) ctx.globalAlpha = Math.min(1, (performance.now() - it.born) / 1500);
-      hits.push({ it, x: sx, y, w, h });
+      hits.push({ it, x: sx2, y, w, h, i, layer, foot: y + h * (f ? f.y : 1) });
+      { const sx = sx2;
       if (layer === 2) {
         // soft contact shadow right under the part that touches the ground
         const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
@@ -945,6 +996,7 @@ function placeItems(layer) {
         const cw = w * 2.3, ch = cw * it.cloud.img.height / it.cloud.img.width;
         drawImg(it.cloud.img, sx + w / 2 - cw / 2, y + h * .62, cw, Math.min(ch, h * 1.1), false);
       }
+      }
       ctx.restore();
     }
   }
@@ -955,35 +1007,135 @@ function drawGround() {
   ctx.drawImage(pano, cam, 0, w1, H, 0, 0, w1, H);
   if (w1 < W) ctx.drawImage(pano, 0, 0, W - w1, H, w1, 0, W - w1, H);
 }
-// with a fast song on, Kamiel nods along: a quick dip of the head on every beat
+// a song from the list in the Studio is playing: Kamiel nods along, a quick dip of the head on every beat
 let media = null;
 function nodAngle() {
-  const th = S.nod_bpm === undefined ? 110 : +S.nod_bpm;
   const bpm = +params.get('bpm') || (media && media.bpm);   // ?bpm=128 to try it out
-  if (!musicOn || !bpm || !th || bpm < th) return 0;
+  if (!(musicOn || params.get('bpm')) || !bpm) return 0;
   const pos = media && media.position !== null && media.position !== undefined && media.updated
     ? media.position + (Date.now() / 1000 - media.updated) : performance.now() / 1000;
   const beat = pos * bpm / 60, ph = beat - Math.floor(beat);
   return Math.exp(-ph * 4.5) * 0.16;   // radians: about 9 degrees on the beat, easing back up
 }
-function kamielAt(g, im, X, Y, w, h, nod) {
-  if (!nod) { g.drawImage(im, X, Y, w, h); KamielOutfits.draw(g, outfit, X, Y, w, h); return; }
-  const neck = KamielOutfits.OUTFITS, seam = Y + h * 470 / 1370, px = X + w * 230 / 780;
-  const nekIds = outfit.filter(id => (neck.find(o => o.id === id) || {}).slot === 'nek'), headIds = outfit.filter(id => !nekIds.includes(id));
+/* ---------- drawing a llama: Kamiel himself, and the visitors of the world events ---------- */
+// what Kamiel does right now; the world events change this, outside events it stays as it is here
+const KAM0 = { x: 0, y: 0, s: 1, r: 0, sq: 1, sx: 1, face: 0, pose: '', wt: 0, rate: 6, head: 0, eyes: '', eyeT: 0, mouth: 0,
+  outfit: null, alpha: 1, blur: 0, tint: '', layer: 'front', feet: null, clipY: null, hide: false, cold: 0, blush: false };
+const kam = Object.assign({}, KAM0);
+const kamReset = () => { Object.assign(kam, KAM0); };
+// a recoloured copy of a Kamiel frame: the white lama, the twin, a cold Kamiel
+const tintCache = new Map();
+function tinted(im, kind) {
+  if (!kind || !ready(im)) return im;
+  const key = im.src + kind; if (tintCache.has(key)) return tintCache.get(key);
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  try {
+    const d = g.getImageData(0, 0, c.width, c.height), a = d.data;
+    for (let i = 0; i < a.length; i += 4) {
+      const v = a[i] * .3 + a[i + 1] * .59 + a[i + 2] * .11;
+      if (kind === 'wit') { if (v > 55) { a[i] = 178 + v * .32; a[i + 1] = 172 + v * .32; a[i + 2] = 165 + v * .3; } }
+      else if (kind === 'tweeling') { a[i] *= .82; a[i + 1] *= .86; a[i + 2] = a[i + 2] * .9 + 12; }
+      else if (kind === 'schim') { a[i] = a[i + 1] = a[i + 2] = 20; }
+    }
+    g.putImageData(d, 0, 0);
+  } catch (e) { }
+  tintCache.set(key, c); return c;
+}
+const FUR = { '': '#6f4321', wit: '#e2ddd3', tweeling: '#5c3a22', schim: '#141414' };
+// eyes and mouth, in Kamiel's own frame coordinates (780 × 1370, facing left)
+function face2(g, X, Y, w, h, o) {
+  const sx = w / 780, sy = h / 1370, fur = FUR[o.tint || ''] || FUR[''];
+  const ex = X + 192 * sx, ey = Y + 266 * sy, ew = 70 * sx, eh = 50 * sy;
+  const px = (fx, fy, fw, fh, col) => { g.fillStyle = col; g.fillRect(X + fx * sx, Y + fy * sy, fw * sx, fh * sy); };
+  const cream = '#f4e6c2', ink = '#2c180c';
+  switch (o.eyes) {
+    case 'dicht': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh); px(192, 300, 70, 14, ink); break;
+    case 'vies': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh * .55); px(180, 236, 90, 16, ink); px(170, 228, 30, 14, ink); break;
+    case 'boos': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh * .4); px(180, 240, 30, 16, ink); px(210, 252, 30, 16, ink); px(240, 264, 30, 16, ink); break;
+    case 'triest': g.fillStyle = fur; g.fillRect(ex + ew * .4, ey, ew * .6, eh * .45); px(230, 240, 40, 14, ink); px(200, 252, 34, 14, ink); break;
+    case 'blij': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh); px(196, 300, 20, 14, ink); px(212, 286, 36, 14, ink); px(244, 300, 20, 14, ink); break;
+    case 'groot': g.fillStyle = ink; g.fillRect(ex - ew * .3, ey - eh * .35, ew * 1.6, eh * 1.7); g.fillStyle = cream; g.fillRect(ex - ew * .2, ey - eh * .25, ew * 1.4, eh * 1.5);
+      g.fillStyle = ink; g.fillRect(ex + ew * .35, ey + eh * .35, ew * .3, eh * .3); break;
+    case 'rol': { g.fillStyle = cream; g.fillRect(ex, ey, ew, eh); const a = o.eyeT * 3.2; g.fillStyle = ink;
+      g.fillRect(ex + ew * (.35 + .32 * Math.cos(a)), ey + eh * (.05 + .1 * (1 - Math.abs(Math.sin(a)))), ew * .3, eh * .32); break; }
+    case 'hart': g.fillStyle = '#ff3d8b'; [[0, 1, 1, 0, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 1, 0], [0, 0, 1, 1, 1, 0, 0], [0, 0, 0, 1, 0, 0, 0]]
+      .forEach((row, r) => row.forEach((v, c) => { if (v) g.fillRect(ex - ew * .1 + c * ew * .19, ey - eh * .2 + r * eh * .26, ew * .2, eh * .27); })); break;
+    case 'spiraal': { g.fillStyle = cream; g.fillRect(ex, ey, ew, eh); g.strokeStyle = ink; g.lineWidth = Math.max(1, 9 * sx); g.beginPath();
+      for (let k = 0; k < 26; k++) { const a = k * .5 + o.eyeT * 6, rr = k / 26 * ew * .45; const x = ex + ew / 2 + Math.cos(a) * rr, y = ey + eh / 2 + Math.sin(a) * rr; k ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.stroke(); break; }
+    case 'x': g.fillStyle = cream; g.fillRect(ex, ey, ew, eh); g.fillStyle = ink;
+      for (let k = 0; k < 5; k++) { g.fillRect(ex + ew * k / 5, ey + eh * k / 5, ew / 5, eh / 5); g.fillRect(ex + ew * (4 - k) / 5, ey + eh * k / 5, ew / 5, eh / 5); } break;
+  }
+  if (o.mouth > 0) {   // open mouth (shouting, singing, fire, bubbles)
+    const m = Math.min(1, o.mouth);
+    px(14, 372, 96, 24 + 50 * m, '#3a120c'); px(30, 386 + 30 * m, 60, 14 * m, '#d8576a');
+  }
+  if (o.blush) { g.fillStyle = 'rgba(255,90,120,.55)'; g.fillRect(X + 230 * sx, Y + 340 * sy, 70 * sx, 26 * sy); }
+}
+// draws one frame of a llama with its clothes; the head can dip (nodding) or look up (negative)
+function kamielAt(g, im, X, Y, w, h, nod, ids, o) {
+  const OUT = KamielOutfits.OUTFITS, src = o.tint ? tinted(im, o.tint) : im;
+  if (!nod) { g.drawImage(src, X, Y, w, h); KamielOutfits.draw(g, ids, X, Y, w, h, im); face2(g, X, Y, w, h, o); return; }
+  const seam = Y + h * 470 / 1370, px = X + w * 230 / 780;
+  const lowIds = ids.filter(id => { const z = OUT.find(q => q.id === id); return z && (z.slot === 'nek' || z.slot === 'lijf'); }), headIds = ids.filter(id => !lowIds.includes(id));
   g.save(); g.beginPath(); g.rect(X - 40, seam, w + 80, h); g.clip();
-  g.drawImage(im, X, Y, w, h); KamielOutfits.draw(g, nekIds, X, Y, w, h); g.restore();
+  g.drawImage(src, X, Y, w, h); KamielOutfits.draw(g, lowIds, X, Y, w, h, im); g.restore();
   g.save(); g.translate(px, seam); g.rotate(-nod); g.translate(-px, -seam + nod * 10);
-  g.beginPath(); g.rect(X - 40, Y - 60, w + 80, seam - Y + 60 + h * 30 / 1370); g.clip();
-  g.drawImage(im, X, Y, w, h); KamielOutfits.draw(g, headIds, X, Y, w, h); g.restore();
+  g.beginPath(); g.rect(X - 60, Y - 260, w + 120, seam - Y + 260 + h * 30 / 1370); g.clip();
+  g.drawImage(src, X, Y, w, h); KamielOutfits.draw(g, headIds, X, Y, w, h, im); face2(g, X, Y, w, h, o); g.restore();
 }
-function drawKamiel() {
-  const im = K[walking ? 'walk' + (Math.floor(t * 6) % 4 + 1) : (blinkT < 0 ? 'blink' : 'stand')]; if (!ready(im)) return;
-  const h = 225, w = im.width * h / im.height, x = W / 2 - w / 2, y = FEET - h, nod = nodAngle();
-  ctx.save();
-  if (dir > 0) { ctx.translate(x + w, y); ctx.scale(-1, 1); kamielAt(ctx, im, 0, 0, w, h, nod); }
-  else kamielAt(ctx, im, x, y, w, h, nod);
-  ctx.restore();
+// o: { cx, feet, s, face (-1 left, 1 right), pose, wt, r, sq, sx, head, eyes, mouth, outfit, tint, alpha, blur, dissolve, clipY }
+const llCv = document.createElement('canvas'), llSmall = document.createElement('canvas');
+function drawLlama(g, o) {
+  const pose = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
+  const im = K[pose] || K.stand; if (!ready(im)) return;
+  const s = o.s === undefined ? 1 : o.s; if (s <= 0.005 || o.alpha === 0) return;
+  const h = 225 * s, w = im.width * h / im.height;
+  const mx = Math.ceil(w * .45), my = Math.ceil(h * .45);
+  const cw = Math.ceil(w + mx * 2), ch = Math.ceil(h + my * 2);
+  if (cw > 4000 || ch > 4000) return;
+  if (llCv.width !== cw || llCv.height !== ch) { llCv.width = cw; llCv.height = ch; } else llCv.getContext('2d').clearRect(0, 0, cw, ch);
+  const c = llCv.getContext('2d');
+  c.imageSmoothingEnabled = false;
+  kamielAt(c, im, mx, my, w, h, o.head || 0, o.outfit || [], o);
+  if (o.cold) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(110,180,255,${.32 * o.cold})`; c.fillRect(0, 0, cw, ch); c.globalCompositeOperation = 'source-over'; }
+  if (o.dissolve > 0) {   // falls apart in blocks
+    c.globalCompositeOperation = 'destination-out'; const u = Math.max(3, Math.round(h / 40));
+    for (let y = 0; y < ch; y += u) for (let x = 0; x < cw; x += u) { const hsh = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1; if (hsh < o.dissolve) c.fillRect(x, y, u, u); }
+    c.globalCompositeOperation = 'source-over';
+  }
+  let src = llCv;
+  if (o.blur > 0) {   // out of focus: shrink and blow up again
+    const k = Math.max(2, o.blur * 2);
+    llSmall.width = Math.max(1, Math.round(cw / k)); llSmall.height = Math.max(1, Math.round(ch / k));
+    const sg = llSmall.getContext('2d'); sg.imageSmoothingEnabled = true; sg.clearRect(0, 0, llSmall.width, llSmall.height); sg.drawImage(llCv, 0, 0, llSmall.width, llSmall.height);
+    src = llSmall;
+  }
+  g.save();
+  g.globalAlpha *= o.alpha === undefined ? 1 : o.alpha;
+  if (o.clipY !== null && o.clipY !== undefined) { g.beginPath(); g.rect(-5000, -5000, 10000, o.clipY + 5000); g.clip(); }
+  g.translate(o.cx, o.feet); g.rotate(o.r || 0);
+  g.scale((o.face > 0 ? -1 : 1) * (o.sx || 1), o.sq || 1);
+  g.imageSmoothingEnabled = !!(o.blur > 0);
+  g.drawImage(src, -w / 2 - mx, -h - my, cw, ch);
+  g.restore();
 }
+// where a point of a llama's frame is on the screen (for speech bubbles, fire, tears…)
+function llamaPoint(o, fx, fy) {
+  const s = o.s === undefined ? 1 : o.s, h = 225 * s, w = 128.3 * s;
+  let x = (-w / 2 + fx * w / 780) * (o.face > 0 ? -1 : 1) * (o.sx || 1), y = (-h + fy * h / 1370) * (o.sq || 1);
+  const r = o.r || 0, c = Math.cos(r), sn = Math.sin(r);
+  return { x: o.cx + x * c - y * sn, y: o.feet + x * sn + y * c };
+}
+function kamObj() {
+  const ev = EV.active;
+  return { cx: W / 2 + kam.x, feet: kam.feet !== null ? kam.feet : FEET - kam.y, s: kam.s, face: kam.face || dir,
+    pose: ev ? (kam.pose || (blinkT < 0 ? 'blink' : 'stand')) : (walking ? 'walk' : (blinkT < 0 ? 'blink' : 'stand')),
+    wt: ev ? kam.wt : t * 6, r: kam.r, sq: kam.sq, sx: kam.sx, head: ev ? kam.head : nodAngle(), eyes: kam.eyes, eyeT: kam.eyeT, mouth: kam.mouth,
+    outfit: kam.outfit || outfit, tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush };
+}
+function drawKamiel() { if (!kam.hide) drawLlama(ctx, kamObj()); }
 let rockets = [], flash = null;
 function drawFireworks() {
   if (rockets.length < 4 && rnd() < .03) rockets.push({ x: 120 + rnd() * (W - 240), y: 80 + rnd() * 160, t0: t, hue: Math.floor(rnd() * 360) });
@@ -1052,19 +1204,33 @@ function osd(d) {
   if (s !== lastOsd) { document.getElementById('osd').innerHTML = s; lastOsd = s; }
 }
 function frame() {
-  const d = now(), sun = sunPos(d), moon = moonPos(d), L = light(sun.alt);
-  ctx = mainCtx; drawSky(sun, moon);
+  const d = now(), sun = sunPos(d), L = light(sun.alt);
+  const mr = moonPos(d), arc = moonArc(d), moon = arc ? { alt: arc.alt, az: arc.az, phase: mr.phase } : { alt: -90, az: 0, phase: mr.phase };
+  const hide = EV.hideWorld();   // the world crashed: only Kamiel is left
+  ctx = mainCtx;
+  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else drawSky(sun, moon);
+  EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
-  placeItems(0); drawClouds(sun); placeItems(1); drawGround(); placeItems(2); drawKamiel();
+  if (!hide) { placeItems(0); drawClouds(sun); }
+  if (kam.layer === 'far') drawKamiel();
+  if (!hide) { placeItems(1); drawGround(); }
+  EV.draw('ground', ctx);
+  if (kam.layer === 'mid') drawKamiel();
+  if (!hide) placeItems(2);
+  EV.draw('back', ctx);
+  if (kam.layer === 'front') drawKamiel();
+  EV.draw('front', ctx);
   ctx.globalCompositeOperation = 'source-atop';
   if (S.season_colors !== false && SEASON_TINT[seasonNow]) { ctx.fillStyle = SEASON_TINT[seasonNow]; ctx.fillRect(0, 0, W, H); }
   if (L < 1) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  drawWeather(sun);
+  if (!hide) drawWeather(sun);
+  EV.draw('screen', ctx);
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
   if (msgCanvas && msgAlpha > 0) { ctx.globalAlpha = msgAlpha; ctx.drawImage(msgCanvas, 0, 0); ctx.globalAlpha = 1; }
   drawRing();
+  EV.post(ctx, cv);
   drawVHS(); osd(d);
 }
 // one broken piece (bad data from a sensor, say) may never stop Kamiel: keep drawing, and say once what went wrong
@@ -1075,6 +1241,22 @@ function loop(ts) {
   try { step(dt); frame(); }
   catch (e) { if (loopErr++ === 0) window.onerror(e.message, 'display.html', (e.stack || '').split('\n')[1] || 0); }
 }
+// the world events get a small window onto Kamiel's world
+EV = KamielEvents.create({
+  W, H, FEET, PLACE, HOR0, K, CL, OBJ, kam, kamReset, drawLlama, llamaPoint, kamObj, ready, tinted,
+  settings: S.events || {}, params,
+  cam: () => kx, setCam: (v) => { kx = v; }, dir: () => dir, setDir: (v) => { dir = v; },
+  walking: () => walking, hits: () => hits, clouds: () => clouds, outfit: () => outfit,
+  horY: (sx) => horY(kx - W / 2 + sx),
+  center: (d) => (Math.round((kx - PLACE / 2) / PLACE) + d) * PLACE + PLACE / 2,
+  arrive: () => { lastWalk = Date.now(); arrived(); },
+  sky: () => lastSun || lastMoon,
+  night: () => isNightTime(now()),
+  addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
+    p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
+  now,
+});
+if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex };
 requestAnimationFrame(loop);
 pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
@@ -1083,21 +1265,21 @@ setInterval(schedule, 15000);
 
 /* ---------- old-school windows: tap an empty spot ---------- */
 const deskEl = document.getElementById('desk');
-const WIN = S.windows || { weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true };
-const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe' }, S.window_titles || {});
-const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵' };
+const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true }, S.windows || {});
+const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe' }, S.window_titles || {});
+const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙' };
 const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
   'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
 const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
 const escH = (t) => String(t === null || t === undefined ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-let deskOpen = false, deskData = null, deskRows = [], lastTouch = 0, zTop = 10, outfitTouched = 0, deskTimer = null;
+let walkTimer = null, deskOpen = false, deskData = null, deskRows = [], lastTouch = 0, zTop = 10, outfitTouched = 0, deskTimer = null;
 const wins = {};
 function touchDesk() { lastTouch = Date.now(); }
 async function loadDesk() { try { deskData = await (await fetch('api/desk', { cache: 'no-store' })).json(); } catch (e) { deskData = deskData || {}; } }
 async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { deskRows = []; } }
 function spots(keys) {
   const layout = S.window_layout || 'verspreid';
-  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [58, 40], muziek: [32, 30] };
+  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6] };
   return keys.map((k, n) => layout === 'netjes'
     ? [3 + (n % 3) * 32.5, 4 + Math.floor(n / 3) * 46]
     : [base[k][0] + (rnd() * 6 - 3), base[k][1] + (rnd() * 6 - 3)]);
@@ -1110,6 +1292,7 @@ async function openDesk(only) {
   await Promise.all([loadDesk(), keys.includes('vertrek') ? loadRows() : null]);
   if (!deskOpen) return;
   const pos = spots(keys);
+  clearInterval(walkTimer); walkTimer = setInterval(() => { if (deskOpen && wins.wandel) tickWandel(); }, 500);
   keys.forEach((k, n) => setTimeout(() => { if (deskOpen) makeWin(k, pos[n]); }, 90 * n));
   setTimeout(() => { if (deskOpen) renderTaskbar(); }, 90 * keys.length);
   clearInterval(deskTimer);
@@ -1121,7 +1304,7 @@ async function openDesk(only) {
   }, 5000);
 }
 function closeDesk(quiet) {
-  deskOpen = false; clearInterval(deskTimer);
+  deskOpen = false; clearInterval(deskTimer); clearInterval(walkTimer);
   for (const k in wins) delete wins[k];
   deskEl.innerHTML = '';
 }
@@ -1129,7 +1312,7 @@ function front(el) { el.style.zIndex = ++zTop; deskEl.querySelectorAll('.win').f
 function makeWin(k, [lx, ty]) {
   const el = document.createElement('div'); el.className = 'win'; el.dataset.k = k;
   el.style.left = lx + '%'; el.style.top = ty + '%';
-  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '38%', muziek: '33%' }[k];
+  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%' }[k];
   el.innerHTML = `<div class="tb"><span>${ICON[k]}</span><span class="tt">${escH(TITLES[k])}</span>
     <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div><div class="bd"></div>`;
   deskEl.appendChild(el); wins[k] = el; front(el);
@@ -1137,7 +1320,7 @@ function makeWin(k, [lx, ty]) {
   el.querySelector('[data-a=close]').addEventListener('click', () => closeWin(k));
   el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
   drag(el);
-  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek })[k]();
+  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel })[k]();
   // keep it on screen
   const r = el.getBoundingClientRect(), dr = deskEl.getBoundingClientRect();
   if (r.right > dr.right - 4) el.style.left = Math.max(0, dr.width - r.width - 8) + 'px';
@@ -1251,6 +1434,27 @@ function fillMuziek() {
   b.querySelectorAll('[data-a]').forEach(el => el.addEventListener('click', async () => {
     touchDesk(); await post('api/media/' + cmd[el.dataset.a]); setTimeout(async () => { await loadDesk(); b.innerHTML = ''; fillMuziek(); }, 900);
   }));
+}
+
+// countdown to the next walk, with arrows to send Kamiel left or right right away
+function fillWandel() {
+  const b = bodyOf('wandel'); if (!b) return;
+  b.innerHTML = `<div class="inset" style="text-align:center;padding:.4em 0"><div class="muted">Kamiel wandelt verder over</div>
+      <div class="wclock" style="font:3.2em/1 VT323,monospace;letter-spacing:.06em">--:--</div><div class="muted wnote">&nbsp;</div></div>
+    <div class="row95" style="justify-content:space-between"><button class="b95" data-d="-1" style="font-size:1.3em;flex:1">◀ Links</button><button class="b95" data-d="1" style="font-size:1.3em;flex:1">Rechts ▶</button></div>`;
+  b.querySelectorAll('[data-d]').forEach(el => el.addEventListener('click', () => {
+    touchDesk();
+    if (EV.active || walking) return;
+    lastWalk = Date.now(); go(+el.dataset.d); tickWandel();
+  }));
+  tickWandel();
+}
+function tickWandel() {
+  const b = bodyOf('wandel'); if (!b) return;
+  const c = b.querySelector('.wclock'), n = b.querySelector('.wnote'); if (!c) return;
+  const left = Math.max(0, msToWalk()) / 1000, m = Math.floor(left / 60), sec = Math.floor(left % 60);
+  c.textContent = walking ? 'ONDERWEG' : String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+  n.textContent = EV.active ? 'Er gebeurt iets…' : walking ? 'Kamiel wandelt nu' : (EV.walkPending() ? 'Er staat iets speciaals te gebeuren' : '\u00a0');
 }
 
 /* ---------- tapping: message, sun, moon, an element, or the empty scene ---------- */

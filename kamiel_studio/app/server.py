@@ -7,6 +7,7 @@ import asyncio
 import copy
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -44,9 +45,26 @@ HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
 WEATHER_BUCKETS = ("zon", "bewolkt", "regen", "sneeuw", "mist")
-WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek")
-OUTFIT_SLOTS = {"feesthoed": "hoofd", "kroon": "hoofd", "muts": "hoofd", "cowboy": "hoofd", "bloemen": "hoofd", "koptelefoon": "hoofd",
-                "zonnebril": "ogen", "nerdbril": "ogen", "sjaal": "nek", "strik": "nek", "rodeneus": "neus", "snor": "neus"}
+WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel")
+def _read_static(name, pattern):
+    """The tablet's own lists (clothes, events) are the single source: read the ids from its scripts."""
+    try:
+        with open(os.path.join(APP, "static", name), encoding="utf-8") as f:
+            return re.findall(pattern, f.read())
+    except OSError:
+        return []
+
+
+OUTFIT_SLOTS = dict(_read_static("outfits.js", r"id: '([\w-]+)', name: '[^']*', slot: '(\w+)'")) or {
+    "feesthoed": "hoofd", "kroon": "hoofd", "muts": "hoofd", "cowboy": "hoofd", "bloemen": "hoofd", "koptelefoon": "hoofd",
+    "zonnebril": "ogen", "nerdbril": "ogen", "sjaal": "nek", "strik": "nek", "rodeneus": "neus", "snor": "neus"}
+OUTFIT_SLOT_ORDER = ("hoofd", "ogen", "nek", "neus", "lijf")
+# the world events: (id, name, kind) — kind "lama" (daily visit), "vaak" (a few a day) or "soms" (a few a week)
+EVENTS = _read_static("events.js", r"id: '([\w-]+)', name: '([^']*)', cat: '(\w+)'")
+EVENT_IDS = {e[0] for e in EVENTS}
+SONGS = [("Roma", 104), ("All the things she said", 90), ("Why'd you only call me when you're high", 92), ("Backseat", 120),
+         ("Everything is Romantic (reimagined)", 91), ("DANCE...", 113), ("Nicole Kidman", 140), ("Brand new chanel$", 126),
+         ("Storm II", 137), ("Party", 151), ("SaWaDiKa", 140), ("Wet Vagina", 150), ("Atlas", 120)]
 PERIODS = ["altijd", "lente", "zomer", "herfst", "winter", "valentijn", "pasen", "halloween",
            "sinterklaas", "kerst", "nieuwjaar", "eigen"]
 
@@ -60,7 +78,14 @@ DEFAULT_SETTINGS = {
     "frame_ratio": 2,
     "chances": {"dag": {"grond": 100, "horizon": 100, "lucht": 60, "kader": 50},
                 "nacht": {"grond": 100, "horizon": 100, "lucht": 75, "kader": 50}},
-    "max_objects": 9,
+    # how many objects of each kind per scene: [at least, at most], by day and by night
+    "counts": {"dag": {"grond": [2, 4], "horizon": [1, 3], "lucht": [1, 2], "kader": [0, 1]},
+               "nacht": {"grond": [2, 4], "horizon": [1, 3], "lucht": [1, 3], "kader": [0, 1]}},
+    "max_objects": 12,
+    "spacing": 30,          # px between objects
+    "lane": 94,             # px kept free on each side of Kamiel's middle
+    "mix_layers": True,     # ground objects may stand in front of horizon objects
+    "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": []},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -73,15 +98,15 @@ DEFAULT_SETTINGS = {
     "media_player": "",
     "departures": [],
     "board": [],
-    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True},
-    "window_titles": {"weer": "Weer.exe", "vertrek": "Vertrek.exe", "knoppen": "Knoppen.exe", "kleerkast": "Kleerkast.exe", "muziek": "Muziek.exe"},
+    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True},
+    "window_titles": {"weer": "Weer.exe", "vertrek": "Vertrek.exe", "knoppen": "Knoppen.exe", "kleerkast": "Kleerkast.exe", "muziek": "Muziek.exe",
+                      "wandel": "Wandel.exe"},
     "window_close": 60,
     "window_layout": "verspreid",
     "buttons": [],
     "outfit_mode": "kiezen",
     "outfits_on": [],
     "kamiel_tap": "kleerkast",
-    "nod_bpm": 110,
     "timer_entities": [],
     "departure_trigger": "",
     "people": [],
@@ -120,6 +145,17 @@ def load_db():
     if "board" not in stored and stored.get("departures"):
         s["board"] = [{"entity": d["entity"], "label": d.get("label", "")[:14], "lines": d.get("lines", ""),
                        "dest": "", "kind": "alles", "count": 1} for d in stored["departures"]]
+    if "counts" not in stored and "chances" in stored:
+        # older versions had a chance per kind; start from the new, fuller defaults but keep "never" as never
+        for part in ("dag", "nacht"):
+            for kind, v in stored["chances"].get(part, {}).items():
+                if kind in s["counts"][part] and int(v) == 0:
+                    s["counts"][part][kind] = [0, 0]
+    ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
+    for k in ("windows", "window_titles"):
+        merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
+    if "songs" not in db:
+        db["songs"] = [{"id": uuid.uuid4().hex[:8], "title": t, "bpm": b} for t, b in SONGS]
     if "chances" not in stored:
         # older versions had "1 frame in N places"; carry that over
         r = int(stored.get("frame_ratio", 2))
@@ -238,6 +274,8 @@ async def api_world(request):
         "settings": db["settings"],
         "reminders": db.get("reminders", []),
         "dismissed": db.get("dismissed", {}),
+        "songs": db.get("songs", []),
+        "events": [{"id": e[0], "name": e[1], "cat": e[2]} for e in EVENTS],
     })
 
 
@@ -565,6 +603,32 @@ async def api_settings(request):
                     except (KeyError, TypeError, ValueError):
                         continue
                     s["chances"][part][kind] = max(0, min(100, v))
+        if isinstance(body.get("counts"), dict):
+            for part in ("dag", "nacht"):
+                for kind in ("grond", "horizon", "lucht", "kader"):
+                    try:
+                        lo, hi = (int(v) for v in body["counts"][part][kind])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    lo, hi = max(0, min(12, lo)), max(0, min(12, hi))
+                    s["counts"][part][kind] = [min(lo, hi), max(lo, hi)]
+        if "spacing" in body:
+            s["spacing"] = max(-150, min(200, int(body["spacing"])))
+        if "lane" in body:
+            s["lane"] = max(64, min(300, int(body["lane"])))
+        if "mix_layers" in body:
+            s["mix_layers"] = bool(body["mix_layers"])
+        if isinstance(body.get("events"), dict):
+            e, b = s["events"], body["events"]
+            if "on" in b:
+                e["on"] = bool(b["on"])
+            if "evening" in b:
+                e["evening"] = bool(b["evening"])
+            for k, top in (("lama_per_day", 5), ("common_per_day", 24), ("normal_per_week", 50)):
+                if k in b:
+                    e[k] = max(0, min(top, int(b[k])))
+            if isinstance(b.get("off"), list):
+                e["off"] = [x for x in b["off"] if x in EVENT_IDS]
         if isinstance(body.get("sizes"), dict):
             for kind in ("grond", "horizon", "lucht", "kader"):
                 try:
@@ -601,8 +665,6 @@ async def api_settings(request):
             s["outfit_mode"] = body["outfit_mode"]
         if isinstance(body.get("outfits_on"), list):
             s["outfits_on"] = [str(x)[:20] for x in body["outfits_on"]][:40]
-        if "nod_bpm" in body:
-            s["nod_bpm"] = max(0, min(250, int(body["nod_bpm"] or 0)))
         if body.get("kamiel_tap") in ("kleerkast", "niets"):
             s["kamiel_tap"] = body["kamiel_tap"]
         if isinstance(body.get("board"), list):
@@ -628,7 +690,7 @@ async def api_settings(request):
         if "giant_chance" in body:
             s["giant_chance"] = max(0, min(100, int(body["giant_chance"])))
         if "max_objects" in body:
-            s["max_objects"] = max(1, min(20, int(body["max_objects"])))
+            s["max_objects"] = max(1, min(40, int(body["max_objects"])))
         if "min_frames" in body:
             s["min_frames"] = max(0, min(8, int(body["min_frames"])))
         if "tap_url" in body:
@@ -685,7 +747,7 @@ async def api_live(request):
     out = {"message": None, "media": None, "trigger": None, "outfit": current_outfit(db), "dismissed": db.get("dismissed", {}),
            "spotlight": ({k: v for k, v in db["spotlight"].items() if k != "chat"}
                          if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
-           "snapshot": SNAP.get("id")}
+           "snapshot": SNAP.get("id"), "event": db.get("event_req")}
     try:
         out["message"] = await current_message(db)
         if s.get("media_player"):
@@ -695,7 +757,7 @@ async def api_live(request):
                 pic = a.get("entity_picture") or ""
                 out["media"] = {"playing": st.get("state") == "playing", "title": a.get("media_title", ""),
                                 "artist": a.get("media_artist", ""), "art": str(abs(hash(pic))) if pic else "",
-                                "bpm": bpm_for(a.get("media_artist", ""), a.get("media_title", "")),
+                                "bpm": song_bpm(db, a.get("media_title", "")),
                                 "position": a.get("media_position"), "updated": _ts(a.get("media_position_updated_at") or "")}
         timers = []
         for ent in s.get("timer_entities", []):
@@ -870,7 +932,9 @@ TG_URL = os.environ.get("KAMIEL_TG_URL", "https://api.telegram.org")
 SNAP = {}          # a pending /kijk: {"id", "chat", "event", "data"}
 TG_HELP = ("Stuur me gewoon een tekst en hij verschijnt op het scherm thuis.\n"
            "Een foto komt in een kader in de scène.\n\n"
-           "/bus  de volgende trams en bussen\n/kijk  een foto van het scherm nu\n/wis  het bericht weghalen")
+           "/bus  de volgende trams en bussen\n/kijk  een foto van het scherm nu\n/wis  het bericht weghalen\n"
+           "/muziek Titel 127  Kamiel knikt mee op dat nummer (127 = tempo)\n/muziek  de lijst met nummers\n"
+           "/event  er gebeurt iets in Kamielland\n/event lijst  alle events")
 
 
 def tg_conf(db=None):
@@ -963,6 +1027,39 @@ async def tg_handle(token, upd):
         finally:
             SNAP.clear()
         return
+    if cmd == "/muziek":
+        rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
+        if not rest:
+            songs = load_db().get("songs", [])
+            if not songs:
+                return await tg_say(chat, "Nog geen nummers. Stuur bv. /muziek Entertainment 127")
+            return await tg_say(chat, "Kamiel knikt mee op:\n" + "\n".join(f"{x['title']} ({x['bpm']})" for x in songs))
+        m = re.match(r"^(.*\S)\s+(\d{2,3}(?:[.,]\d+)?)\s*(bpm)?$", rest, re.I)
+        song = _clean_song({"title": m.group(1), "bpm": m.group(2)}) if m else None
+        if not song:
+            return await tg_say(chat, "Zet het tempo achteraan, bv. /muziek Entertainment 127")
+        async with lock:
+            db = load_db()
+            db["songs"] = [x for x in db.get("songs", []) if _norm(x["title"]) != _norm(song["title"])] + [song]
+            save_db(db, bump=False)
+        return await tg_say(chat, f"🎵 Genoteerd: {song['title']} ({song['bpm']} bpm). Kamiel knikt mee als het speelt.")
+    if cmd == "/event":
+        rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
+        if rest.lower() in ("lijst", "list", "alle"):
+            groups = {"lama": "Elke dag", "vaak": "Vaak", "soms": "Soms"}
+            out = []
+            for cat, title in groups.items():
+                out.append(title + ":\n" + "\n".join(f"• {name} ({eid})" for eid, name, c in EVENTS if c == cat))
+            return await tg_say(chat, "\n\n".join(out) + "\n\nStuur /event en een naam, bv. /event mol")
+        eid = find_event(rest)
+        if eid is None:
+            return await tg_say(chat, "Dat event ken ik niet. Stuur /event lijst voor alle namen.")
+        async with lock:
+            db = load_db()
+            request_event(db, eid)
+            save_db(db, bump=False)
+        name = next((n for e, n, c in EVENTS if e == eid), "")
+        return await tg_say(chat, f"✨ {name}… kijk maar op het scherm." if eid else "✨ Er gebeurt iets in Kamielland… kijk maar op het scherm.")
     if cmd:
         return await tg_say(chat, "Dat commando ken ik niet.\n\n" + TG_HELP)
     if msg.get("photo"):
@@ -1131,9 +1228,9 @@ def current_outfit(db):
         import random
         rnd = random.Random(time.strftime("%Y-%m-%d"))
         out = []
-        for slot in ("hoofd", "ogen", "nek", "neus"):
+        for slot in OUTFIT_SLOT_ORDER:
             opts = [o for o in allowed if OUTFIT_SLOTS.get(o) == slot]
-            if opts and rnd.random() < (.8 if slot == "hoofd" else .45):
+            if opts and rnd.random() < (.8 if slot == "hoofd" else .2 if slot == "lijf" else .45):
                 out.append(rnd.choice(opts))
         return out
     return [o for o in db.get("outfit", []) if o in OUTFIT_SLOTS]
@@ -1246,39 +1343,117 @@ async def api_outfit(request):
     return web.json_response({"ids": keep})
 
 
-# ----------------------------------------------------------------- tempo of the song (for nodding along)
-# Home Assistant doesn't know a song's tempo; Deezer's public catalogue does (no account needed).
-BPM = {}
+# ----------------------------------------------------------------- songs Kamiel nods along to
+def _words(t):
+    """The words of a title, lower case, without '(feat. …)' and the like."""
+    t = re.sub(r"\((feat|ft|with|live|remaster)[^)]*\)|\[[^\]]*\]| - .*remaster.*$", "", str(t).lower())
+    return re.findall(r"[0-9a-z\u00c0-\u024f]+", t)
 
 
-def bpm_for(artist, title):
-    key = (str(artist).lower().strip(), str(title).lower().strip())
-    if not key[1]:
+def _norm(t):
+    """'Brand New Chanel$ (feat. X)' and 'brand new chanel' are the same title."""
+    return "".join(_words(t))
+
+
+def song_bpm(db, title):
+    """The tempo from the song list in the Studio, or None: Kamiel only nods to songs on that list."""
+    n = _words(title)
+    if not n:
         return None
-    if key not in BPM:
-        BPM[key] = None
-        asyncio.ensure_future(_fetch_bpm(key))
-    return BPM.get(key)
+    best = None
+    for song in db.get("songs", []):
+        m = _words(song.get("title", ""))
+        if not m:
+            continue
+        if m == n or "".join(m) == "".join(n):
+            return song["bpm"]
+        # 'Everything Is Romantic' vs 'Everything is Romantic (reimagined)': whole words, one is the start of the other
+        short, long_ = (m, n) if len(m) <= len(n) else (n, m)
+        if long_[:len(short)] == short and len(short) >= 2:
+            best = best or song["bpm"]
+    return best
 
 
-async def _fetch_bpm(key):
-    artist, title = key
+def _clean_song(body, old=None):
+    title = str(body.get("title", (old or {}).get("title", ""))).strip()[:120]
     try:
-        async with ClientSession(timeout=ClientTimeout(total=8)) as s:
-            q = f'track:"{title}"' + (f' artist:"{artist}"' if artist else "")
-            async with s.get("https://api.deezer.com/search", params={"q": q, "limit": "1"}) as r:
-                hits = (await r.json(content_type=None)).get("data") or []
-            if not hits:
-                async with s.get("https://api.deezer.com/search", params={"q": f"{artist} {title}", "limit": "1"}) as r:
-                    hits = (await r.json(content_type=None)).get("data") or []
-            if hits:
-                async with s.get(f"https://api.deezer.com/track/{hits[0]['id']}") as r:
-                    v = (await r.json(content_type=None)).get("bpm") or 0
-                BPM[key] = float(v) if v and 40 < float(v) < 260 else None
-    except Exception as e:
-        print("Tempo opzoeken mislukt: " + str(e), flush=True)
-    if len(BPM) > 500:
-        BPM.clear()
+        bpm = float(str(body.get("bpm", (old or {}).get("bpm", 0))).replace(",", "."))
+    except ValueError:
+        bpm = 0
+    if not title or not 30 <= bpm <= 300:
+        return None
+    return {"id": (old or {}).get("id") or uuid.uuid4().hex[:8], "title": title, "bpm": round(bpm, 1) if bpm % 1 else int(bpm)}
+
+
+async def api_songs(request):
+    return web.json_response(load_db().get("songs", []))
+
+
+async def api_add_song(request):
+    song = _clean_song(await request.json())
+    if not song:
+        return web.json_response({"error": "Geef een titel en een tempo tussen 30 en 300."}, status=400)
+    async with lock:
+        db = load_db()
+        db["songs"] = [x for x in db.get("songs", []) if _norm(x["title"]) != _norm(song["title"])] + [song]
+        save_db(db, bump=False)
+    return web.json_response(db["songs"])
+
+
+async def api_edit_song(request):
+    sid = request.match_info["id"]
+    body = await request.json()
+    async with lock:
+        db = load_db()
+        for i, x in enumerate(db.get("songs", [])):
+            if x["id"] == sid:
+                new = _clean_song(body, x)
+                if not new:
+                    return web.json_response({"error": "Geef een titel en een tempo tussen 30 en 300."}, status=400)
+                db["songs"][i] = new
+                save_db(db, bump=False)
+                return web.json_response(db["songs"])
+    raise web.HTTPNotFound()
+
+
+async def api_delete_song(request):
+    sid = request.match_info["id"]
+    async with lock:
+        db = load_db()
+        db["songs"] = [x for x in db.get("songs", []) if x["id"] != sid]
+        save_db(db, bump=False)
+    return web.json_response(db["songs"])
+
+
+# ----------------------------------------------------------------- world events on request (Studio button, /event)
+def find_event(word):
+    word = _norm(word)
+    if not word:
+        return ""
+    for eid, name, cat in EVENTS:
+        if word == _norm(eid) or word == _norm(name):
+            return eid
+    for eid, name, cat in EVENTS:
+        if word in _norm(eid) or word in _norm(name):
+            return eid
+    return None
+
+
+def request_event(db, eid):
+    n = int((db.get("event_req") or {}).get("n", 0)) + 1
+    db["event_req"] = {"n": n, "id": eid or "", "at": time.time()}
+
+
+async def api_event(request):
+    body = await request.json()
+    eid = find_event(body.get("id", ""))
+    if eid is None:
+        return web.json_response({"error": "Dat event ken ik niet."}, status=400)
+    async with lock:
+        db = load_db()
+        request_event(db, eid)
+        save_db(db, bump=False)
+    return web.json_response({"ok": True, "id": eid})
 
 
 async def api_dismiss_reminder(request):
@@ -1394,6 +1569,11 @@ def make_studio():
     app.router.add_post("/api/reminders", api_add_reminder)
     app.router.add_put("/api/reminders/{id}", api_edit_reminder)
     app.router.add_delete("/api/reminders/{id}", api_delete_reminder)
+    app.router.add_get("/api/songs", api_songs)
+    app.router.add_post("/api/songs", api_add_song)
+    app.router.add_put("/api/songs/{id}", api_edit_song)
+    app.router.add_delete("/api/songs/{id}", api_delete_song)
+    app.router.add_post("/api/event", api_event)
     return app
 
 

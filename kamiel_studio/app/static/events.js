@@ -1,0 +1,1171 @@
+/* Kamiel's world events: little things that happen now and then, so Kamiel feels alive.
+   Every event lasts at most a minute. The list below is also read by the add-on (Studio, Telegram /event),
+   so keep one event per line, written exactly like this: id, name, cat.
+   cat: 'lama' = the daily visit, 'vaak' = a few times a day, 'soms' = a few times a week. */
+(function () {
+  const LIST = [
+    { id: 'lama', name: 'De witte lama komt langs', cat: 'lama' },
+    { id: 'omdraaien', name: 'Verkeerde kant op', cat: 'vaak' },
+    { id: 'camera', name: 'De camera volgt niet', cat: 'vaak' },
+    { id: 'inspecteren', name: 'Een object inspecteren', cat: 'vaak' },
+    { id: 'schrikken', name: 'Heel hard verschieten', cat: 'vaak' },
+    { id: 'rondje', name: 'Uit beeld en aan de andere kant terug', cat: 'vaak' },
+    { id: 'springen', name: 'Springen', cat: 'vaak' },
+    { id: 'vergeten', name: 'Vergeten door te lopen, dan sprinten', cat: 'vaak' },
+    { id: 'rondkijken', name: 'Verbaasd rondkijken', cat: 'vaak' },
+    { id: 'lucht', name: 'Naar iets in de lucht kijken', cat: 'vaak' },
+    { id: 'slapen', name: 'In slaap vallen', cat: 'vaak' },
+    { id: 'yoga', name: 'Yoga', cat: 'vaak' },
+    { id: 'strekken', name: 'Zich uitstrekken', cat: 'vaak' },
+    { id: 'passen', name: 'Hoeden en brillen passen', cat: 'vaak' },
+    { id: 'verstoppen', name: 'Verstoppen achter een horizonobject', cat: 'vaak' },
+    { id: 'omduwen', name: 'Een horizonobject proberen omduwen', cat: 'vaak' },
+    { id: 'duizelig', name: 'Duizelig', cat: 'vaak' },
+    { id: 'triest', name: 'Triest', cat: 'vaak' },
+    { id: 'blij', name: 'Gelukkig', cat: 'vaak' },
+    { id: 'zweten', name: 'Zweten', cat: 'vaak' },
+    { id: 'koud', name: 'Het koud hebben', cat: 'vaak' },
+    { id: 'grondje', name: 'Een klein object op de grond bekijken', cat: 'vaak' },
+    { id: 'zweven', name: 'Zweven', cat: 'vaak' },
+    { id: 'reus', name: 'Reuzegroot worden', cat: 'vaak' },
+    { id: 'oordeel', name: 'Judgemental naar een foto staren', cat: 'vaak' },
+    { id: 'verliefd', name: 'Verliefd naar een foto staren', cat: 'vaak' },
+    { id: 'dansen', name: 'Dansen', cat: 'vaak' },
+    { id: 'ijsberen', name: 'IJsberen', cat: 'vaak' },
+    { id: 'wegrennen', name: 'Verschieten en wegrennen', cat: 'vaak' },
+    { id: 'wolk', name: 'Een wolk volgen', cat: 'vaak' },
+    { id: 'moonwalk-weg', name: 'Moonwalk naar de volgende scene', cat: 'vaak' },
+    { id: 'moonwalk', name: 'Moonwalk ter plekke', cat: 'vaak' },
+    { id: 'zoom', name: 'De camera zoomt in', cat: 'vaak' },
+    { id: 'sniper', name: 'Een laser op Kamiel gericht', cat: 'vaak' },
+    { id: 'laser', name: 'Een laser vangen als een kat', cat: 'vaak' },
+    { id: 'verveeld', name: 'Verveeld weg, bang terug', cat: 'vaak' },
+    { id: 'lens-staren', name: 'Onscherp in de lens staren', cat: 'vaak' },
+    { id: 'lens-ruiken', name: 'Aan de lens ruiken', cat: 'vaak' },
+    { id: 'lens-likken', name: 'Aan de lens likken', cat: 'vaak' },
+    { id: 'lens-breken', name: 'De lens breken', cat: 'vaak' },
+    { id: 'vuur', name: 'Vuur spuwen', cat: 'vaak' },
+    { id: 'bubbels', name: 'Bubbels blazen', cat: 'vaak' },
+    { id: 'scheet', name: 'Een scheetje', cat: 'vaak' },
+    { id: 'bevriezen', name: 'Bevriezen', cat: 'vaak' },
+    { id: 'zingen', name: 'Iets zingen of roepen', cat: 'vaak' },
+    { id: 'rondjes', name: 'Rondjes draaien', cat: 'vaak' },
+    { id: 'dronken', name: 'Duizelig naar de volgende scene', cat: 'vaak' },
+    { id: 'stip', name: 'Naar de horizon wandelen', cat: 'vaak' },
+    { id: 'crash', name: 'De wereld crasht', cat: 'vaak' },
+    { id: 'tweeling', name: 'De tweelingbroer', cat: 'soms' },
+    { id: 'mol', name: 'Een mol', cat: 'soms' },
+    { id: 'raket', name: 'Als een raket naar de zon of maan', cat: 'soms' },
+    { id: 'zinkgat', name: 'Een zinkgat', cat: 'soms' },
+    { id: 'wolkrit', name: 'Op een wolk naar de volgende scene', cat: 'soms' },
+    { id: 'rave', name: 'Een rave', cat: 'soms' },
+    { id: 'upsidedown', name: 'De Upside Down', cat: 'soms' },
+    { id: 'vuurwerk', name: 'Vuurwerkshow', cat: 'soms' },
+    { id: 'schuin', name: 'De wereld gaat schuin', cat: 'soms' },
+    { id: 'aardbeving', name: 'Aardbeving', cat: 'soms' },
+    { id: 'tornado', name: 'Tornado', cat: 'soms' },
+    { id: 'vloedgolf', name: 'Vloedgolf', cat: 'soms' },
+    { id: 'muis-pesten', name: 'Een computermuis pest Kamiel', cat: 'soms' },
+    { id: 'muis-slepen', name: 'Een computermuis versleept Kamiel', cat: 'soms' },
+    { id: 'echte-muis', name: 'Een echte muis', cat: 'soms' },
+    { id: 'lucht-valt', name: 'De lucht valt naar beneden', cat: 'soms' },
+  ];
+
+  const CATS = { lama: 'Elke dag', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+
+  /* ---------- the plan: when today's events happen ---------- */
+  // seeded random, so a day's plan stays the same after a reload
+  function seeded(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; }
+    let a = h >>> 0;
+    return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
+  const ymd = (d) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  // any minute of the day can happen; 17:00-19:30 is three times as likely
+  function minuteOf(r, evening) {
+    if (evening && r() < 300 / 1740) return 1020 + Math.floor(r() * 150);
+    return Math.floor(r() * 1440);
+  }
+  const num = (v, d) => (v === undefined || v === null || v === '') ? d : +v;
+  function planFor(d, cfg) {
+    const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false;
+    for (let k = 0; k < num(cfg.lama_per_day, 1); k++) out.push({ at: minuteOf(r, ev), cat: 'lama' });
+    for (let k = 0; k < num(cfg.common_per_day, 3); k++) out.push({ at: minuteOf(r, ev), cat: 'vaak' });
+    // "a few times a week": spread over the week, the same plan all week long
+    const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const rw = seeded('week ' + ymd(mon)), today = (d.getDay() + 6) % 7;
+    for (let k = 0; k < num(cfg.normal_per_week, 4); k++) { const day = Math.floor(rw() * 7), at = minuteOf(rw, ev); if (day === today) out.push({ at, cat: 'soms' }); }
+    return out.sort((a, b) => a.at - b.at);
+  }
+
+  /* ---------- little pixel sprites ---------- */
+  const SP = {
+    '!': { pal: { K: '#1a1020', Y: '#ffd23f' }, rows: ['KKK', 'KYK', 'KYK', 'KYK', 'KYK', 'KKK', 'KYK', 'KKK'] },
+    '?': { pal: { K: '#1a1020', Y: '#7ee0ff' }, rows: ['.KKKKK.', 'KYYYYYK', 'KYKKKYK', 'KKK.KYK', '..KKYYK', '..KYYKK', '..KYK..', '..KKK..', '..KYK..', '..KKK..'] },
+    heart: { pal: { K: '#3a0a1a', P: '#ff3d8b', W: '#ffd0e4' }, rows: ['.KK.KK.', 'KPPKPPK', 'KPWPPPK', 'KPPPPPK', '.KPPPK.', '..KPK..', '...K...'] },
+    drop: { pal: { K: '#12304a', B: '#7ec8ff', W: '#ffffff' }, rows: ['..K..', '.KBK.', '.KBK.', 'KBBWK', 'KBBBK', '.KKK.'] },
+    star: { pal: { K: '#4a3000', Y: '#ffd23f' }, rows: ['...K...', '..KYK..', 'KKKYKKK', 'KYYYYYK', '.KYYYK.', '.KYKYK.', '.K...K.'] },
+    note: { pal: { K: '#14102a', W: '#ffffff' }, rows: ['...KKK', '...KWK', '...KWK', '...K.K', '.KKK..', 'KWWK..', 'KWWK..', '.KK...'] },
+    snow: { pal: { W: '#ffffff' }, rows: ['..W..', 'W.W.W', '.WWW.', 'WWWWW', '.WWW.', 'W.W.W', '..W..'] },
+    spark: { pal: { W: '#ffffff', Y: '#fff3a0' }, rows: ['..W..', '..W..', 'WWYWW', '..W..', '..W..'] },
+    angry: { pal: { R: '#e2202b' }, rows: ['RR.RR', 'R...R', '.....', 'R...R', 'RR.RR'] },
+    mole: { pal: { K: '#1a1210', D: '#4a3a33', d: '#6a5548', P: '#ff8fa3', W: '#f0d9c0', E: '#000000' },
+      rows: ['...KKKKKK...', '..KDDdDDDK..', '.KDDDDDDDDK.', '.KDEDDDDEDK.', '.KDDDDDDDDK.', '.KDDDPPDDDK.', '..KDDPPDDK..', '.WWKDDDDKWW.', 'WWW.KDDK.WWW', '...KDDDDK...'] },
+    mouse: { pal: { K: '#222', G: '#8d8d8d', g: '#b0b0b0', P: '#ff9aae', E: '#000' },
+      rows: ['......KK...', '.....KPPK..', '..KKKKGGKK.', '.KGGGGGGEGK', 'KGgGGGGGGGP', '.KGGGGGGKK.', '..K.K..K.K.'] },
+    cursor: { pal: { K: '#000', W: '#fff' }, rows: ['K...........', 'KK..........', 'KWK.........', 'KWWK........', 'KWWWK.......', 'KWWWWK......', 'KWWWWWK.....',
+      'KWWWWWWK....', 'KWWWWWWWK...', 'KWWWWWWWWK..', 'KWWWWWKKKKK.', 'KWWKWWK.....', 'KWK.KWWK....', 'KK..KWWK....', 'K....KWWK...', '.....KWWK...', '......KK....'] },
+    hand: { pal: { K: '#000', W: '#fff' }, rows: ['....KK......', '...KWWK.....', '...KWWK.....', '...KWWKKK...', '...KWWKWWKK.', '.KKKWWKWWKWK', 'KWWKWWWWWKWK',
+      'KWWWWWWWWWWK', '.KWWWWWWWWWK', '..KWWWWWWWK.', '..KWWWWWWWK.', '...KWWWWWK..', '...KKKKKKK..'] },
+    ufo: { pal: { C: '#9fe8ff', c: '#d8f7ff', G: '#9aa3b0', g: '#6c7480', Y: '#ffe14d', K: '#2a2f38' },
+      rows: ['.......CCCC.......', '.....CCcCCCCC.....', '....CCcCCCCCCC....', '..KGGGGGGGGGGGGK..', '.GGYGGYGGYGGYGGYG.', 'KGGGGGGGGGGGGGGGGK', '.KggggggggggggggK.', '...KKKKKKKKKKKK...'] },
+    rocket: { pal: { R: '#e2343a', W: '#f2f2f2', B: '#4aa3ff', K: '#333' },
+      rows: ['...R...', '..RRR..', '..WWW..', '.WWWWW.', '.WBBWW.', '.WBBWW.', '.WWWWW.', '.WWWWW.', '.WWWWW.', 'RWWWWWR', 'RRWWWRR', 'RR.K.RR'] },
+    balloon: { pal: { R: '#e2343a', r: '#a8202a', W: '#ffb0b0' },
+      rows: ['..RRRRR..', '.RRWRRRR.', 'RRWRRRRRR', 'RRRRRRRRR', 'RRRRRRRRr', '.RRRRRRr.', '..RRRRr..', '...RRr...', '....r....'] },
+    cloud: { pal: { W: '#ffffff', w: '#dfe6f2', K: '#9aa6bb' },
+      rows: ['......WWWW..........', '....WWWWWWWW..WWW...', '..WWWWWWWWWWWWWWWWW.', '.WWWWWWWWWWWWWWWWWWW', 'WWWWWWWWWWWWWWWWWWWW', 'wwwwwwwwwwwwwwwwwwww', '.KKKKKKKKKKKKKKKKKK.'] },
+    raincloud: { pal: { G: '#7a8494', g: '#5d6573' }, rows: ['...GGG.....', '..GGGGGGG..', '.GGGGGGGGG.', 'GGGGGGGGGGG', 'ggggggggggg'] },
+  };
+  function spr(g, s, x, y, u, flip) {
+    const rows = s.rows, n = rows[0].length;
+    for (let r = 0; r < rows.length; r++) for (let c = 0; c < n; c++) {
+      const col = s.pal[rows[r][c]]; if (!col) continue;
+      const cc = flip ? n - 1 - c : c;
+      g.fillStyle = col; g.fillRect(Math.round(x + cc * u), Math.round(y + r * u), Math.ceil(u), Math.ceil(u));
+    }
+  }
+  const sprC = (g, s, cx, cy, u, flip) => spr(g, s, cx - s.rows[0].length * u / 2, cy - s.rows.length * u / 2, u, flip);
+
+  function create(A) {
+    const W = A.W, H = A.H, FEET = A.FEET, kam = A.kam, rnd = Math.random;
+    const cfg = A.settings || {};
+    const pick = (a) => a[Math.floor(rnd() * a.length)];
+    const lerp = (a, b, p) => a + (b - a) * p;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const ez = (p) => p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    const st = { dt: 1 / 60 };
+    let cur = null, queue = [], walkEvent = null, plan = [], planDay = '';
+
+    /* ---------- Kamiel and friends ---------- */
+    const KO = () => A.kamObj();
+    const kp = (fx, fy) => A.llamaPoint(KO(), fx, fy);
+    const kface = () => kam.face || A.dir();
+    const kx = () => W / 2 + kam.x;   // Kamiel's middle on screen
+    const kfeet = () => kam.feet !== null ? kam.feet : FEET - kam.y;
+    function actor(o) {
+      const a = Object.assign({ cx: 0, feet: FEET, s: 1, face: -1, pose: 'stand', wt: 0, rate: 6, r: 0, sq: 1, sx: 1, head: 0, eyes: '', eyeT: 0,
+        mouth: 0, outfit: [], tint: '', alpha: 1, dissolve: 0, layer: 'back', blinkT: 2 + rnd() * 3 }, o);
+      cur.actors.push(a); return a;
+    }
+    const vis = (hh) => hh.x + hh.w > 40 && hh.x < W - 40;
+    const hitsOf = (layer, f) => A.hits().filter(hh => hh.layer === layer && vis(hh) && (!f || f(hh)));
+    const groundHits = () => hitsOf(2, hh => !hh.it.tv && !hh.it.board && !hh.it.timer && Math.abs(hh.x + hh.w / 2 - W / 2) < 400);
+    const photoHits = () => hitsOf(2, hh => hh.it.o.kind === 'kader' && !hh.it.tv && hh.it.photo);
+    const skyThings = () => hitsOf(0).map(hh => ({ x: hh.x + hh.w / 2, y: hh.y + hh.h / 2 }))
+      .concat(A.clouds().filter(c => c.sx !== undefined && c.sx + c.sw > 60 && c.sx < W - 60).map(c => ({ x: c.sx + c.sw / 2, y: c.sy + c.sh / 2 })))
+      .concat(A.sky() ? [A.sky()] : []);
+
+    /* ---------- effects ---------- */
+    function fx(layer, dur, draw) { const f = { layer, dur, born: cur.t, draw }; cur.fx.push(f); return f; }
+    const stop = (f) => { if (cur && f) cur.fx = cur.fx.filter(x => x !== f); };
+    const headOf = (who) => who ? A.llamaPoint(who, 200, -30) : kp(200, -30);
+    const uOf = (who) => clamp(5.5 * (who ? who.s : kam.s), 3.5, 9);
+    function emote(kind, dur, who) {
+      return fx('screen', dur || 2, (g, age) => {
+        const p = headOf(who), u = uOf(who), pop = Math.min(1, age * 6), y = p.y - 8 - 12 * pop;
+        if (kind === 'zzz') {
+          g.save(); g.fillStyle = '#fff'; g.strokeStyle = '#14102a'; g.lineWidth = 3;
+          for (let k = 0; k < 3; k++) { const a = (age * .6 + k / 3) % 1, fs = Math.round((14 + 10 * a) * u / 4);
+            g.font = fs + 'px VT323, monospace'; g.globalAlpha = 1 - a; g.strokeText('Z', p.x + 20 * a * u / 4 + k * 4, y - 50 * a * u / 4); g.fillText('Z', p.x + 20 * a * u / 4 + k * 4, y - 50 * a * u / 4); }
+          g.restore(); return;
+        }
+        if (kind === 'stars') { for (let k = 0; k < 5; k++) { const a = age * 4 + k * 1.2566; sprC(g, SP.star, p.x + Math.cos(a) * 34 * u / 4, p.y + 26 + Math.sin(a) * 9 * u / 4, u * .7); } return; }
+        if (kind === 'dots') { const n = Math.min(3, Math.floor(age * 2.5) + 1); g.fillStyle = '#fff'; for (let k = 0; k < n; k++) g.fillRect(p.x - 3 * u + k * 3 * u, y, u * 1.6, u * 1.6); return; }
+        if (kind === 'sweat') { for (let k = 0; k < 3; k++) { const a = (age * 1.3 + k / 3) % 1; sprC(g, SP.drop, p.x + (k - 1) * 22 * u / 4 + (k - 1) * 30 * a, p.y + 20 - 26 * Math.sin(a * Math.PI) + 30 * a, u * .7); } return; }
+        if (kind === 'notes' || kind === 'hearts' || kind === 'sparks' || kind === 'snow') {
+          const s = SP[{ notes: 'note', hearts: 'heart', sparks: 'spark', snow: 'snow' }[kind]];
+          for (let k = 0; k < 3; k++) { const a = (age * .7 + k / 3) % 1; g.globalAlpha = 1 - a * a;
+            sprC(g, s, p.x + (k - 1) * 30 + Math.sin(age * 3 + k) * 10, p.y - 60 * a * u / 4, u * .8); }
+          g.globalAlpha = 1; return;
+        }
+        if (kind === 'tears') { const e = who ? A.llamaPoint(who, 225, 300) : kp(225, 300);
+          for (let k = 0; k < 2; k++) { const a = (age * 1.4 + k / 2) % 1; sprC(g, SP.drop, e.x + (k ? 6 : -4), e.y + 70 * a * u / 4, u * .55); } return; }
+        if (kind === '!?') { sprC(g, SP['!'], p.x - 4 * u, y, u); sprC(g, SP['?'], p.x + 5 * u, y, u); return; }
+        if (SP[kind]) sprC(g, SP[kind], p.x, y, u);
+      });
+    }
+    // a comic speech balloon, the text typed out letter by letter
+    function say(text, dur, who) {
+      return fx('screen', dur || 3, (g, age) => {
+        const o = who || KO(), m = A.llamaPoint(o, 30, 380), top = A.llamaPoint(o, 200, -40);
+        const shown = text.slice(0, Math.max(1, Math.floor(age * 22)));
+        g.save(); g.font = '30px VT323, monospace';
+        const bw = g.measureText(text).width + 26, bh = 40;
+        const bx = clamp(m.x - bw / 2 + (o.face > 0 ? 50 : -50), 12, W - bw - 12), by = clamp(top.y - bh - 26, 10, H - bh - 10);
+        const sc = Math.min(1, age * 8);
+        g.translate(bx + bw / 2, by + bh / 2); g.scale(sc, sc); g.translate(-(bx + bw / 2), -(by + bh / 2));
+        const tx = clamp(m.x, bx + 16, bx + bw - 16);
+        g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(tx - 9, by + bh - 2); g.lineTo(tx + (m.x > tx ? 14 : m.x < tx ? -14 : 0), Math.min(by + bh + 22, m.y - 4)); g.lineTo(tx + 9, by + bh - 2); g.closePath(); g.fill(); g.stroke();
+        g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh);
+        g.beginPath(); g.moveTo(tx - 7, by + bh - 2); g.lineTo(tx + 7, by + bh - 2); g.strokeStyle = '#fff'; g.stroke();
+        g.fillStyle = '#111'; g.textBaseline = 'middle'; g.fillText(shown, bx + 13, by + bh / 2 + 2);
+        g.restore();
+      });
+    }
+    // particles: a simple list that moves and fades by itself
+    function particles(layer, opts) {
+      const ps = [];
+      const f = fx(layer, opts.dur || 0, (g) => {
+        const dt = st.dt;
+        if (opts.emit && (!opts.until || cur.t < opts.until)) opts.emit(ps, dt);
+        for (let i = ps.length - 1; i >= 0; i--) {
+          const p = ps[i]; p.age += dt;
+          if (p.age > p.life) { ps.splice(i, 1); continue; }
+          p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+          opts.draw(g, p, p.age / p.life);
+        }
+      });
+      f.ps = ps; return f;
+    }
+    const P = (o) => Object.assign({ x: 0, y: 0, vx: 0, vy: 0, age: 0, life: 1, grav: 0 }, o);
+
+    /* ---------- building blocks (generators: one step per frame) ---------- */
+    function* wait(s) { let a = 0; while (a < s) { a += st.dt; yield; } }
+    function* tween(s, fn) { let a = 0; for (;;) { a += st.dt; const p = Math.min(1, a / s); fn(p); if (p >= 1) return; yield; } }
+    function* until(cond, max) { let a = 0; while (!cond() && a < (max || 60)) { a += st.dt; yield; } }
+    function* walkTo(x, speed, rate) {
+      speed = speed || 70; const d = x > kam.x ? 1 : -1;
+      kam.face = d; kam.pose = 'walk'; kam.rate = rate || 6 * Math.max(.6, speed / 70);
+      while ((x - kam.x) * d > 0) { kam.x = d > 0 ? Math.min(x, kam.x + speed * st.dt) : Math.max(x, kam.x - speed * st.dt); yield; }
+      kam.pose = '';
+    }
+    function* actorTo(a, x, speed) {
+      const d = x > a.cx ? 1 : -1; a.face = d; a.pose = 'walk'; a.rate = 6 * Math.max(.6, speed / 70);
+      while ((x - a.cx) * d > 0) { a.cx = d > 0 ? Math.min(x, a.cx + speed * st.dt) : Math.max(x, a.cx - speed * st.dt); yield; }
+      a.pose = 'stand';
+    }
+    // to the next scene, the camera following along
+    function* travel(d, speed, o) {
+      o = o || {};
+      const target = A.center(d);
+      kam.face = o.face || d; kam.pose = o.pose === undefined ? 'walk' : o.pose; kam.rate = o.rate || 6 * Math.max(.6, speed / 70);
+      for (;;) {
+        const c = A.cam(), nx = c + d * speed * st.dt;
+        if ((nx - target) * d >= 0) { A.setCam(target); break; }
+        A.setCam(nx); if (o.each) o.each(); yield;
+      }
+      kam.pose = ''; A.arrive();
+    }
+    function* par() { let live = Array.prototype.slice.call(arguments); while (live.length) { live = live.filter(g => !g.next().done); if (live.length) yield; } }
+    function* hop(height, secs) { yield* tween(.12, p => { kam.sq = 1 - .12 * p; }); yield* tween(secs || .5, p => { kam.sq = 1; kam.y = Math.sin(p * Math.PI) * height; }); kam.y = 0; yield* tween(.12, p => { kam.sq = .9 + .1 * p; }); kam.sq = 1; }
+    function* shiver(secs, amp) { const x0 = kam.x; yield* tween(secs, () => { kam.x = x0 + (rnd() - .5) * (amp || 3); }); kam.x = x0; }
+    // walk toward the camera until a point of his frame sits at (W/2, ty)
+    function* approach(sTo, fx_, fy, ty, secs) {
+      const f = kface(), x0 = kam.x, s0 = kam.s, f0 = kfeet(), w = 128.3 * sTo, h = 225 * sTo;
+      const xTo = -(-w / 2 + fx_ / 780 * w) * (f > 0 ? -1 : 1), feetTo = ty + h - fy / 1370 * h;
+      kam.pose = 'walk'; kam.rate = 4;
+      yield* tween(secs, p => { const e = ez(p); kam.s = lerp(s0, sTo, e); kam.x = lerp(x0, xTo, e); kam.feet = lerp(f0, feetTo, e); });
+      kam.pose = '';
+    }
+    function* backOff(secs) {
+      const x0 = kam.x, s0 = kam.s, f0 = kfeet(), b0 = kam.blur;
+      kam.pose = 'walk'; kam.rate = -4;
+      yield* tween(secs, p => { const e = ez(p); kam.s = lerp(s0, 1, e); kam.x = lerp(x0, 0, e); kam.feet = lerp(f0, FEET, e); kam.blur = lerp(b0, 0, e); });
+      kam.pose = ''; kam.feet = null; kam.blur = 0;
+    }
+    // the whole picture moves: zoom, tilt, shake
+    function view(v) {
+      cur.post = (g, pc) => {
+        g.save(); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+        g.translate(W / 2 + (v.dx || 0), H / 2 + (v.dy || 0)); g.rotate(v.rot || 0); g.scale(v.z || 1, v.z || 1);
+        g.translate(-(v.cx === undefined ? W / 2 : v.cx), -(v.cy === undefined ? H / 2 : v.cy));
+        g.drawImage(pc, 0, 0); g.restore();
+        if (v.glitch) glitch(g, pc, v.glitch);
+      };
+      return v;
+    }
+    function glitch(g, pc, amount) {
+      for (let k = 0; k < 3 + amount * 10; k++) {
+        const y = Math.floor(rnd() * H), hh = 3 + Math.floor(rnd() * 26 * amount), dx = (rnd() - .5) * 90 * amount;
+        g.drawImage(pc, 0, y, W, hh, dx, y, W, hh);
+      }
+      g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = .25 * amount; g.drawImage(pc, 6 * amount, 0); g.restore();
+    }
+    const shake = (v, amp) => { v.dx = (rnd() - .5) * 2 * amp; v.dy = (rnd() - .5) * 2 * amp; };
+    function withOutfit(add) {   // try something on for the event; his own clothes come back afterwards
+      const O = KamielOutfits.OUTFITS, slots = add.map(id => (O.find(o => o.id === id) || {}).slot);
+      kam.outfit = A.outfit().filter(id => !slots.includes((O.find(o => o.id === id) || {}).slot)).concat(add);
+    }
+    const sideOfRoom = () => kam.x > 0 ? -1 : kam.x < 0 ? 1 : (rnd() < .5 ? -1 : 1);
+
+    /* ---------- the events ---------- */
+    const SHOUT = ['BAH, KAMIEL', 'JIJ WEER?', 'WAT EEN KAPSEL', 'PFFFFF', 'MOOI IS ANDERS', 'WIE HEEFT JOU AANGEKLEED?', 'ZO GENANT', 'KAMIEL, JE RUIKT'];
+    const SING = ['LA LA LAAA', 'KAMIELLAND!', 'OOOOOOH', 'KAMIEEEEL', 'HEEEE!', 'MEEEEEH', 'IK BEN EEN LAMA', 'TRALALA'];
+    const DEF = {
+      lama: { run: function* () {
+        const side = rnd() < .5 ? -1 : 1, a = actor({ cx: W / 2 + side * (W / 2 + 120), s: .82, tint: 'wit', face: -side });
+        yield* actorTo(a, W / 2 + kam.x + side * 240, 32);
+        a.face = -side; kam.face = side;
+        a.eyes = 'vies'; emote('?', 2.5);
+        yield* wait(4);
+        a.head = -.1; yield* wait(2.5); a.head = 0;                       // looks him up and down
+        a.eyes = 'rol'; a.eyeT = 0; yield* wait(3.2); a.eyes = 'vies'; yield* wait(1.2);
+        a.mouth = 1; say(pick(SHOUT), 4.5, a); yield* wait(4); a.mouth = 0;
+        kam.eyes = 'groot'; emote('!', 1.6); yield* wait(1.6); kam.eyes = 'triest'; emote('sweat', 3);
+        a.eyes = 'rol'; a.eyeT = 0; yield* wait(3); a.eyes = 'vies';
+        a.head = -.14; a.face = side; yield* wait(1.4);                     // nose up, turns away
+        yield* actorTo(a, W / 2 + side * (W / 2 + 140), 30);
+        kam.eyes = ''; emote('dots', 2.5); yield* wait(2.5);
+      } },
+      omdraaien: { walk: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1;
+        yield* walkTo(d * 150, 70); yield* wait(.8); emote('?', 1.8); yield* wait(1.6);
+        kam.face = -d; kam.eyes = 'groot'; emote('!', 1.2); yield* wait(1.1); kam.eyes = '';
+        yield* walkTo(0, 85); yield* travel(-d, 70);
+      } },
+      camera: { walk: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1;
+        yield* walkTo(d * (W / 2 + 90), 70); yield* wait(2.5);
+        yield* walkTo(d * (W / 2 - 120), 55); kam.face = -d;
+        yield* wait(.5); emote('dots', 3.5); yield* wait(3.5); emote('!?', 1.6); yield* wait(1.6);
+        // now the camera does follow
+        const target = A.center(d); let kw = A.cam() + kam.x;
+        kam.face = d; kam.pose = 'walk'; kam.rate = 6;
+        while (Math.abs(A.cam() - target) > .5 || Math.abs(kw - target) > .5) {
+          const c = A.cam(); A.setCam(Math.abs(target - c) < 120 * st.dt ? target : c + d * 120 * st.dt);
+          kw = Math.abs(target - kw) < 70 * st.dt ? target : kw + d * 70 * st.dt;
+          kam.x = kw - A.cam(); if (Math.abs(kw - target) < .5) kam.pose = '';
+          yield;
+        }
+        kam.x = 0; kam.pose = ''; A.arrive();
+      } },
+      inspecteren: { can: () => groundHits().length > 0, run: function* () {
+        const hh = pick(groundHits()), tx = hh.x + hh.w / 2 - W / 2, side = tx > kam.x ? 1 : -1;
+        yield* walkTo(clamp(tx - side * (hh.w / 2 + 60), -W / 2 + 80, W / 2 - 80), 60);
+        kam.face = side; kam.head = .12; emote('?', 2.4); yield* wait(2.4);
+        yield* tween(3, p => { kam.head = .1 + Math.sin(p * 22) * .05; });
+        kam.head = -.05; yield* wait(.8); kam.head = .15; yield* wait(1.2); kam.head = 0;
+        emote(rnd() < .5 ? '!' : 'dots', 1.8); yield* wait(1.8);
+        yield* walkTo(0, 60);
+      } },
+      schrikken: { run: function* () {
+        kam.eyes = 'groot'; emote('!', 2.6);
+        yield* tween(.35, p => { kam.y = Math.sin(p * Math.PI) * 70; kam.sq = 1 + .1 * Math.sin(p * Math.PI); }); kam.y = 0; kam.sq = 1;
+        yield* shiver(1.6, 7); emote('sweat', 3); yield* shiver(2, 2.5);
+        kam.eyes = ''; yield* wait(1);
+      } },
+      rondje: { run: function* () {
+        const d = rnd() < .5 ? -1 : 1;
+        yield* walkTo(d * (W / 2 + 90), 75); yield* wait(1.5);
+        kam.x = -d * (W / 2 + 90); yield* walkTo(0, 75);
+        emote('dots', 2); yield* wait(2);
+      } },
+      springen: { run: function* () {
+        for (let k = 0; k < 3; k++) { yield* hop(70 + k * 25, .55 + k * .08); yield* wait(.25); }
+        emote('sparks', 2); yield* wait(1.5);
+      } },
+      vergeten: { walk: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1;
+        yield* wait(5); emote('dots', 3); yield* wait(3.5);
+        kam.eyes = 'groot'; emote('!', 1.4); yield* wait(1); kam.face = d; yield* wait(.4); kam.eyes = '';
+        yield* travel(d, 280, { rate: 16 });
+        kam.mouth = .5; emote('sweat', 3); yield* tween(3, p => { kam.sq = 1 + Math.sin(p * 30) * .02; kam.mouth = .3 + .3 * Math.abs(Math.sin(p * 15)); });
+        kam.mouth = 0; kam.sq = 1;
+      } },
+      rondkijken: { run: function* () {
+        for (let k = 0; k < 6; k++) {
+          kam.face = -kface(); kam.head = pick([0, -.12, .06]);
+          if (k % 2) emote(k === 5 ? '!?' : '?', 1); yield* wait(.6 + rnd() * .9);
+        }
+        kam.head = 0; yield* wait(1);
+      } },
+      lucht: { can: () => skyThings().length > 0, run: function* () {
+        const t = pick(skyThings()); kam.face = t.x > kx() ? 1 : -1;
+        yield* tween(1, p => { kam.head = -.24 * ez(p); });
+        emote('sparks', 5); yield* wait(5.5);
+        kam.eyes = 'blij'; yield* wait(1.5); kam.eyes = '';
+        yield* tween(1, p => { kam.head = -.24 * (1 - ez(p)); });
+      } },
+      slapen: { run: function* () {
+        kam.eyes = 'dicht'; yield* tween(2, p => { kam.head = .18 * ez(p); });
+        emote('zzz', 13); yield* tween(13, p => { kam.sq = 1 + Math.sin(p * 18) * .015; });
+        kam.eyes = 'groot'; kam.head = -.05; emote('!', 1.8);
+        yield* tween(.3, p => { kam.y = Math.sin(p * Math.PI) * 50; }); kam.y = 0;
+        yield* shiver(1.2, 4); kam.head = 0; yield* wait(1.2); kam.eyes = '';
+      } },
+      yoga: { run: function* () {
+        kam.eyes = 'dicht'; say('OMMMM', 3.5); yield* wait(3);
+        yield* tween(2, p => { kam.r = -.28 * ez(p); }); yield* wait(3);
+        yield* tween(2, p => { kam.r = -.28 + .56 * ez(p); }); yield* wait(3);
+        yield* tween(1.5, p => { kam.r = .28 * (1 - ez(p)); kam.sq = 1 - .18 * ez(p); kam.head = .2 * ez(p); }); yield* wait(3);
+        yield* tween(1.5, p => { kam.sq = .82 + .18 * ez(p); kam.head = .2 - .4 * ez(p); kam.y = 14 * ez(p); }); yield* wait(2.5);
+        yield* tween(1, p => { kam.head = -.2 * (1 - p); kam.y = 14 * (1 - p); });
+        kam.eyes = 'blij'; emote('sparks', 2); yield* wait(2); kam.eyes = '';
+      } },
+      strekken: { run: function* () {
+        yield* tween(1.8, p => { const e = ez(p); kam.sq = 1 + .18 * e; kam.sx = 1 - .08 * e; kam.head = -.18 * e; }); kam.eyes = 'dicht'; kam.mouth = .7;
+        yield* wait(1.4); kam.mouth = 0;
+        yield* tween(1, p => { const e = ez(p); kam.sq = 1.18 - .28 * e; kam.sx = .92 + .28 * e; kam.head = -.18 + .3 * e; });
+        yield* wait(1.4);
+        yield* tween(1, p => { const e = ez(p); kam.sq = .9 + .1 * e; kam.sx = 1.2 - .2 * e; kam.head = .12 * (1 - e); });
+        kam.eyes = 'blij'; yield* wait(1.5); kam.eyes = '';
+      } },
+      passen: { run: function* () {
+        const O = KamielOutfits.OUTFITS, hats = O.filter(o => o.slot === 'hoofd').map(o => o.id), eyes = O.filter(o => o.slot === 'ogen').map(o => o.id);
+        for (let k = 0; k < 14; k++) {
+          const pickd = [pick(hats)]; if (rnd() < .6) pickd.push(pick(eyes));
+          withOutfit(pickd); emote('sparks', .5); kam.face = k % 3 ? kam.face : -kface();
+          yield* wait(.65);
+        }
+        emote(pick(['heart', '!', 'dots']), 2); yield* wait(2.5);
+        kam.outfit = null; yield* wait(.8);
+      } },
+      verstoppen: { can: () => hitsOf(1).length > 0, run: function* () {
+        const hh = pick(hitsOf(1)), tx = hh.x + hh.w / 2 - W / 2, sTo = clamp(hh.h * .7 / 225, .2, .7), fTo = hh.foot - 3;
+        kam.face = tx > kam.x ? 1 : -1; kam.pose = 'walk'; kam.rate = 5;
+        yield* tween(5, p => { const e = ez(p); kam.x = lerp(0, tx, e); kam.s = lerp(1, sTo, e); kam.feet = lerp(FEET, fTo, e); if (p > .55) kam.layer = 'far'; else if (p > .2) kam.layer = 'mid'; });
+        kam.pose = ''; yield* wait(4);
+        // peeks out, twice
+        for (let k = 0; k < 2; k++) {
+          const dx = (k ? -1 : 1) * hh.w * .45; kam.face = dx > 0 ? 1 : -1; const x0 = kam.x;
+          yield* tween(.8, p => { kam.x = x0 + dx * ez(p); }); kam.layer = 'mid'; emote('?', 1.4, null); yield* wait(1.4);
+          kam.layer = 'far'; yield* tween(.6, p => { kam.x = x0 + dx * (1 - ez(p)); }); yield* wait(2.5);
+        }
+        kam.face = tx > 0 ? -1 : 1; kam.pose = 'walk'; const x1 = kam.x;
+        yield* tween(5, p => { const e = ez(p); kam.x = lerp(x1, 0, e); kam.s = lerp(sTo, 1, e); kam.feet = lerp(fTo, FEET, e); kam.layer = p > .8 ? 'front' : p > .45 ? 'mid' : 'far'; });
+        kam.feet = null; kam.pose = ''; kam.layer = 'front';
+      } },
+      omduwen: { can: () => hitsOf(1).length > 0, run: function* () {
+        const hh = pick(hitsOf(1)), tx = hh.x + hh.w / 2 - W / 2, side = tx > 0 ? 1 : -1, sTo = clamp(hh.h * .45 / 225, .18, .6), fTo = hh.foot + 2;
+        const goalX = tx - side * (hh.w / 2 + 128 * sTo * .35);
+        kam.face = side; kam.eyes = 'boos'; emote('angry', 1.5); yield* wait(1.2);
+        kam.pose = 'walk'; kam.rate = 14; kam.layer = 'mid';
+        yield* tween(2.4, p => { kam.x = lerp(0, goalX, p); kam.s = lerp(1, sTo, p); kam.feet = lerp(FEET, fTo, p); });
+        let wob = 0;
+        cur.itemOff = (it) => it === hh.it ? { r: Math.sin(wob * 20) * .06 * Math.max(0, 1 - wob / 2.5) } : null;
+        kam.pose = ''; kam.eyes = 'x';
+        const x0 = kam.x;
+        yield* tween(.6, p => { wob += st.dt; kam.x = x0 - side * 40 * sTo * Math.sin(p * Math.PI / 2); kam.r = -side * .3 * (1 - p); });
+        emote('stars', 3.5);
+        yield* tween(3, () => { wob += st.dt; }); kam.r = 0; kam.eyes = '';
+        kam.face = -side; kam.pose = 'walk'; kam.rate = 5; const x1 = kam.x;
+        yield* tween(4.5, p => { const e = ez(p); kam.x = lerp(x1, 0, e); kam.s = lerp(sTo, 1, e); kam.feet = lerp(fTo, FEET, e); });
+        kam.feet = null; kam.pose = ''; kam.layer = 'front';
+      } },
+      duizelig: { run: function* () {
+        kam.eyes = 'spiraal'; emote('stars', 9);
+        yield* tween(9, p => { const a = p * 9 * 2.2; kam.r = Math.sin(a) * .12; kam.x = Math.sin(a * .5) * 14; });
+        kam.r = 0; kam.x = 0; kam.eyes = ''; yield* wait(1);
+      } },
+      triest: { run: function* () {
+        kam.eyes = 'triest'; yield* tween(1.5, p => { kam.head = .15 * ez(p); });
+        const drops = particles('front', { until: 10.5, emit: (ps) => { if (rnd() < .5) { const h = kp(200, -150); ps.push(P({ x: h.x - 40 + rnd() * 80, y: h.y + 10, vy: 260, life: .5 })); } },
+          draw: (g, p) => { g.fillStyle = 'rgba(126,200,255,.9)'; g.fillRect(p.x, p.y, 2, 9); } });
+        const cl = fx('front', 0, (g) => { const h = kp(200, -150); sprC(g, SP.raincloud, h.x, h.y, 7); });
+        emote('tears', 11); yield* wait(11); stop(cl); stop(drops);
+        yield* tween(1.2, p => { kam.head = .15 * (1 - ez(p)); }); kam.eyes = '';
+      } },
+      blij: { run: function* () {
+        kam.eyes = 'blij'; emote('hearts', 8);
+        for (let k = 0; k < 4; k++) { yield* hop(30, .4); kam.face = -kface(); yield* wait(.5); }
+        emote('sparks', 3); yield* wait(3); kam.eyes = '';
+      } },
+      zweten: { run: function* () {
+        emote('sweat', 10); kam.eyes = 'triest';
+        yield* tween(10, p => { kam.mouth = .3 + .35 * Math.abs(Math.sin(p * 40)); kam.sq = 1 + Math.sin(p * 40) * .012; kam.head = .06; });
+        kam.mouth = 0; kam.eyes = ''; kam.head = 0; kam.sq = 1;
+      } },
+      koud: { run: function* () {
+        emote('snow', 12);
+        yield* tween(1.5, p => { kam.cold = p; });
+        const breath = particles('front', { until: 11, emit: (ps) => { if (rnd() < .06) { const m = kp(20, 390); ps.push(P({ x: m.x, y: m.y, vx: kface() * 30, vy: -14, life: 1.6 })); } },
+          draw: (g, p, a) => { g.fillStyle = `rgba(240,248,255,${.6 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 4 + a * 14, 0, 7); g.fill(); } });
+        yield* shiver(4, 3);
+        withOutfit(['muts', 'sjaal']); emote('sparks', .6);
+        yield* shiver(6, 2.4);
+        stop(breath);
+        yield* tween(1.5, p => { kam.cold = 1 - p; });
+        yield* wait(1); kam.outfit = null;
+      } },
+      grondje: { can: () => groundHits().length > 0, run: function* () {
+        const hh = groundHits().sort((a, b) => a.h - b.h)[0], tx = hh.x + hh.w / 2 - W / 2, side = tx > kam.x ? 1 : -1;
+        kam.head = .2;
+        yield* walkTo(clamp(tx - side * (hh.w / 2 + 50), -W / 2 + 80, W / 2 - 80), 40);
+        kam.face = side; emote('?', 2); yield* wait(2.5);
+        yield* tween(2, p => { kam.head = .2 + Math.sin(p * 12) * .04; });
+        emote(rnd() < .5 ? 'heart' : 'dots', 2); yield* wait(2);
+        kam.head = 0; yield* walkTo(0, 55);
+      } },
+      zweven: { run: function* () {
+        emote('sparks', 9); kam.eyes = 'groot';
+        yield* tween(3, p => { kam.y = 130 * ez(p); kam.r = .08 * Math.sin(p * 4); }); kam.eyes = 'blij';
+        yield* tween(4, p => { kam.y = 130 + Math.sin(p * 9) * 10; kam.r = .1 * Math.sin(p * 6); });
+        yield* tween(2.5, p => { kam.y = 130 * (1 - ez(p)); kam.r = .08 * (1 - p) * Math.sin(p * 5); });
+        kam.y = 0; kam.r = 0; kam.sq = .9; yield* wait(.15); kam.sq = 1; kam.eyes = ''; yield* wait(1);
+      } },
+      reus: { run: function* () {
+        const v = view({});
+        yield* tween(3, p => { kam.s = 1 + 1.3 * ez(p); });
+        emote('!', 1.5); yield* tween(2.5, () => shake(v, 4)); v.dx = v.dy = 0;
+        yield* wait(1.5);
+        yield* tween(2.5, p => { kam.s = 2.3 - 1.3 * ez(p); }); kam.s = 1; cur.post = null;
+        emote('dots', 2); yield* wait(2);
+      } },
+      oordeel: { can: () => photoHits().length > 0, run: function* () {
+        const hh = pick(photoHits()), tx = hh.x + hh.w / 2 - W / 2, side = tx > kam.x ? 1 : -1;
+        yield* walkTo(clamp(tx - side * (hh.w / 2 + 70), -W / 2 + 80, W / 2 - 80), 55);
+        kam.face = side; kam.eyes = 'vies'; kam.head = -.06; emote('dots', 4); yield* wait(4.5);
+        kam.face = -side; yield* wait(1.2); kam.face = side; yield* wait(1.5);   // looks at the camera: "really?"
+        emote('angry', 1.6); yield* wait(2); kam.head = 0; kam.eyes = '';
+        yield* walkTo(0, 55);
+      } },
+      verliefd: { can: () => photoHits().length > 0, run: function* () {
+        const hh = pick(photoHits()), tx = hh.x + hh.w / 2 - W / 2, side = tx > kam.x ? 1 : -1;
+        yield* walkTo(clamp(tx - side * (hh.w / 2 + 70), -W / 2 + 80, W / 2 - 80), 55);
+        kam.face = side; kam.eyes = 'hart'; kam.blush = true; emote('hearts', 8);
+        yield* tween(8, p => { kam.head = .05 + Math.sin(p * 10) * .04; kam.sq = 1 + Math.sin(p * 20) * .01; });
+        kam.head = 0; kam.eyes = ''; kam.blush = false; yield* walkTo(0, 55);
+      } },
+      dansen: { run: function* () {
+        withOutfit([]); emote('notes', 14);
+        const lights = fx('front', 0, (g) => { g.save(); g.globalCompositeOperation = 'lighter';
+          ['rgba(255,60,160,.18)', 'rgba(60,200,255,.18)', 'rgba(255,230,60,.15)'].forEach((c, k) => { const x = W / 2 + Math.sin(cur.t * 2 + k * 2) * 260;
+            g.fillStyle = c; g.beginPath(); g.ellipse(x, FEET - 6, 90, 18, 0, 0, 7); g.fill(); }); g.restore(); });
+        yield* tween(14, p => { const b = p * 14 / .45, ph = b % 1; kam.y = Math.abs(Math.sin(ph * Math.PI)) * 18; kam.face = Math.floor(b / 2) % 2 ? 1 : -1;
+          kam.r = Math.sin(p * 14 * 7) * .08; kam.head = Math.sin(ph * Math.PI * 2) * .1; kam.eyes = Math.floor(b / 8) % 2 ? 'blij' : ''; });
+        stop(lights); kam.y = 0; kam.r = 0; kam.head = 0; kam.eyes = ''; kam.outfit = null; yield* wait(.8);
+      } },
+      ijsberen: { run: function* () {
+        emote('dots', 3);
+        for (let k = 0; k < 4; k++) { yield* walkTo(k % 2 ? -120 : 120, 60); yield* wait(.4); }
+        yield* walkTo(0, 60); emote('?', 1.5); yield* wait(1.5);
+      } },
+      wegrennen: { run: function* () {
+        const d = sideOfRoom();
+        kam.eyes = 'groot'; emote('!', 1.5); yield* tween(.3, p => { kam.y = Math.sin(p * Math.PI) * 50; }); kam.y = 0;
+        yield* walkTo(d * (W / 2 + 100), 300, 18); kam.eyes = '';
+        yield* wait(4);
+        kam.eyes = 'groot'; emote('sweat', 9);
+        const x0 = kam.x; kam.face = -d; kam.pose = 'walk'; kam.rate = 3;
+        yield* tween(8, p => { kam.x = lerp(x0, 0, p) + (rnd() - .5) * 3; if ((p * 8) % 2 > 1.7) kam.face = d; else kam.face = -d; });
+        kam.pose = ''; kam.face = -d; yield* shiver(1.5, 2); kam.eyes = '';
+      } },
+      wolk: { run: function* () {
+        const d = 1;   // the clouds drift with the wind, to the right
+        kam.face = d; kam.head = -.22; emote('sparks', 2);
+        yield* walkTo(W / 2 - 72, 40);
+        // bonk: the edge of the scene
+        const v = view({}); kam.eyes = 'x'; emote('stars', 3.5); say('BONK', 1.2);
+        yield* tween(.4, p => { kam.x = W / 2 - 72 - 30 * Math.sin(p * Math.PI / 2); kam.r = -.25 * (1 - p); shake(v, 6 * (1 - p)); });
+        cur.post = null; kam.r = 0; kam.head = 0; yield* wait(3); kam.eyes = '';
+        yield* walkTo(0, 60);
+      } },
+      'moonwalk-weg': { walk: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1;
+        withOutfit(['zonnebril', 'hoed']); emote('sparks', 1); yield* wait(1.2);
+        emote('notes', 16);
+        yield* travel(d, 55, { face: -d, rate: -5, each: () => { kam.head = Math.sin(cur.t * 8) * .05; } });
+        kam.head = 0; kam.face = -d; yield* wait(1.5); emote('sparks', 1); yield* wait(.4); kam.outfit = null;
+      } },
+      moonwalk: { run: function* () {
+        withOutfit(['zonnebril', 'hoed']); emote('sparks', 1); yield* wait(1.2); emote('notes', 11);
+        for (let k = 0; k < 4; k++) {
+          const d = k % 2 ? 1 : -1, x0 = kam.x, x1 = d * 90; kam.face = -d; kam.pose = 'walk'; kam.rate = -5;
+          yield* tween(Math.abs(x1 - x0) / 55, p => { kam.x = lerp(x0, x1, p); });
+        }
+        const x0 = kam.x; kam.face = x0 > 0 ? -1 : 1;
+        yield* tween(Math.abs(x0) / 55, p => { kam.x = lerp(x0, 0, p); });
+        kam.pose = ''; yield* hop(25, .35); kam.head = -.15; yield* wait(1.2); kam.head = 0; kam.outfit = null;
+      } },
+      zoom: { run: function* () {
+        const v = view({ z: 1 });
+        const at = (p) => { const h = kp(190, 250); v.z = lerp(1, 3.6, p); v.cx = lerp(W / 2, h.x, p); v.cy = lerp(H / 2, h.y, p); };
+        yield* tween(7, p => at(ez(p)));
+        yield* wait(1.5); kam.pose = 'blink'; yield* wait(.18); kam.pose = ''; yield* wait(.9); kam.pose = 'blink'; yield* wait(.15); kam.pose = '';
+        yield* wait(1.5);
+        yield* tween(4.5, p => at(1 - ez(p))); cur.post = null;
+      } },
+      sniper: { run: function* () {
+        const from = rnd() < .5 ? { x: -30, y: 60 + rnd() * 120 } : { x: W + 30, y: 60 + rnd() * 120 };
+        let on = 0, dot = { x: 0, y: 0 };
+        fx('front', 0, (g) => {
+          if (on <= 0) return;
+          const b = kp(470, 800); dot.x = b.x + Math.sin(cur.t * 2.3) * 22 + Math.sin(cur.t * 7.1) * 5; dot.y = b.y + Math.cos(cur.t * 1.7) * 26;
+          g.save(); g.globalAlpha = on; g.strokeStyle = 'rgba(255,30,40,.55)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(from.x, from.y); g.lineTo(dot.x, dot.y); g.stroke();
+          g.fillStyle = 'rgba(255,40,40,.35)'; g.beginPath(); g.arc(dot.x, dot.y, 9, 0, 7); g.fill(); g.fillStyle = '#ff2020'; g.beginPath(); g.arc(dot.x, dot.y, 3.5, 0, 7); g.fill(); g.restore();
+        });
+        yield* tween(1.5, p => { on = p; });
+        yield* wait(1.5); kam.eyes = 'groot'; kam.face = from.x < W / 2 ? -1 : 1; emote('!', 1.8); yield* wait(1.4);
+        emote('sweat', 6); yield* shiver(6, 3);
+        yield* tween(.5, p => { on = 1 - p; }); on = 0;
+        yield* wait(1); kam.eyes = ''; emote('dots', 2); yield* wait(2);
+      } },
+      laser: { run: function* () {
+        const dot = { x: kx() + 200, y: FEET - 8, on: 0 };
+        fx('front', 0, (g) => { if (!dot.on) return; g.save(); g.globalAlpha = dot.on; g.fillStyle = 'rgba(255,40,40,.35)'; g.beginPath(); g.ellipse(dot.x, dot.y, 12, 5, 0, 0, 7); g.fill();
+          g.fillStyle = '#ff2020'; g.beginPath(); g.ellipse(dot.x, dot.y, 4, 2.4, 0, 0, 7); g.fill(); g.restore(); });
+        yield* tween(.6, p => { dot.on = p; });
+        kam.eyes = 'groot'; kam.face = dot.x > kx() ? 1 : -1; kam.head = .12; emote('!', 1.2); yield* wait(1.5);
+        for (let k = 0; k < 5; k++) {
+          const tx = dot.x - W / 2 - (dot.x > kx() ? 1 : -1) * 60;
+          kam.face = dot.x > kx() ? 1 : -1;
+          yield* tween(.4, p => { kam.sq = 1 - .12 * p; });
+          const x0 = kam.x; kam.sq = 1;
+          yield* tween(.5, p => { kam.x = lerp(x0, tx, p); kam.y = Math.sin(p * Math.PI) * 45; }); kam.y = 0;
+          // the dot zips away just before he lands on it
+          const nx = clamp(W / 2 + (rnd() - .5) * 600, 100, W - 100), ox = dot.x;
+          yield* tween(.25, p => { dot.x = lerp(ox, nx, p); });
+          yield* wait(.5 + rnd() * .8);
+        }
+        yield* tween(.4, p => { dot.on = 1 - p; }); dot.on = 0;
+        kam.head = 0; kam.eyes = ''; emote('?', 2); yield* wait(1); kam.face = -kface(); yield* wait(1.2);
+        yield* walkTo(0, 60);
+      } },
+      verveeld: { run: function* () {
+        const d = rnd() < .5 ? -1 : 1, t0 = cur.t;
+        emote('dots', 2.5); yield* tween(1.5, p => { kam.sq = 1 - .05 * Math.sin(p * Math.PI); }); yield* wait(.8);
+        yield* walkTo(d * (W / 2 + 100), 60);
+        yield* until(() => cur.t - t0 > 47, 50);
+        kam.eyes = 'groot'; kam.mouth = .6;
+        yield* walkTo(0, 280, 18);
+        kam.face = d; emote('sweat', 5);
+        yield* tween(4, p => { kam.mouth = .3 + .4 * Math.abs(Math.sin(p * 30)); kam.sq = 1 + Math.sin(p * 30) * .02; if (p > .5) kam.face = -d; });
+        kam.mouth = 0; kam.sq = 1; kam.eyes = '';
+      } },
+      'lens-staren': { run: function* () {
+        yield* approach(3.2, 190, 250, H * .45, 4);
+        yield* tween(2, p => { kam.blur = 3 * p; });
+        yield* wait(2); kam.pose = 'blink'; yield* wait(.2); kam.pose = ''; yield* wait(3);
+        yield* backOff(4);
+      } },
+      'lens-ruiken': { run: function* () {
+        yield* approach(4.3, 40, 330, H * .5, 4);
+        kam.blur = 1.2;
+        const fog = fx('screen', 0, (g) => { const n = kp(10, 340), a = Math.min(.4, (cur.t - fogT) * .05);
+          const gr = g.createRadialGradient(n.x, n.y, 10, n.x, n.y, 260); gr.addColorStop(0, `rgba(235,240,245,${a})`); gr.addColorStop(1, 'rgba(235,240,245,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); });
+        const fogT = cur.t;
+        for (let k = 0; k < 6; k++) { say('SNIF', .5); yield* tween(.35, p => { kam.s = 4.3 + Math.sin(p * Math.PI) * .08; }); yield* wait(.3); }
+        yield* wait(1.2); kam.eyes = 'blij'; yield* wait(1.2); kam.eyes = '';
+        yield* backOff(4); stop(fog);
+      } },
+      'lens-likken': { run: function* () {
+        yield* approach(4, 60, 380, H * .55, 4); kam.blur = 1;
+        const smears = [];
+        fx('screen', 0, (g) => { for (const s of smears) { const a = Math.max(0, .22 - (cur.t - s.t) * .02); g.strokeStyle = `rgba(230,240,255,${a})`; g.lineWidth = 34; g.lineCap = 'round';
+          g.beginPath(); g.moveTo(s.x0, s.y0); g.quadraticCurveTo(s.cx, s.cy, s.x1, s.y1); g.stroke(); } });
+        for (let k = 0; k < 3; k++) {
+          kam.mouth = 1; let tip = null; const m = kp(40, 400), x0 = m.x, y0 = m.y;
+          const tongue = fx('screen', 0, (g) => { if (!tip) return; g.strokeStyle = '#d8576a'; g.lineWidth = 46; g.lineCap = 'round'; g.beginPath(); g.moveTo(x0, y0); g.lineTo(tip.x, tip.y); g.stroke();
+            g.strokeStyle = '#ef8a98'; g.lineWidth = 16; g.beginPath(); g.moveTo(x0, y0); g.lineTo(tip.x, tip.y - 6); g.stroke(); });
+          const sx = x0 + (rnd() - .5) * 200;
+          yield* tween(.7, p => { tip = { x: lerp(x0, sx, p), y: lerp(y0, y0 - 300, Math.sin(p * Math.PI)) }; });
+          smears.push({ t: cur.t, x0, y0, cx: sx, cy: y0 - 380, x1: sx + 60, y1: y0 - 120 });
+          stop(tongue); kam.mouth = 0; yield* wait(.6);
+        }
+        kam.eyes = 'blij'; yield* wait(1.5); kam.eyes = '';
+        yield* backOff(4); yield* wait(4);
+      } },
+      'lens-breken': { run: function* () {
+        yield* approach(3.2, 190, 250, H * .45, 3.5);
+        yield* tween(.5, p => { kam.s = 3.2 - .3 * ez(p); });
+        yield* tween(.14, p => { kam.s = 2.9 + 1 * p; });
+        // crack!
+        const hit = kp(60, 200), lines = [];
+        for (let k = 0; k < 11; k++) { let x = hit.x, y = hit.y, a = k / 11 * Math.PI * 2 + rnd() * .3; const pts = [[x, y]];
+          for (let s = 0; s < 6; s++) { a += (rnd() - .5) * .7; x += Math.cos(a) * (30 + rnd() * 70); y += Math.sin(a) * (30 + rnd() * 70); pts.push([x, y]); } lines.push(pts); }
+        const t0 = cur.t;
+        fx('screen', 0, (g) => { const a = cur.t - t0 < 6 ? 1 : Math.max(0, 1 - (cur.t - t0 - 6)); if (!a) return;
+          if (cur.t - t0 < .12) { g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(0, 0, W, H); }
+          g.save(); g.globalAlpha = a; g.lineJoin = 'round';
+          for (const col of [['rgba(0,0,0,.45)', 4], ['rgba(255,255,255,.9)', 1.5]]) { g.strokeStyle = col[0]; g.lineWidth = col[1];
+            for (const pts of lines) { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); } }
+          g.restore(); });
+        const v = view({ glitch: 1 }); kam.eyes = 'groot'; emote('!', 1.5);
+        yield* tween(.6, p => { v.glitch = 1 - p; shake(v, 8 * (1 - p)); }); cur.post = null;
+        yield* backOff(3.5); emote('sweat', 3); yield* wait(4); kam.eyes = '';
+      } },
+      vuur: { run: function* () {
+        kam.eyes = 'boos'; emote('angry', 1.2); yield* wait(1.2); kam.mouth = 1;
+        const fire = particles('front', { until: cur.t + 10, emit: (ps) => { const m = kp(20, 395), f = kface();
+            for (let k = 0; k < 7; k++) ps.push(P({ x: m.x, y: m.y, vx: f * (230 + rnd() * 200), vy: (rnd() - .5) * 90 - 20, life: .45 + rnd() * .45, r: 4 + rnd() * 6 })); },
+          draw: (g, p, a) => { g.fillStyle = a < .25 ? '#fff6b0' : a < .5 ? '#ffc23a' : a < .75 ? '#ff6a1a' : `rgba(90,80,80,${1 - a})`; const r = p.r * (1 + a * 1.8); g.fillRect(p.x - r / 2, p.y - r / 2, r, r); } });
+        const glow = fx('screen', 0, (g) => { if (cur.t > fire.born + 10) return; const m = kp(20, 395); const gr = g.createRadialGradient(m.x, m.y, 10, m.x, m.y, 380);
+          gr.addColorStop(0, 'rgba(255,160,40,.28)'); gr.addColorStop(1, 'rgba(255,120,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); });
+        yield* tween(10, () => { kam.x = (rnd() - .5) * 2; });
+        kam.mouth = 0; kam.x = 0; yield* wait(1.2); stop(glow); stop(fire);
+        const smoke = particles('front', { until: cur.t + 1.5, emit: (ps) => { if (rnd() < .3) { const m = kp(20, 395); ps.push(P({ x: m.x, y: m.y, vy: -30, vx: (rnd() - .5) * 10, life: 1.6 })); } },
+          draw: (g, p, a) => { g.fillStyle = `rgba(120,120,130,${.5 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 5 + a * 10, 0, 7); g.fill(); } });
+        kam.eyes = ''; emote('dots', 2.5); yield* wait(2.8); stop(smoke);
+      } },
+      bubbels: { run: function* () {
+        kam.mouth = .35;
+        const bub = particles('front', { until: cur.t + 11, emit: (ps) => { if (rnd() < .18) { const m = kp(20, 395); ps.push(P({ x: m.x, y: m.y, vx: kface() * (20 + rnd() * 40), vy: -25 - rnd() * 40, life: 2.5 + rnd() * 2, r: 4 + rnd() * 10, ph: rnd() * 6 })); } },
+          draw: (g, p, a) => { const x = p.x + Math.sin(p.age * 3 + p.ph) * 8; g.strokeStyle = `rgba(220,240,255,${a > .95 ? 0 : .85})`; g.lineWidth = 2; g.beginPath(); g.arc(x, p.y, p.r, 0, 7); g.stroke();
+            g.fillStyle = 'rgba(200,230,255,.15)'; g.fill(); g.fillStyle = 'rgba(255,255,255,.9)'; g.fillRect(x - p.r * .45, p.y - p.r * .5, 3, 3); } });
+        emote('sparks', 3);
+        yield* tween(11, p => { kam.mouth = .25 + .15 * Math.abs(Math.sin(p * 25)); });
+        kam.mouth = 0; kam.eyes = 'blij'; yield* wait(3); kam.eyes = ''; stop(bub);
+      } },
+      scheet: { run: function* () {
+        emote('dots', 2); yield* wait(2.2);
+        say('PRRRT', 1.6); kam.sq = .96; yield* wait(.15); kam.sq = 1;
+        const gas = particles('front', { until: cur.t + 2, emit: (ps) => { if (rnd() < .5) { const b = kp(770, 700); ps.push(P({ x: b.x, y: b.y, vx: -kface() * (20 + rnd() * 40), vy: -10 - rnd() * 20, life: 4 + rnd() * 2 })); } },
+          draw: (g, p, a) => { g.fillStyle = `rgba(140,200,60,${.35 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 8 + a * 34, 0, 7); g.fill(); } });
+        yield* wait(1.5); kam.face = -kface(); kam.eyes = 'groot'; emote('!?', 1.5); yield* wait(2);
+        kam.eyes = 'triest'; kam.blush = true; emote('sweat', 3); yield* wait(3);
+        kam.face = -kface(); yield* wait(1); kam.blush = false; kam.eyes = ''; stop(gas);
+      } },
+      bevriezen: { run: function* () {
+        let ice = 0, cracks = 0;
+        fx('front', 0, (g) => { if (ice <= 0) return; const top = kp(200, -40), f = kfeet(); const x0 = kx() - 95, y0 = top.y - 10, w = 190, h = f - y0 + 6;
+          g.save(); g.globalAlpha = ice; g.fillStyle = 'rgba(170,225,255,.35)'; g.fillRect(x0, y0, w, h); g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 3; g.strokeRect(x0, y0, w, h);
+          g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(x0 + 12, y0 + 12, 10, h * .5); g.fillRect(x0 + 28, y0 + 12, 5, h * .3);
+          if (cracks) { g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 2; g.beginPath(); for (let k = 0; k < cracks * 6; k++) { const a = k * 1.7; g.moveTo(x0 + w / 2, y0 + h / 2); g.lineTo(x0 + w / 2 + Math.cos(a) * w * .6, y0 + h / 2 + Math.sin(a) * h * .45); } g.stroke(); }
+          g.restore(); });
+        kam.pose = 'stand';
+        yield* tween(1.2, p => { kam.cold = p; ice = p; }); emote('snow', 7);
+        yield* wait(6);
+        yield* tween(1.2, p => { cracks = p; kam.x = (rnd() - .5) * 4; }); kam.x = 0;
+        ice = 0;
+        particles('front', { until: cur.t + .1, emit: (ps) => { for (let k = 0; k < 30; k++) ps.push(P({ x: kx() + (rnd() - .5) * 180, y: kfeet() - rnd() * 230, vx: (rnd() - .5) * 400, vy: -rnd() * 300, grav: 900, life: 1.2 })); },
+          draw: (g, p, a) => { g.fillStyle = `rgba(200,235,255,${1 - a})`; g.fillRect(p.x, p.y, 7, 5); } });
+        kam.pose = ''; yield* shiver(1, 4); yield* tween(2, p => { kam.cold = 1 - p; }); emote('dots', 1.5); yield* wait(1.5);
+      } },
+      zingen: { run: function* () {
+        emote('notes', 11); say(pick(SING), 4);
+        yield* tween(11, p => { kam.mouth = Math.abs(Math.sin(p * 30)) * .9; kam.head = -.08 + Math.sin(p * 15) * .05; if (p > .5 && p < .52) say(pick(SING), 4); });
+        kam.mouth = 0; kam.head = 0; yield* wait(1);
+      } },
+      rondjes: { run: function* () {
+        let acc = 0;
+        yield* tween(5, p => { acc += st.dt; const iv = lerp(.45, .07, p); if (acc > iv) { acc = 0; kam.face = -kface(); } });
+        kam.eyes = 'spiraal'; emote('stars', 5);
+        yield* tween(5, p => { kam.r = Math.sin(p * 14) * .14 * (1 - p); kam.x = Math.sin(p * 7) * 12 * (1 - p); });
+        kam.r = 0; kam.x = 0; kam.eyes = ''; yield* wait(.8);
+      } },
+      dronken: { walk: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1; kam.eyes = 'spiraal'; emote('stars', 15);
+        yield* travel(d, 45, { rate: 4, each: () => { kam.r = Math.sin(cur.t * 2.3) * .13; kam.x = Math.sin(cur.t * 1.1) * 40; kam.face = Math.sin(cur.t * .7) > .85 ? -d : d; } });
+        const x0 = kam.x, r0 = kam.r; kam.face = d;
+        yield* tween(1.2, p => { kam.x = x0 * (1 - p); kam.r = r0 * (1 - p); }); kam.eyes = ''; emote('dots', 1.5); yield* wait(1.5);
+      } },
+      stip: { run: function* () {
+        const hy = A.horY(W / 2) + 2, d = rnd() < .5 ? -1 : 1;
+        kam.face = d; kam.pose = 'walk'; kam.rate = 4;
+        yield* tween(11, p => { kam.s = lerp(1, .05, ez(p)); kam.feet = lerp(FEET, hy, ez(p)); kam.x = d * 50 * Math.sin(p * Math.PI); if (p > .15) kam.layer = 'mid'; });
+        kam.pose = ''; yield* wait(2.5); kam.face = -d; kam.pose = 'walk';
+        yield* tween(10, p => { kam.s = lerp(.05, 1, ez(p)); kam.feet = lerp(hy, FEET, ez(p)); kam.x = -d * 40 * Math.sin(p * Math.PI); if (p > .85) kam.layer = 'front'; });
+        kam.pose = ''; kam.feet = null; kam.layer = 'front'; kam.x = 0;
+      } },
+      crash: { run: function* () {
+        const v = view({ glitch: 0 });
+        yield* tween(2, p => { v.glitch = p * 1.5; shake(v, 6 * p); });
+        cur.post = null; cur.hide = true; kam.eyes = 'groot';
+        emote('!?', 2);
+        for (let k = 0; k < 6; k++) { kam.face = -kface(); yield* shiver(.7 + rnd() * .6, 3); }
+        emote('sweat', 2.5); yield* wait(2.5);
+        // reboot
+        const t0 = cur.t;
+        const boot = fx('screen', 0, (g) => { const a = cur.t - t0; g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.fillStyle = '#c8c8c8'; g.font = '30px VT323, monospace';
+          const lines = ['KAMIEL OS 95  (C) KAMIELLAND', '', 'GEHEUGEN TESTEN ... 640K OK', 'WOLKEN LADEN ...', 'LAMA ZOEKEN ... GEVONDEN', 'WERELD HERSTELLEN ...'];
+          lines.forEach((l, i) => { if (a > i * .45) g.fillText(l, 60, 90 + i * 34); });
+          const p = clamp((a - 2.2) / 1.6, 0, 1); g.strokeStyle = '#c8c8c8'; g.strokeRect(60, 330, 400, 26); g.fillRect(64, 334, 392 * p, 18); });
+        yield* wait(4.2); stop(boot); cur.hide = false; kam.eyes = '';
+        const v2 = view({ glitch: 1 }); yield* tween(.8, p => { v2.glitch = 1 - p; }); cur.post = null;
+        emote('?', 2); yield* wait(2);
+      } },
+      tweeling: { run: function* () {
+        const side = rnd() < .5 ? -1 : 1, a = actor({ cx: W / 2 + side * (W / 2 + 110), tint: 'tweeling', face: -side });
+        yield* actorTo(a, W / 2 + kam.x + side * 230, 50);
+        a.face = -side; kam.face = side;
+        emote('?', 2); yield* wait(1); emote('?', 2, a); yield* wait(3);
+        a.eyeT = 0; kam.eyes = 'groot'; a.eyes = 'groot'; yield* wait(3); kam.eyes = ''; a.eyes = '';
+        emote('!', 1.4); emote('!', 1.4, a); yield* wait(2);
+        const how = pick(['weg', 'stof', 'vlieg']);
+        if (how === 'weg') { a.face = side; yield* actorTo(a, W / 2 + side * (W / 2 + 120), 60); }
+        else if (how === 'stof') { a.eyes = 'dicht'; yield* tween(3, p => { a.dissolve = p; a.cx += (rnd() - .5) * 2; }); a.alpha = 0; }
+        else { emote('sparks', 3, a); yield* tween(4, p => { a.feet = FEET - 700 * p * p; a.r = side * .4 * p; }); a.alpha = 0; }
+        yield* wait(1.2); emote('!?', 2.5); yield* wait(2.5);
+      } },
+      mol: { run: function* () {
+        const side = rnd() < .5 ? -1 : 1, front = () => kx() + kface() * 120;
+        let mx = W / 2 + side * (W / 2 + 60), up = 0, mound = 1;
+        const trail = [];
+        fx('ground', 0, (g) => { for (const t of trail) { const a = Math.max(0, 1 - (cur.t - t.t) / 6) * mound; if (!a) continue; g.fillStyle = `rgba(92,64,40,${a})`;
+          g.beginPath(); g.ellipse(t.x, FEET - 2, 16, 7, 0, Math.PI, 0); g.fill(); } });
+        fx('back', 0, (g) => {
+          g.fillStyle = `rgba(110,78,48,${mound})`; g.beginPath(); g.ellipse(mx, FEET + 2, 34, 18, 0, Math.PI, 0); g.fill();
+          if (up > 0) { g.save(); g.beginPath(); g.rect(0, 0, W, FEET - 4); g.clip(); sprC(g, SP.mole, mx, FEET + 20 - up * 46, 4); g.restore(); }
+          g.fillStyle = `rgba(92,64,40,${mound})`; for (let k = 0; k < 5; k++) g.fillRect(mx - 30 + k * 13, FEET - 6 - (k % 2) * 4, 7, 6);
+        });
+        kam.face = side; kam.head = .12;
+        let acc = 0;
+        yield* tween(5, p => { mx = lerp(W / 2 + side * (W / 2 + 60), front(), p); acc += st.dt; if (acc > .25) { acc = 0; trail.push({ x: mx, t: cur.t }); } kam.face = mx > kx() ? 1 : -1; });
+        emote('?', 2); yield* wait(1.5);
+        yield* tween(.8, p => { up = ez(p); }); yield* wait(1.5);
+        emote('!', 1.5); kam.eyes = 'groot'; yield* wait(2); kam.eyes = ''; yield* wait(1.5);
+        emote('heart', 1.5); yield* wait(2);
+        yield* tween(.8, p => { up = 1 - ez(p); });
+        yield* tween(2, p => { mound = 1 - p; }); kam.head = 0; emote('dots', 2); yield* wait(2);
+      } },
+      raket: { run: function* () {
+        withOutfit(['astrohelm', 'astropak']); emote('sparks', 1); yield* wait(1.2);
+        say('3', .7); yield* wait(.8); say('2', .7); yield* wait(.8); say('1', .7); yield* wait(.8);
+        const flame = particles('back', { emit: (ps) => { if (!fly) return; const f = { x: kx(), y: kfeet() };
+            for (let k = 0; k < 6; k++) ps.push(P({ x: f.x + (rnd() - .5) * 50 * kam.s, y: f.y, vx: (rnd() - .5) * 60, vy: 180 + rnd() * 200, life: .35 + rnd() * .3, r: 5 + rnd() * 7 })); },
+          draw: (g, p, a) => { g.fillStyle = a < .3 ? '#fff6b0' : a < .6 ? '#ffb02e' : `rgba(150,150,160,${.7 * (1 - a)})`; const r = p.r * (1 + a * 2); g.fillRect(p.x - r / 2, p.y - r / 2, r, r); } });
+        let fly = true; kam.eyes = 'groot';
+        yield* shiver(1.4, 4);
+        yield* tween(3.2, p => { kam.y = 820 * p * p; }); fly = false;
+        // a tiny flame on its way to the sun or the moon
+        const target = A.sky() || { x: W * .78, y: 90 }; let dotP = 0;
+        const trip = fx('screen', 0, (g) => { if (dotP <= 0 || dotP >= 1) return; const x = lerp(kx(), target.x, dotP), y = lerp(-10, target.y, Math.sqrt(dotP)) + (dotP < .1 ? 40 * (1 - dotP * 10) : 0);
+          g.fillStyle = '#fff6b0'; g.fillRect(x - 2, y - 2, 4, 4); g.fillStyle = 'rgba(255,170,40,.7)'; g.fillRect(x - 1, y + 3, 2, 6); });
+        yield* tween(7, p => { dotP = p; }); dotP = 1; stop(trip);
+        fx('screen', 2, (g, age) => { const a = 1 - age / 2; g.fillStyle = `rgba(255,255,255,${a})`; sprC(g, SP.spark, target.x, target.y, 3 + age * 3); });
+        yield* until(() => cur.t > 3.6 + 1.4 + 3.2 + 42, 45);
+        // back to earth
+        fly = true; kam.eyes = 'groot';
+        yield* tween(4, p => { kam.y = 820 * (1 - ez(p)); });
+        kam.y = 0; fly = false; kam.sq = .85; yield* wait(.2); kam.sq = 1; stop(flame);
+        kam.eyes = 'spiraal'; emote('stars', 2.5); yield* wait(2.5); kam.eyes = ''; kam.outfit = null;
+      } },
+      zinkgat: { run: function* () {
+        const f = kface(), hole = { wx: A.cam() + kam.x + f * 160, r: 0 };
+        const hx = () => hole.wx - A.cam() + W / 2;
+        fx('ground', 0, (g) => { if (hole.r <= 0) return; g.fillStyle = '#4a3220'; g.beginPath(); g.ellipse(hx(), FEET - 2, 70 * hole.r + 8, 18 * hole.r + 4, 0, 0, 7); g.fill();
+          g.fillStyle = '#0b0705'; g.beginPath(); g.ellipse(hx(), FEET - 1, 64 * hole.r, 15 * hole.r, 0, 0, 7); g.fill(); });
+        kam.eyes = 'groot'; emote('!', 1.5);
+        yield* tween(2.2, p => { hole.r = ez(p); kam.x = (rnd() - .5) * 2; }); kam.x = 0;
+        kam.eyes = ''; yield* walkTo(hx() - W / 2 - f * 105, 50); kam.face = f; kam.head = .16; emote('?', 2); yield* wait(2);
+        const what = pick(['raket', 'ballon', 'ufo', 'object', 'gas', 'baken', 'val']);
+        const clipHole = (g, draw) => { g.save(); g.beginPath(); g.rect(0, 0, W, FEET - 1); g.clip(); draw(); g.restore(); };
+        if (what === 'raket' || what === 'ballon' || what === 'ufo') {
+          const s = SP[{ raket: 'rocket', ballon: 'balloon', ufo: 'ufo' }[what]], u = what === 'ufo' ? 6 : 5;
+          let y = FEET + 40, x = hx(), beam = 0;
+          fx('back', 0, (g) => clipHole(g, () => {
+            if (what === 'ballon') { g.strokeStyle = '#eee'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y + 24); g.quadraticCurveTo(x + 10, y + 60, x, y + 90); g.stroke(); }
+            if (beam) { g.fillStyle = `rgba(150,240,255,${.25 * beam})`; g.beginPath(); g.moveTo(x - 20, y + 20); g.lineTo(x + 20, y + 20); g.lineTo(kx() + 70, FEET); g.lineTo(kx() - 70, FEET); g.closePath(); g.fill(); }
+            sprC(g, s, x, y, u);
+            if (what === 'raket') { g.fillStyle = rnd() < .5 ? '#ffb02e' : '#fff6b0'; g.fillRect(x - 6, y + 32, 12, 14 + rnd() * 14); }
+          }));
+          kam.head = -.15;
+          if (what === 'raket') { emote('!', 1.5); yield* tween(4, p => { y = lerp(FEET + 40, -120, p * p); }); }
+          else if (what === 'ballon') { emote('heart', 2); yield* tween(10, p => { y = lerp(FEET + 40, -140, p); x = hx() + Math.sin(p * 9) * 30; kam.head = -.1 - .2 * p; }); }
+          else {
+            yield* tween(3, p => { y = lerp(FEET + 40, 200, ez(p)); }); kam.eyes = 'groot';
+            yield* tween(1, p => { beam = p; x = lerp(hx(), kx(), p); }); emote('sweat', 4);
+            yield* tween(3, p => { kam.y = 26 * Math.sin(p * Math.PI); x = kx() + Math.sin(p * 9) * 10; }); kam.y = 0; beam = 0;
+            const x0 = x; yield* tween(1.4, p => { x = x0 + 600 * p * p; y = 200 - 320 * p * p; }); kam.eyes = '';
+          }
+          kam.head = 0; emote('!?', 2); yield* wait(2);
+        } else if (what === 'object') {
+          const pool = A.OBJ.filter(o => o.kind === 'grond' && !o.sign && !o.tv);
+          if (pool.length) {
+            const o = pick(pool), h = 120, w = h * o.size[0] / o.size[1]; let y = FEET + 10, x = hx();
+            const it = fx('back', 0, (g) => { if (!A.ready(o.img)) return; clipHole(g, () => g.drawImage(o.img, x - w / 2, y - h, w, h)); });
+            kam.eyes = 'groot'; yield* tween(3, p => { y = lerp(FEET + 10 + h * .2, FEET - 30, ez(p)); });
+            const lx = x - f * 160; yield* tween(1, p => { x = lerp(hx(), lx, p); y = FEET - 30 - Math.sin(p * Math.PI) * 60 + 30 * p; });
+            stop(it); A.addItem(o, x - W / 2, h); kam.eyes = '';
+            emote('!', 1.5); yield* wait(2);
+          }
+        } else if (what === 'gas') {
+          const gas = particles('back', { until: cur.t + 40, emit: (ps) => { if (rnd() < .35) ps.push(P({ x: hx() + (rnd() - .5) * 80, y: FEET - 6, vx: (rnd() - .5) * 30, vy: -30 - rnd() * 40, life: 3 + rnd() * 3 })); },
+            draw: (g, p, a) => { g.fillStyle = `rgba(120,210,80,${.3 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 10 + a * 40, 0, 7); g.fill(); } });
+          yield* wait(3); kam.eyes = 'spiraal'; kam.head = 0; emote('stars', 40);
+          yield* tween(40, p => { kam.r = Math.sin(p * 40) * .12; kam.x = hx() - W / 2 - f * 105 + Math.sin(p * 20) * 16; });
+          stop(gas); kam.r = 0; kam.eyes = '';
+        } else if (what === 'baken') {
+          const beacon = fx('back', 0, (g) => { const x = hx(), fl = .8 + .2 * Math.sin(cur.t * 20);
+            const gr = g.createLinearGradient(x - 26, 0, x + 26, 0); gr.addColorStop(0, 'rgba(120,255,255,0)'); gr.addColorStop(.5, `rgba(220,255,255,${.85 * fl})`); gr.addColorStop(1, 'rgba(120,255,255,0)');
+            g.fillStyle = gr; g.fillRect(x - 26, 0, 52, FEET);
+            for (let k = 0; k < 8; k++) { const yy = (FEET - ((cur.t * 90 + k * 70) % FEET)); g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(x - 4 + Math.sin(k + cur.t) * 10, yy, 6, 6); } });
+          kam.head = -.25; kam.eyes = 'groot'; emote('sparks', 41); yield* wait(3); kam.eyes = 'blij';
+          yield* wait(40); stop(beacon); kam.head = 0; kam.eyes = '';
+        } else {   // falls in and comes out of the ground in the next scene
+          yield* walkTo(hx() - W / 2, 60); kam.clipY = FEET - 1; kam.eyes = 'groot'; emote('!', 1);
+          yield* tween(.6, p => { kam.feet = FEET + 300 * p * p; }); kam.hide = true;
+          const d = f; yield* travel(d, 600, { pose: '' });
+          hole.wx = A.cam(); kam.x = 0;
+          yield* wait(.6); kam.hide = false;
+          yield* tween(.7, p => { kam.feet = FEET + 300 * (1 - ez(p)); }); kam.feet = null; kam.clipY = null; yield* hop(40, .4);
+          kam.eyes = 'spiraal'; emote('stars', 2.5); yield* wait(2.5); kam.eyes = '';
+        }
+        kam.head = 0;
+        if (kam.x !== 0) yield* walkTo(0, 50);
+        yield* tween(1.5, p => { hole.r = 1 - ez(p); }); hole.r = 0;
+      } },
+      wolkrit: { walk: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1, img = A.CL.length ? pick(A.CL).img : null;
+        const cl = { x: kx(), y: -120, w: 300 };
+        fx('front', 0, (g) => { if (img && A.ready(img)) { const h = cl.w * img.height / img.width; g.drawImage(img, cl.x - cl.w / 2, cl.y - h * .35, cl.w, h); } else sprC(g, SP.cloud, cl.x, cl.y, 15); });
+        kam.head = -.25; emote('?', 2);
+        yield* tween(3.5, p => { cl.y = lerp(-120, FEET - 12, ez(p)); cl.x = kx(); }); kam.head = 0;
+        kam.eyes = 'blij'; yield* hop(40, .45); emote('sparks', 2);
+        yield* tween(2.5, p => { kam.y = 150 * ez(p); cl.y = FEET - 12 - kam.y; });
+        yield* travel(d, 120, { pose: '', each: () => { kam.y = 150 + Math.sin(cur.t * 3) * 6; cl.y = FEET - 12 - kam.y; cl.x = kx(); } });
+        yield* tween(2.5, p => { kam.y = 150 * (1 - ez(p)); cl.y = FEET - 12 - kam.y; });
+        kam.y = 0; yield* hop(30, .4); kam.eyes = '';
+        const y0 = cl.y; yield* tween(4, p => { cl.y = y0 - 760 * ez(p); cl.x = kx() - d * 200 * p; });
+      } },
+      rave: { run: function* () {
+        withOutfit(['zonnebril']); let on = 0;
+        fx('screen', 0, (g) => {
+          if (!on) return; const tt = cur.t;
+          g.fillStyle = `rgba(10,0,30,${.55 * on})`; g.fillRect(0, 0, W, H);
+          g.save(); g.globalCompositeOperation = 'lighter'; g.lineWidth = 3;
+          const cols = ['#ff2bd6', '#2bf5ff', '#7dff2b', '#ffe12b'];
+          for (let k = 0; k < 8; k++) { const ox = k % 2 ? W - 60 : 60, a = Math.PI / 2 + Math.sin(tt * (1 + k * .17) + k) * .9;
+            g.strokeStyle = cols[k % 4]; g.globalAlpha = .55 * on; g.beginPath(); g.moveTo(ox, -10); g.lineTo(ox + Math.cos(a) * 1200, -10 + Math.sin(a) * 1200); g.stroke(); }
+          g.globalAlpha = on; for (let k = 0; k < 3; k++) { g.fillStyle = cols[(k + Math.floor(tt * 2)) % 4] + '44'; g.beginPath(); g.ellipse(W / 2 + Math.sin(tt * 1.3 + k * 2) * 330, FEET - 4, 110, 22, 0, 0, 7); g.fill(); }
+          g.restore();
+          if (Math.floor(tt * 4) % 4 === 0 && (tt * 4) % 1 < .25) { g.fillStyle = `rgba(255,255,255,${.18 * on})`; g.fillRect(0, 0, W, H); }
+        });
+        yield* tween(2, p => { on = p; }); emote('notes', 42);
+        yield* tween(41, p => { const b = p * 41 / .47, ph = b % 1; kam.y = Math.abs(Math.sin(ph * Math.PI)) * 16; kam.face = Math.floor(b / 2) % 2 ? 1 : -1;
+          kam.head = Math.sin(ph * Math.PI * 2) * .14; kam.r = Math.sin(p * 41 * 5) * .07; });
+        kam.y = 0; kam.head = 0; kam.r = 0;
+        yield* tween(2, p => { on = 1 - p; }); kam.outfit = null;
+      } },
+      upsidedown: { run: function* () {
+        let on = 0; const spores = [];
+        for (let k = 0; k < 90; k++) spores.push({ x: rnd() * W, y: rnd() * H, s: 1 + rnd() * 2.5, v: 6 + rnd() * 14, ph: rnd() * 6 });
+        let flash = 0;
+        fx('screen', 0, (g) => { if (!on) return;
+          g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgba(${lerp(255, 70, on) | 0},${lerp(255, 80, on) | 0},${lerp(255, 120, on) | 0},1)`; g.fillRect(0, 0, W, H); g.restore();
+          g.fillStyle = `rgba(120,0,20,${.18 * on})`; g.fillRect(0, 0, W, H);
+          if (flash > 0) { g.fillStyle = `rgba(255,40,40,${flash * .35})`; g.fillRect(0, 0, W, H * .45); flash -= st.dt * 3; } else if (rnd() < .006) flash = 1;
+          g.fillStyle = `rgba(230,230,240,${.55 * on})`;
+          for (const s of spores) { s.y -= s.v * st.dt; if (s.y < -5) s.y = H + 5; g.fillRect(s.x + Math.sin(cur.t + s.ph) * 8, s.y, s.s, s.s); } });
+        yield* tween(3, p => { on = p; kam.cold = p * .5; });
+        kam.eyes = 'groot'; emote('!?', 2);
+        for (let k = 0; k < 10; k++) { kam.face = -kface(); yield* shiver(1.5 + rnd() * 1.5, 2); if (k === 4) emote('sweat', 4); }
+        yield* until(() => cur.t > 43, 30);
+        yield* tween(2.5, p => { on = 1 - p; kam.cold = .5 * (1 - p); }); kam.eyes = ''; emote('dots', 1.5);
+      } },
+      vuurwerk: { run: function* () {
+        let dark = 0; const bursts = [];
+        fx('sky', 0, (g) => { if (dark) { g.fillStyle = `rgba(0,0,25,${.55 * dark})`; g.fillRect(0, 0, W, H); } });
+        fx('screen', 0, (g) => {
+          if (cur.t < 44 && rnd() < .1) bursts.push({ x: 80 + rnd() * (W - 160), y: 60 + rnd() * 190, t: 0, hue: Math.floor(rnd() * 360), n: 24 + Math.floor(rnd() * 20), up: .7 });
+          for (let i = bursts.length - 1; i >= 0; i--) { const b = bursts[i]; b.t += st.dt; if (b.t > b.up + 2.4) { bursts.splice(i, 1); continue; }
+            if (b.t < b.up) { const p = b.t / b.up; g.fillStyle = '#ffe9b0'; g.fillRect(b.x - 1, lerp(FEET - 40, b.y, p), 2, 6); continue; }
+            const a = b.t - b.up, rad = 10 + a * 70, fade = Math.max(0, 1 - a / 2.4); g.fillStyle = `hsla(${b.hue},95%,${60 + 20 * fade}%,${fade})`;
+            for (let k = 0; k < b.n; k++) { const an = k / b.n * Math.PI * 2; g.fillRect(b.x + Math.cos(an) * rad, b.y + Math.sin(an) * rad + a * a * 14, 4, 4); g.fillRect(b.x + Math.cos(an) * rad * .7, b.y + Math.sin(an) * rad * .7 + a * a * 14, 2, 2); } } });
+        yield* tween(2, p => { dark = p; }); kam.head = -.22; kam.eyes = 'blij';
+        emote('hearts', 6);
+        yield* until(() => cur.t > 44, 44);
+        yield* tween(2, p => { dark = 1 - p; }); kam.head = 0; kam.eyes = '';
+      } },
+      schuin: { run: function* () {
+        const d = rnd() < .5 ? -1 : 1, v = view({ z: 1.14 }); let slide = 0;
+        cur.itemOff = (it, layer) => ({ x: d * slide * (layer === 0 ? .6 : 1) });
+        cur.cloudOff = () => ({ x: d * slide * .5 });
+        kam.eyes = 'groot'; emote('!', 1.5);
+        yield* tween(3, p => { v.rot = d * .12 * ez(p); });
+        kam.face = -d; kam.pose = 'walk'; kam.rate = 7;
+        yield* tween(34, p => { slide = 170 * ez(Math.min(1, p * 3)); kam.x = d * slide * .3 + Math.sin(p * 30) * 4; if (p > .3) kam.eyes = 'triest'; });
+        kam.pose = ''; emote('!?', 2);
+        yield* tween(5, p => { v.rot = d * .12 * (1 - ez(p)); slide = 170 * (1 - ez(p)); kam.x = d * slide * .3; });
+        cur.post = null; cur.itemOff = null; cur.cloudOff = null; kam.x = 0; kam.eyes = ''; yield* wait(1);
+      } },
+      aardbeving: { run: function* () {
+        const v = view({}); let I = 0;
+        cur.itemOff = (it, layer) => I ? { y: (rnd() - .5) * 5 * I, r: layer ? (rnd() - .5) * .07 * I : 0 } : null;
+        const dust = particles('front', { until: cur.t + 12, emit: (ps) => { if (rnd() < I * .6) ps.push(P({ x: rnd() * W, y: FEET + (rnd() - .5) * 30, vy: -20 - rnd() * 30, vx: (rnd() - .5) * 30, life: 1.5 })); },
+          draw: (g, p, a) => { g.fillStyle = `rgba(170,140,100,${.4 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 4 + a * 12, 0, 7); g.fill(); } });
+        kam.eyes = 'groot'; emote('!', 2);
+        yield* tween(13, p => { I = Math.sin(p * Math.PI) * (.6 + .4 * Math.sin(p * 30)); shake(v, 12 * I); if (rnd() < .01) emote('sweat', 2); kam.y = Math.abs(Math.sin(p * 60)) * 8 * I; });
+        I = 0; cur.post = null; cur.itemOff = null; kam.y = 0; stop(dust); kam.eyes = ''; emote('dots', 2); yield* wait(2);
+      } },
+      tornado: { run: function* () {
+        const d = rnd() < .5 ? -1 : 1; let tx = W / 2 - d * (W / 2 + 200);
+        const near = (x) => Math.max(0, 1 - Math.abs(x - tx) / 180);
+        cur.itemOff = (it, layer, sx, y, w) => { const n = near(sx + w / 2); return n ? { y: -70 * n * (layer === 0 ? .3 : 1), r: Math.sin(cur.t * 9 + sx) * .4 * n, x: (tx - (sx + w / 2)) * .25 * n } : null; };
+        fx('front', 0, (g) => { for (let k = 0; k < 16; k++) { const y = FEET - k * 32, rx = 14 + k * k * .85, ox = Math.sin(cur.t * 5 + k * .55) * 12 * (k / 16);
+            g.fillStyle = `rgba(${70 + k * 5},${72 + k * 5},${80 + k * 5},${.88 - k * .02})`; g.beginPath(); g.ellipse(tx + ox, y, rx, 9 + k * .6, 0, 0, 7); g.fill(); }
+          g.fillStyle = 'rgba(90,70,50,.8)'; for (let k = 0; k < 14; k++) { const a = cur.t * 6 + k * 1.3, rr = 30 + (k * 23) % 120; g.fillRect(tx + Math.cos(a) * rr, FEET - 40 - (k * 37) % 360 + Math.sin(a) * 8, 5, 4); } });
+        kam.eyes = 'groot'; emote('!', 2);
+        yield* tween(24, p => { tx = lerp(W / 2 - d * (W / 2 + 200), W / 2 + d * (W / 2 + 200), p);
+          const n = near(kx()); kam.y = 60 * n; kam.r = (tx > kx() ? 1 : -1) * .25 * n; kam.sx = 1 + .1 * n; kam.face = tx > kx() ? -1 : 1; if (n > .5 && rnd() < .02) emote('sweat', 2); });
+        cur.itemOff = null; kam.y = 0; kam.r = 0; kam.sx = 1; kam.eyes = ''; emote('!?', 2); yield* wait(2);
+      } },
+      vloedgolf: { run: function* () {
+        const d = rnd() < .5 ? -1 : 1; let fx_ = W / 2 - d * (W / 2 + 160), level = 0;
+        const wave = fx('front', 0, (g) => {
+          const top = FEET - 120 * level, x0 = d > 0 ? -10 : fx_, x1 = d > 0 ? fx_ : W + 10;
+          g.fillStyle = 'rgba(40,120,210,.72)'; g.fillRect(Math.min(x0, x1), top, Math.abs(x1 - x0), H - top);
+          g.fillStyle = 'rgba(150,215,255,.8)'; for (let x = Math.min(x0, x1); x < Math.max(x0, x1); x += 16) g.fillRect(x, top - 4 + Math.sin(x * .05 + cur.t * 4) * 4, 10, 5);
+          if (fx_ > -150 && fx_ < W + 150) { g.fillStyle = 'rgba(40,120,210,.85)'; g.beginPath(); g.arc(fx_, top - 40, 70, 0, 7); g.fill();
+            g.fillStyle = '#fff'; for (let k = 0; k < 10; k++) g.fillRect(fx_ + d * 20 + Math.cos(k * .7 + cur.t * 6) * 60, top - 90 + Math.sin(k * .9) * 20, 8, 8); } });
+        cur.itemOff = (it, layer, sx, y, w) => { const wet = d > 0 ? sx + w / 2 < fx_ : sx + w / 2 > fx_; return wet && level > .3 && layer > 0 ? { y: Math.sin(cur.t * 3 + sx) * 6 * level, r: Math.sin(cur.t * 2 + sx) * .05 } : null; };
+        emote('!', 1.5); kam.face = -d;
+        yield* tween(10, p => { fx_ = lerp(W / 2 - d * (W / 2 + 160), W / 2 + d * (W / 2 + 200), p); level = Math.min(1, p * 2.5);
+          const wet = d > 0 ? kx() < fx_ : kx() > fx_; if (wet) { kam.eyes = 'groot'; kam.y = lerp(kam.y, 95 + Math.sin(cur.t * 3) * 8, .1); kam.x += d * 25 * st.dt; kam.r = Math.sin(cur.t * 2) * .1; } });
+        emote('sweat', 3);
+        yield* tween(6, p => { level = 1 - p; kam.y = (95 + Math.sin(cur.t * 3) * 8) * (1 - ez(p)); kam.r *= .95; });
+        stop(wave); cur.itemOff = null; kam.y = 0; kam.r = 0; kam.eyes = '';
+        yield* walkTo(0, 55); emote('dots', 2); yield* wait(2);
+      } },
+      'muis-pesten': { run: function* () {
+        const c = { x: W + 30, y: 160 + rnd() * 120, s: SP.cursor };
+        fx('screen', 0, (g) => sprC(g, c.s, c.x + 18, c.y + 25, 3));
+        const moveTo = function* (tx, ty, secs) { const x0 = c.x, y0 = c.y; yield* tween(secs, p => { c.x = lerp(x0, tx, ez(p)); c.y = lerp(y0, ty, ez(p)); }); };
+        let h = kp(200, 120); yield* moveTo(h.x + 50, h.y - 60, 2.2);
+        for (let k = 0; k < 3; k++) { h = kp(200, 140); yield* moveTo(h.x, h.y, .2); kam.eyes = 'groot'; kam.x += (rnd() - .5) * 8; emote('!', .7); yield* moveTo(h.x + 30, h.y - 30, .3); yield* wait(.5); }
+        kam.eyes = 'vies';
+        yield* tween(4, p => { const hh = kp(200, 200), a = p * Math.PI * 4; c.x = hh.x + Math.cos(a) * 90; c.y = hh.y + Math.sin(a) * 60; kam.face = c.x > kx() ? 1 : -1; });
+        const n = kp(10, 340); yield* moveTo(n.x, n.y, .5); emote('angry', 2); kam.eyes = 'boos'; yield* wait(1.2);
+        yield* tween(.25, p => { kam.head = .2 * Math.sin(p * Math.PI); kam.x += kface() * 60 * st.dt; });
+        say('HAP', 1);
+        yield* moveTo(c.x + (kface() > 0 ? 1 : -1) * 900, c.y - 300, .8);
+        kam.eyes = 'blij'; yield* wait(2); kam.eyes = ''; if (kam.x) yield* walkTo(0, 50);
+      } },
+      'muis-slepen': { run: function* () {
+        const c = { x: -30, y: 140, s: SP.cursor };
+        fx('screen', 0, (g) => sprC(g, c.s, c.x + 18, c.y + 25, 3));
+        const moveTo = function* (tx, ty, secs) { const x0 = c.x, y0 = c.y; yield* tween(secs, p => { c.x = lerp(x0, tx, ez(p)); c.y = lerp(y0, ty, ez(p)); }); };
+        let b = kp(420, 520); yield* moveTo(b.x, b.y, 2.4); c.s = SP.hand; yield* wait(.6);
+        kam.eyes = 'groot'; emote('!', 1.5); yield* wait(.3);
+        const tx = (rnd() < .5 ? -1 : 1) * (180 + rnd() * 120), x0 = kam.x;
+        yield* tween(.5, p => { kam.y = 50 * ez(p); b = kp(420, 520); c.x = b.x; c.y = b.y; });
+        yield* tween(3, p => { kam.x = lerp(x0, tx, ez(p)); kam.r = Math.sin(p * 12) * .12; b = kp(420, 520); c.x = b.x; c.y = b.y; });
+        c.s = SP.cursor; kam.r = 0;
+        yield* tween(.3, p => { kam.y = 50 * (1 - p * p); }); kam.y = 0; kam.sq = .85; yield* wait(.15); kam.sq = 1;
+        kam.eyes = 'spiraal'; emote('stars', 3);
+        yield* moveTo(W + 60, -40, 1.6); yield* wait(1.2); kam.eyes = 'boos'; emote('angry', 1.5); yield* wait(1.5); kam.eyes = '';
+        yield* walkTo(0, 55);
+      } },
+      'echte-muis': { run: function* () {
+        const side = rnd() < .5 ? -1 : 1, m = { x: W / 2 + side * (W / 2 + 40), y: FEET - 10, f: -side };
+        fx('front', 0, (g) => { sprC(g, SP.mouse, m.x, m.y, 3, m.f < 0); g.strokeStyle = '#ff9aae'; g.lineWidth = 2; g.beginPath(); g.moveTo(m.x - m.f * 16, m.y + 4); g.quadraticCurveTo(m.x - m.f * 30, m.y - 6 + Math.sin(cur.t * 20) * 4, m.x - m.f * 40, m.y + 2); g.stroke(); });
+        const runTo = function* (x, y, secs) { const x0 = m.x, y0 = m.y; m.f = x > x0 ? 1 : -1; yield* tween(secs, p => { m.x = lerp(x0, x, p); m.y = lerp(y0, y, p) - Math.abs(Math.sin(p * 20)) * 3; }); };
+        yield* runTo(kx() + side * 200, FEET - 10, 1.4); kam.face = side; kam.eyes = 'groot'; emote('!', 1.5); yield* wait(1);
+        yield* runTo(kx() - side * 160, FEET - 10, .9); kam.face = -side; yield* wait(.4);
+        // up his back, over his head, and down
+        const bk = kp(720, 560), hd = kp(250, 0); yield* runTo(bk.x, bk.y - 10, .5); yield* runTo(hd.x, hd.y - 10, .6);
+        emote('!?', 1.5); yield* runTo(kx() + kface() * 120, FEET - 10, .5);
+        for (let k = 0; k < 3; k++) { kam.face = m.x > kx() ? 1 : -1; const x0 = kam.x, tx = m.x - W / 2;
+          yield* tween(.45, p => { kam.y = Math.sin(p * Math.PI) * 50; kam.x = lerp(x0, tx, p * .8); }); kam.y = 0; kam.sq = .88;
+          yield* runTo(clamp(m.x + (rnd() < .5 ? -1 : 1) * 200, 60, W - 60), FEET - 10, .5); kam.sq = 1; }
+        yield* runTo(m.x > W / 2 ? W + 60 : -60, FEET - 10, 1);
+        kam.eyes = 'boos'; emote('angry', 1.5); yield* wait(1.8); kam.eyes = ''; yield* walkTo(0, 55);
+      } },
+      'lucht-valt': { run: function* () {
+        const land = new Map(); let p = 0;
+        const target = (key, y, h) => { if (!land.has(key)) land.set(key, FEET - 6 - rnd() * 30 - h); return land.get(key) - y; };
+        const bounce = (q) => q < .7 ? (q / .7) * (q / .7) : 1 - Math.sin((q - .7) / .3 * Math.PI) * .08;
+        cur.itemOff = (it, layer, sx, y, w, h) => layer === 0 ? { y: target(it, y, h) * bounce(p), r: (land.has(it) ? .1 : 0) * p } : null;
+        cur.cloudOff = (cl, x, y, w, h) => ({ y: target(cl, y, h * .7) * bounce(p) });
+        kam.head = -.2; emote('?', 1.5); yield* wait(1);
+        yield* tween(1.4, q => { p = q; }); p = 1; kam.head = 0; kam.eyes = 'groot'; emote('!?', 2);
+        const v = view({}); yield* tween(.6, q => shake(v, 8 * (1 - q))); cur.post = null;
+        yield* wait(1); kam.eyes = '';
+        const fallen = hitsOf(0).map(hh => hh.x + hh.w / 2 - W / 2).filter(x => Math.abs(x) < W / 2 - 100);
+        for (let k = 0; k < Math.min(3, fallen.length); k++) { yield* walkTo(clamp(fallen[k] - 90, -W / 2 + 90, W / 2 - 90), 55); kam.face = fallen[k] > kam.x ? 1 : -1; kam.head = .12; emote('?', 2); yield* wait(2.5); kam.head = 0; }
+        yield* until(() => cur.t > 40, 40);
+        kam.head = -.2; yield* tween(3, q => { p = 1 - ez(q); }); p = 0;
+        cur.itemOff = null; cur.cloudOff = null; kam.head = 0; emote('dots', 1.5);
+        if (kam.x) yield* walkTo(0, 55);
+      } },
+    };
+
+    /* ---------- the engine ---------- */
+    const offList = () => (cfg.off || []);
+    const can = (id) => { const d = DEF[id]; try { return !!d && (!d.can || d.can()); } catch (e) { return false; } };
+    function choose(cat, forced) {
+      const pool = LIST.filter(e => (!cat || e.cat === cat) && (forced || !offList().includes(e.id)) && can(e.id));
+      return pool.length ? pick(pool).id : null;
+    }
+    function start(id) {
+      const def = DEF[id]; if (!def) return false;
+      const face = A.dir();
+      A.kamReset(); kam.face = face;
+      cur = { id, t: 0, fx: [], actors: [], post: null, itemOff: null, cloudOff: null, hide: false, cleanup: [] };
+      cur.gen = def.run();
+      return true;
+    }
+    function finish() {
+      const c = cur; cur = null;
+      c.cleanup.forEach(f => { try { f(); } catch (e) { } });
+      const center = A.center(0);   // always end up in a place, never between two
+      if (Math.abs(A.cam() - center) > 1) { A.setCam(center); A.arrive(); }
+      const f = kam.face; A.kamReset(); if (f) A.setDir(f);
+    }
+    function tick(dt) {
+      if (!cur) return;
+      st.dt = dt; cur.t += dt;
+      if (kam.pose === 'walk') kam.wt += kam.rate * dt;
+      kam.eyeT += dt;
+      for (const a of cur.actors) {
+        if (a.pose === 'walk') a.wt += a.rate * dt; a.eyeT += dt;
+        if (a.pose !== 'walk') { a.blinkT -= dt; a.pose = a.blinkT < 0 ? 'blink' : 'stand'; if (a.blinkT < -.14) a.blinkT = 2 + rnd() * 4; }
+      }
+      let done = false;
+      try { done = cur.gen.next().done; } catch (e) { console.error('event', cur.id, e); done = true; }
+      if (done || cur.t > 66) finish();
+    }
+    function draw(layer, g) {
+      if (!cur) return;
+      if (layer === 'back' || layer === 'front') for (const a of cur.actors) if ((a.layer || 'back') === layer && a.alpha > 0) A.drawLlama(g, a);
+      for (const f of cur.fx.slice()) {
+        if (f.layer !== layer) continue;
+        const age = cur.t - f.born;
+        if (f.dur && age > f.dur) { stop(f); continue; }
+        g.save(); try { f.draw(g, age); } catch (e) { console.error(e); stop(f); } g.restore();
+      }
+    }
+    const pc = document.createElement('canvas'); pc.width = W; pc.height = H;
+    function post(g, cv) {
+      if (!cur || !cur.post) return;
+      const pg = pc.getContext('2d'); pg.clearRect(0, 0, W, H); pg.drawImage(cv, 0, 0);
+      cur.post(g, pc);
+    }
+    function check(d) {
+      if (cfg.on === false) return;
+      const key = ymd(d), m = d.getHours() * 60 + d.getMinutes();
+      if (key !== planDay) {
+        const first = !planDay; plan = planFor(d, cfg); planDay = key;
+        if (first) plan.forEach(p => { if (p.at < m) p.done = true; });   // after a reload: what's past is past
+      }
+      for (const p of plan) if (!p.done && p.at <= m) { p.done = true; if (m - p.at <= 20) queue.push({ cat: p.cat }); }
+    }
+    function pump(msToWalk) {
+      if (cur || A.walking() || !queue.length) return;
+      const q = queue[0];
+      if (q.forced) {
+        queue.shift();
+        const id = q.id && DEF[q.id] && can(q.id) ? q.id : choose(q.id && DEF[q.id] ? LIST.find(e => e.id === q.id).cat : null, true);
+        if (id) start(id);
+        return;
+      }
+      if (!q.id) { q.id = choose(q.cat); if (!q.id) { queue.shift(); return; } }
+      if (DEF[q.id].walk) { walkEvent = q.id; queue.shift(); return; }   // waits for the walk timer
+      if (msToWalk > 70000) { queue.shift(); if (can(q.id)) start(q.id); else { const alt = choose(q.cat); if (alt && !DEF[alt].walk) start(alt); } }
+      // otherwise: right after the next walk
+    }
+    function walkNow() {
+      const id = walkEvent; walkEvent = null;
+      return !!(id && can(id) && start(id));
+    }
+    // ?ev=lama on the tablet's address: try an event right away
+    if (A.params && A.params.get('ev')) setTimeout(() => request(A.params.get('ev')), 2500);
+    function request(id) { queue.unshift({ forced: true, id: id || '' }); }
+
+    return {
+      get active() { return !!cur; },
+      check, pump, walkNow, tick, draw, post, request,
+      itemOff: (it, layer, sx, y, w, h) => cur && cur.itemOff ? cur.itemOff(it, layer, sx, y, w, h) : null,
+      cloudOff: (cl, x, y, w, h) => cur && cur.cloudOff ? cur.cloudOff(cl, x, y, w, h) : null,
+      hideWorld: () => !!(cur && cur.hide),
+      walkPending: () => !!walkEvent,
+      current: () => cur && cur.id,
+      plan: () => plan,
+    };
+  }
+
+  window.KamielEvents = { LIST, CATS, create, planFor };
+})();
