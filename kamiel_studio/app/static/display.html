@@ -91,7 +91,8 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 <script>
 (async () => {
 const params = new URLSearchParams(location.search);
-const W = 960, H = 600, PLACE = 960, FEET = 548, HOR0 = 470, LAT = 50.85, LON = 4.35;
+const W = 960, H = 600, PLACE = 960, FEET = 548, HOR0 = 470;
+let LAT = 50.5, LON = 4.5;   // the house's location comes from Home Assistant (api/world)
 const cv = document.getElementById('cv'), mainCtx = cv.getContext('2d'); let ctx = mainCtx;
 const wc = document.createElement('canvas'); wc.width = W; wc.height = H; const wctx = wc.getContext('2d');
 const cc = document.createElement('canvas'); cc.width = W; cc.height = H; const cctx = cc.getContext('2d');
@@ -109,6 +110,7 @@ for (let tries = 0; !world; tries++) {
 }
 const kerr = document.getElementById('kerr'); if (kerr && kerr.textContent.indexOf('antwoordt niet') >= 0) kerr.remove();
 const S = world.settings;
+if (world.location) { LAT = world.location.lat; LON = world.location.lon; }
 const SINK = (S.horizon_sink === undefined ? 3 : +S.horizon_sink) / 100;   // how far horizon objects sink behind the ground
 const pano = world.panorama ? load('media/' + world.panorama.file) : null;
 const PW = world.panorama ? world.panorama.width : PLACE * 8;
@@ -1035,36 +1037,40 @@ function tinted(im, kind) {
   } catch (e) { }
   tintCache.set(key, c); return c;
 }
-const FUR = { '': '#6f4321', wit: '#e2ddd3', tweeling: '#5c3a22', schim: '#141414' };
-// eyes and mouth, in Kamiel's own frame coordinates (780 × 1370, facing left)
+// each llama has its own pictures and its own eye and mouth (in the 780 × 1370 frame Kamiel uses)
+const KH = {}; ['stand', 'blink', 'tilt', 'walk1', 'walk2', 'walk3', 'walk4'].forEach(k => { let im = null; Object.defineProperty(KH, k, { get: () => im || (im = load('static/heidi/' + k + '.webp')) }); });
+const SETS = {
+  kamiel: { img: K, eye: { x: 192, y: 266, w: 70, h: 50 }, mouth: { x: 14, y: 372, w: 96 }, fur: '#6f4321' },
+  heidi: { img: KH, eye: { x: 240, y: 278, w: 46, h: 46 }, mouth: { x: 30, y: 362, w: 96 }, fur: '#eee8de' },
+};
+// eyes and mouth: drawn over the picture, relative to that llama's own eye
 function face2(g, X, Y, w, h, o) {
-  const sx = w / 780, sy = h / 1370, fur = FUR[o.tint || ''] || FUR[''];
-  const ex = X + 192 * sx, ey = Y + 266 * sy, ew = 70 * sx, eh = 50 * sy;
-  const px = (fx, fy, fw, fh, col) => { g.fillStyle = col; g.fillRect(X + fx * sx, Y + fy * sy, fw * sx, fh * sy); };
+  const set = SETS[o.set || 'kamiel'] || SETS.kamiel, E = set.eye, M = set.mouth;
+  const sx = w / 780, sy = h / 1370, fur = o.tint === 'tweeling' ? '#5c3a22' : set.fur;
+  const ex = X + E.x * sx, ey = Y + E.y * sy, ew = E.w * sx, eh = E.h * sy;
+  const r = (fx, fy, fw, fh, col) => { g.fillStyle = col; g.fillRect(ex + fx * ew, ey + fy * eh, fw * ew, fh * eh); };
   const cream = '#f4e6c2', ink = '#2c180c';
   switch (o.eyes) {
-    case 'dicht': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh); px(192, 300, 70, 14, ink); break;
-    case 'vies': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh * .55); px(180, 236, 90, 16, ink); px(170, 228, 30, 14, ink); break;
-    case 'boos': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh * .4); px(180, 240, 30, 16, ink); px(210, 252, 30, 16, ink); px(240, 264, 30, 16, ink); break;
-    case 'triest': g.fillStyle = fur; g.fillRect(ex + ew * .4, ey, ew * .6, eh * .45); px(230, 240, 40, 14, ink); px(200, 252, 34, 14, ink); break;
-    case 'blij': g.fillStyle = fur; g.fillRect(ex, ey, ew, eh); px(196, 300, 20, 14, ink); px(212, 286, 36, 14, ink); px(244, 300, 20, 14, ink); break;
-    case 'groot': g.fillStyle = ink; g.fillRect(ex - ew * .3, ey - eh * .35, ew * 1.6, eh * 1.7); g.fillStyle = cream; g.fillRect(ex - ew * .2, ey - eh * .25, ew * 1.4, eh * 1.5);
-      g.fillStyle = ink; g.fillRect(ex + ew * .35, ey + eh * .35, ew * .3, eh * .3); break;
-    case 'rol': { g.fillStyle = cream; g.fillRect(ex, ey, ew, eh); const a = o.eyeT * 3.2; g.fillStyle = ink;
-      g.fillRect(ex + ew * (.35 + .32 * Math.cos(a)), ey + eh * (.05 + .1 * (1 - Math.abs(Math.sin(a)))), ew * .3, eh * .32); break; }
+    case 'dicht': r(0, 0, 1, 1, fur); r(0, .68, 1, .28, ink); break;
+    case 'vies': r(0, 0, 1, .55, fur); r(-.17, -.6, 1.29, .32, ink); r(-.31, -.76, .43, .28, ink); break;
+    case 'boos': r(0, 0, 1, .4, fur); r(-.17, -.52, .43, .32, ink); r(.26, -.28, .43, .32, ink); r(.69, -.04, .43, .32, ink); break;
+    case 'triest': r(.4, 0, .6, .45, fur); r(.54, -.52, .57, .28, ink); r(.11, -.28, .49, .28, ink); break;
+    case 'blij': r(0, 0, 1, 1, fur); r(.06, .68, .29, .28, ink); r(.29, .4, .51, .28, ink); r(.74, .68, .29, .28, ink); break;
+    case 'groot': r(-.3, -.35, 1.6, 1.7, ink); r(-.2, -.25, 1.4, 1.5, cream); r(.35, .35, .3, .3, ink); break;
+    case 'rol': { r(0, 0, 1, 1, cream); const a = o.eyeT * 3.2; r(.35 + .32 * Math.cos(a), .05 + .1 * (1 - Math.abs(Math.sin(a))), .3, .32, ink); break; }
     case 'hart': g.fillStyle = '#ff3d8b'; [[0, 1, 1, 0, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 1, 0], [0, 0, 1, 1, 1, 0, 0], [0, 0, 0, 1, 0, 0, 0]]
-      .forEach((row, r) => row.forEach((v, c) => { if (v) g.fillRect(ex - ew * .1 + c * ew * .19, ey - eh * .2 + r * eh * .26, ew * .2, eh * .27); })); break;
-    case 'spiraal': { g.fillStyle = cream; g.fillRect(ex, ey, ew, eh); g.strokeStyle = ink; g.lineWidth = Math.max(1, 9 * sx); g.beginPath();
+      .forEach((row, rr) => row.forEach((v, c) => { if (v) g.fillRect(ex - ew * .1 + c * ew * .19, ey - eh * .2 + rr * eh * .26, ew * .2, eh * .27); })); break;
+    case 'spiraal': { r(0, 0, 1, 1, cream); g.strokeStyle = ink; g.lineWidth = Math.max(1, 9 * sx); g.beginPath();
       for (let k = 0; k < 26; k++) { const a = k * .5 + o.eyeT * 6, rr = k / 26 * ew * .45; const x = ex + ew / 2 + Math.cos(a) * rr, y = ey + eh / 2 + Math.sin(a) * rr; k ? g.lineTo(x, y) : g.moveTo(x, y); }
       g.stroke(); break; }
-    case 'x': g.fillStyle = cream; g.fillRect(ex, ey, ew, eh); g.fillStyle = ink;
-      for (let k = 0; k < 5; k++) { g.fillRect(ex + ew * k / 5, ey + eh * k / 5, ew / 5, eh / 5); g.fillRect(ex + ew * (4 - k) / 5, ey + eh * k / 5, ew / 5, eh / 5); } break;
+    case 'x': r(0, 0, 1, 1, cream); for (let k = 0; k < 5; k++) { r(k / 5, k / 5, .2, .2, ink); r((4 - k) / 5, k / 5, .2, .2, ink); } break;
   }
-  if (o.mouth > 0) {   // open mouth (shouting, singing, fire, bubbles)
+  if (o.mouth > 0) {   // open mouth (shouting, singing, fire, bubbles, spitting)
     const m = Math.min(1, o.mouth);
-    px(14, 372, 96, 24 + 50 * m, '#3a120c'); px(30, 386 + 30 * m, 60, 14 * m, '#d8576a');
+    g.fillStyle = '#3a120c'; g.fillRect(X + M.x * sx, Y + M.y * sy, M.w * sx, (24 + 50 * m) * sy);
+    g.fillStyle = '#d8576a'; g.fillRect(X + (M.x + 16) * sx, Y + (M.y + 14 + 30 * m) * sy, (M.w - 36) * sx, 14 * m * sy);
   }
-  if (o.blush) { g.fillStyle = 'rgba(255,90,120,.55)'; g.fillRect(X + 230 * sx, Y + 340 * sy, 70 * sx, 26 * sy); }
+  if (o.blush) r(.55, 1.45, 1, .5, 'rgba(255,90,120,.55)');
 }
 // draws one frame of a llama with its clothes; the head can dip (nodding) or look up (negative)
 function kamielAt(g, im, X, Y, w, h, nod, ids, o) {
@@ -1082,7 +1088,7 @@ function kamielAt(g, im, X, Y, w, h, nod, ids, o) {
 const llCv = document.createElement('canvas'), llSmall = document.createElement('canvas');
 function drawLlama(g, o) {
   const pose = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
-  const im = K[pose] || K.stand; if (!ready(im)) return;
+  const IMG = (SETS[o.set || 'kamiel'] || SETS.kamiel).img, im = IMG[pose] || IMG.stand; if (!ready(im)) return;
   const s = o.s === undefined ? 1 : o.s; if (s <= 0.005 || o.alpha === 0) return;
   const h = 225 * s, w = im.width * h / im.height;
   const mx = Math.ceil(w * .45), my = Math.ceil(h * .45);

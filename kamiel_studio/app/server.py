@@ -119,11 +119,12 @@ DEFAULT_SETTINGS = {
     "horizon_sink": 3,
     "tap_url": "",
     "osd_entities": [],
-    "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "DROOMSTRAAT",
+    "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "HIER WOONT KAMIEL",
               "NIETS AAN DE HAND", "BLIJF NOG EVEN", "HET IS ALTIJD 4:12"],
 }
 
 lock = asyncio.Lock()
+LOCATION = {"lat": 50.5, "lon": 4.5}   # replaced at start-up by the location set in Home Assistant
 
 
 # ----------------------------------------------------------------- storage
@@ -289,6 +290,7 @@ async def api_world(request):
         "reminders": db.get("reminders", []),
         "dismissed": db.get("dismissed", {}),
         "songs": db.get("songs", []),
+        "location": LOCATION,
         "events": [{"id": e[0], "name": e[1], "cat": e[2]} for e in EVENTS],
     })
 
@@ -1660,6 +1662,9 @@ async def main():
     else:
         try:
             ok = await ha_get("/states/sun.sun")
+            conf = await ha_get("/config")   # where the house is, for the sun (only used if sun.sun is missing)
+            if conf and conf.get("latitude") is not None:
+                LOCATION.update({"lat": float(conf["latitude"]), "lon": float(conf["longitude"])})
             print("Verbonden met Home Assistant." if ok else "Token gevonden, maar Home Assistant antwoordt niet.", flush=True)
         except Exception as e:
             print("Verbinding met Home Assistant mislukt: " + str(e), flush=True)

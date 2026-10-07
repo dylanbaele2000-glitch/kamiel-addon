@@ -4,7 +4,7 @@
    cat: 'lama' = the daily visit, 'vaak' = a few times a day, 'soms' = a few times a week. */
 (function () {
   const LIST = [
-    { id: 'lama', name: 'De witte lama komt langs', cat: 'lama' },
+    { id: 'lama', name: 'Heidi komt langs (de witte lama)', cat: 'lama' },
     { id: 'omdraaien', name: 'Verkeerde kant op', cat: 'vaak' },
     { id: 'camera', name: 'De camera volgt niet', cat: 'vaak' },
     { id: 'inspecteren', name: 'Een object inspecteren', cat: 'vaak' },
@@ -126,6 +126,7 @@
       rows: ['..RRRRR..', '.RRWRRRR.', 'RRWRRRRRR', 'RRRRRRRRR', 'RRRRRRRRr', '.RRRRRRr.', '..RRRRr..', '...RRr...', '....r....'] },
     cloud: { pal: { W: '#ffffff', w: '#dfe6f2', K: '#9aa6bb' },
       rows: ['......WWWW..........', '....WWWWWWWW..WWW...', '..WWWWWWWWWWWWWWWWW.', '.WWWWWWWWWWWWWWWWWWW', 'WWWWWWWWWWWWWWWWWWWW', 'wwwwwwwwwwwwwwwwwwww', '.KKKKKKKKKKKKKKKKKK.'] },
+    burst: { pal: { Y: '#ffd23f', W: '#ffffff', K: '#3a2400' }, rows: ['K...K...K', '.K.KYK.K.', '..KYWYK..', 'KKYWWWYKK', '..KYWYK..', '.K.KYK.K.', 'K...K...K'] },
     raincloud: { pal: { G: '#7a8494', g: '#5d6573' }, rows: ['...GGG.....', '..GGGGGGG..', '.GGGGGGGGG.', 'GGGGGGGGGGG', 'ggggggggggg'] },
   };
   function spr(g, s, x, y, u, flip) {
@@ -192,27 +193,12 @@
         }
         if (kind === 'tears') { const e = who ? A.llamaPoint(who, 225, 300) : kp(225, 300);
           for (let k = 0; k < 2; k++) { const a = (age * 1.4 + k / 2) % 1; sprC(g, SP.drop, e.x + (k ? 6 : -4), e.y + 70 * a * u / 4, u * .55); } return; }
+        if (kind === 'sniff') { const n = kp(10, 340), f = kface(); g.fillStyle = 'rgba(255,255,255,.85)';
+          for (let k = 0; k < 3; k++) { const a = (age * 3 + k / 3) % 1; g.fillRect(n.x + f * (10 + 30 * a), n.y - 12 + k * 10, 10 * (1 - a) + 3, 3); } return; }
+        if (kind === 'stink') { const b = kp(770, 650); g.strokeStyle = 'rgba(150,210,70,.9)'; g.lineWidth = 3;
+          for (let k = 0; k < 3; k++) { g.beginPath(); for (let j = 0; j < 8; j++) { const y = b.y - j * 6 - age * 20, x = b.x + (k - 1) * 12 + Math.sin(j * 1.3 + age * 6 + k) * 4; j ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); } return; }
         if (kind === '!?') { sprC(g, SP['!'], p.x - 4 * u, y, u); sprC(g, SP['?'], p.x + 5 * u, y, u); return; }
         if (SP[kind]) sprC(g, SP[kind], p.x, y, u);
-      });
-    }
-    // a comic speech balloon, the text typed out letter by letter
-    function say(text, dur, who) {
-      return fx('screen', dur || 3, (g, age) => {
-        const o = who || KO(), m = A.llamaPoint(o, 30, 380), top = A.llamaPoint(o, 200, -40);
-        const shown = text.slice(0, Math.max(1, Math.floor(age * 22)));
-        g.save(); g.font = '30px VT323, monospace';
-        const bw = g.measureText(text).width + 26, bh = 40;
-        const bx = clamp(m.x - bw / 2 + (o.face > 0 ? 50 : -50), 12, W - bw - 12), by = clamp(top.y - bh - 26, 10, H - bh - 10);
-        const sc = Math.min(1, age * 8);
-        g.translate(bx + bw / 2, by + bh / 2); g.scale(sc, sc); g.translate(-(bx + bw / 2), -(by + bh / 2));
-        const tx = clamp(m.x, bx + 16, bx + bw - 16);
-        g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 3;
-        g.beginPath(); g.moveTo(tx - 9, by + bh - 2); g.lineTo(tx + (m.x > tx ? 14 : m.x < tx ? -14 : 0), Math.min(by + bh + 22, m.y - 4)); g.lineTo(tx + 9, by + bh - 2); g.closePath(); g.fill(); g.stroke();
-        g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh);
-        g.beginPath(); g.moveTo(tx - 7, by + bh - 2); g.lineTo(tx + 7, by + bh - 2); g.strokeStyle = '#fff'; g.stroke();
-        g.fillStyle = '#111'; g.textBaseline = 'middle'; g.fillText(shown, bx + 13, by + bh / 2 + 2);
-        g.restore();
       });
     }
     // particles: a simple list that moves and fades by itself
@@ -302,23 +288,106 @@
     const sideOfRoom = () => kam.x > 0 ? -1 : kam.x < 0 ? 1 : (rnd() < .5 ? -1 : 1);
 
     /* ---------- the events ---------- */
-    const SHOUT = ['BAH, KAMIEL', 'JIJ WEER?', 'WAT EEN KAPSEL', 'PFFFFF', 'MOOI IS ANDERS', 'WIE HEEFT JOU AANGEKLEED?', 'ZO GENANT', 'KAMIEL, JE RUIKT'];
-    const SING = ['LA LA LAAA', 'KAMIELLAND!', 'OOOOOOH', 'KAMIEEEEL', 'HEEEE!', 'MEEEEEH', 'IK BEN EEN LAMA', 'TRALALA'];
     const DEF = {
+      // Heidi: the white lama. Lots of personality, mostly annoying: she won't cooperate and hates everything.
       lama: { run: function* () {
-        const side = rnd() < .5 ? -1 : 1, a = actor({ cx: W / 2 + side * (W / 2 + 120), s: .82, tint: 'wit', face: -side });
-        yield* actorTo(a, W / 2 + kam.x + side * 240, 32);
-        a.face = -side; kam.face = side;
-        a.eyes = 'vies'; emote('?', 2.5);
-        yield* wait(4);
-        a.head = -.1; yield* wait(2.5); a.head = 0;                       // looks him up and down
-        a.eyes = 'rol'; a.eyeT = 0; yield* wait(3.2); a.eyes = 'vies'; yield* wait(1.2);
-        a.mouth = 1; say(pick(SHOUT), 4.5, a); yield* wait(4); a.mouth = 0;
-        kam.eyes = 'groot'; emote('!', 1.6); yield* wait(1.6); kam.eyes = 'triest'; emote('sweat', 3);
-        a.eyes = 'rol'; a.eyeT = 0; yield* wait(3); a.eyes = 'vies';
-        a.head = -.14; a.face = side; yield* wait(1.4);                     // nose up, turns away
-        yield* actorTo(a, W / 2 + side * (W / 2 + 140), 30);
-        kam.eyes = ''; emote('dots', 2.5); yield* wait(2.5);
+        const side = rnd() < .5 ? -1 : 1, H0 = { cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: 'vies' };
+        const h = actor(H0);
+        const near = () => kx() + side * 210;
+        const huff = () => emote(pick(['angry', 'dots', 'angry']), 1.6, h);
+        const smug = function* (sec) { h.lockPose = true; h.pose = 'tilt'; yield* wait(sec); h.lockPose = false; h.pose = 'stand'; };
+        const leave = function* (slow) {
+          h.eyes = 'vies'; h.face = side; yield* smug(1.2);
+          yield* actorTo(h, W / 2 + side * (W / 2 + 150), slow ? 26 : 38);
+        };
+        const spit = function* () {
+          h.face = kx() > h.cx ? 1 : -1; h.eyes = 'vies'; h.mouth = .4; yield* wait(.5); h.mouth = 1;
+          const m0 = A.llamaPoint(h, 30, 380); let p = 0, hit = false;
+          const f = fx('front', 0, (g) => {
+            const t2 = kp(120, 300), x = lerp(m0.x, t2.x, p), y = lerp(m0.y, t2.y, p) - Math.sin(p * Math.PI) * 60;
+            g.fillStyle = 'rgba(235,245,240,.92)';
+            if (!hit) { g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); g.fillRect(x - 12 * h.face, y - 3, 10, 6); }
+            else { const t3 = kp(120, 300); for (let k = 0; k < 7; k++) { g.beginPath(); g.arc(t3.x + Math.cos(k * 1.7) * 18, t3.y + Math.sin(k * 2.3) * 14 + (cur.t % 4) * 2, 6 - k * .5, 0, 7); g.fill(); } }
+          });
+          yield* tween(.55, q => { p = q; }); h.mouth = 0; hit = true;
+          kam.eyes = 'dicht'; kam.x += -h.face * 6; emote('sweat', 3); yield* shiver(.6, 4);
+          return f;
+        };
+        kam.face = side;
+        yield* actorTo(h, near(), 30);
+        h.face = -side; emote('?', 2);
+        const plan = (A.params && A.params.get('heidi')) || pick(['spuug', 'blokkeer', 'hoed', 'koppig', 'naapen', 'kont', 'trap']);
+        if (plan === 'spuug') {
+          yield* wait(2.5); h.eyes = 'rol'; h.eyeT = 0; yield* wait(3); huff(); yield* wait(1.5);
+          const f = yield* spit(); yield* wait(1.5);
+          h.eyes = 'blij'; yield* smug(3); h.eyes = 'vies'; yield* wait(1.2);
+          kam.eyes = 'boos'; emote('angry', 2); yield* wait(2.2); stop(f);
+          yield* leave(true); kam.eyes = ''; emote('dots', 2.5); yield* wait(2.5);
+        } else if (plan === 'blokkeer') {   // she plants herself right in front of him, again and again
+          h.layer = 'front';
+          for (let k = 0; k < 4; k++) {
+            const tx = kx() + (k % 2 ? -1 : 1) * 25;
+            yield* actorTo(h, tx, 70); h.face = k % 2 ? 1 : -1; h.eyes = 'vies';
+            yield* wait(1.4);
+            const dx = (k % 2 ? 1 : -1) * 120; kam.eyes = 'boos';
+            yield* walkTo(dx, 80); kam.face = dx > 0 ? -1 : 1; yield* wait(.6);
+            if (k === 1) { h.eyes = 'rol'; h.eyeT = 0; yield* wait(2); }
+          }
+          huff(); yield* wait(1.2); h.layer = 'back';
+          yield* leave(false); kam.eyes = ''; yield* walkTo(0, 60); emote('dots', 2); yield* wait(2);
+        } else if (plan === 'hoed') {   // she takes his hat and walks off with it (he gets it back later)
+          const O = KamielOutfits.OUTFITS, hat = A.outfit().find(id => (O.find(o => o.id === id) || {}).slot === 'hoofd');
+          yield* actorTo(h, kx() + side * 110, 40); h.face = -side; yield* wait(1.2);
+          if (hat) {
+            kam.eyes = 'groot'; h.head = .15; yield* wait(.4); kam.outfit = A.outfit().filter(id => id !== hat); h.outfit = [hat]; h.head = 0; emote('sparks', 1, h);
+            yield* wait(1); emote('!', 1.5); kam.eyes = 'triest'; h.eyes = 'blij'; yield* smug(2.5);
+          } else {
+            h.outfit = ['kroon']; emote('sparks', 1.2, h); h.eyes = 'blij'; yield* smug(2.5); kam.eyes = 'groot'; emote('?', 2);
+          }
+          h.eyes = 'vies';
+          for (let k = 0; k < 2; k++) { yield* actorTo(h, kx() - side * 180, 45); h.lockPose = true; h.pose = 'tilt'; yield* wait(1); h.lockPose = false; yield* actorTo(h, kx() + side * 200, 45); }
+          yield* leave(true); kam.eyes = ''; yield* wait(1.5);
+        } else if (plan === 'koppig') {   // he asks her to move; she won't
+          yield* actorTo(h, kx() + side * 140, 30); h.face = -side; yield* wait(1.5);
+          kam.face = side; kam.head = .12; yield* walkTo(side * 55, 40); kam.face = side;
+          for (let k = 0; k < 3; k++) {   // nudge, nudge, push
+            const x0 = kam.x; yield* tween(.25, q => { kam.x = x0 + side * 14 * Math.sin(q * Math.PI); });
+            h.sq = .96; yield* wait(.2); h.sq = 1; if (k === 1) { h.eyes = 'boos'; huff(); } yield* wait(.8);
+          }
+          h.sq = .82; h.eyes = 'dicht'; emote('dots', 4, h); kam.head = 0;   // she lies down. on purpose.
+          yield* wait(3); kam.eyes = 'triest'; emote('sweat', 2);
+          yield* walkTo(0, 45); kam.face = side; yield* wait(4);
+          h.sq = 1; h.eyes = 'vies'; yield* wait(1.2);
+          yield* leave(true); kam.eyes = ''; yield* wait(1.5);
+        } else if (plan === 'naapen') {   // she mocks everything he does, badly
+          yield* wait(1.5);
+          yield* hop(55, .5); yield* wait(.5);
+          h.sq = .9; yield* wait(.25); h.sq = 1; yield* tween(.7, q => { h.feet = FEET - Math.sin(q * Math.PI) * 18; }); h.feet = FEET;
+          h.eyes = 'rol'; h.eyeT = 0; yield* wait(2.2); h.eyes = 'vies';
+          kam.face = -side; yield* wait(1); h.face = side; yield* wait(1.2); kam.face = side; yield* wait(.5); h.face = -side;
+          kam.eyes = 'blij'; emote('heart', 1.5); yield* wait(1.5); h.eyes = 'dicht'; emote('dots', 2, h); yield* wait(2); kam.eyes = 'triest';
+          huff(); yield* leave(false); kam.eyes = ''; yield* wait(1.5);
+        } else if (plan === 'kont') {   // turns her back on him, wiggles, and something smells
+          yield* wait(1.5); h.face = side; h.eyes = 'vies'; yield* wait(1);
+          yield* tween(1.2, q => { h.sx = 1 + Math.sin(q * 25) * .04; }); h.sx = 1;
+          const b = A.llamaPoint(h, 770, 650);
+          const gas = particles('front', { until: cur.t + 1.6, emit: (ps) => { if (rnd() < .5) ps.push(P({ x: b.x, y: b.y, vx: (rnd() - .5) * 40 - side * 30, vy: -10 - rnd() * 20, life: 4 })); },
+            draw: (g, p, a) => { g.fillStyle = `rgba(140,200,60,${.35 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 8 + a * 34, 0, 7); g.fill(); } });
+          yield* wait(1.5); kam.eyes = 'groot'; emote('!?', 2); kam.face = -side; yield* wait(2.5); kam.eyes = 'dicht'; emote('sweat', 3);
+          yield* actorTo(h, W / 2 + side * (W / 2 + 150), 34); stop(gas); kam.face = side; kam.eyes = ''; yield* wait(2);
+        } else {   // trap: she kicks something over (well, she tries)
+          const gh = groundHits();
+          if (gh.length) {
+            const tgt = gh.sort((a2, b2) => Math.abs(a2.x - h.cx) - Math.abs(b2.x - h.cx))[0], tx = tgt.x + tgt.w / 2;
+            yield* actorTo(h, tx + (h.cx > tx ? 1 : -1) * (tgt.w / 2 + 50), 40); h.face = h.cx > tx ? -1 : 1;
+            h.eyes = 'boos'; let wob = 0;
+            cur.itemOff = (it) => it === tgt.it ? { r: Math.sin(wob * 18) * .1 * Math.max(0, 1 - wob / 2) } : null;
+            h.head = .18; yield* wait(.2); h.head = 0; yield* tween(2.2, () => { wob += st.dt; });
+            cur.itemOff = null; h.face = kx() > h.cx ? 1 : -1; h.eyes = 'vies'; yield* smug(2);
+          } else { h.eyes = 'rol'; h.eyeT = 0; yield* wait(3); }
+          kam.eyes = 'groot'; emote('!?', 2); yield* wait(2); kam.eyes = '';
+          yield* leave(false); yield* wait(1.5);
+        }
       } },
       omdraaien: { walk: true, run: function* () {
         const d = rnd() < .5 ? -1 : 1;
@@ -397,7 +466,7 @@
         yield* shiver(1.2, 4); kam.head = 0; yield* wait(1.2); kam.eyes = '';
       } },
       yoga: { run: function* () {
-        kam.eyes = 'dicht'; say('OMMMM', 3.5); yield* wait(3);
+        kam.eyes = 'dicht'; emote('sparks', 3.5); yield* wait(3);
         yield* tween(2, p => { kam.r = -.28 * ez(p); }); yield* wait(3);
         yield* tween(2, p => { kam.r = -.28 + .56 * ez(p); }); yield* wait(3);
         yield* tween(1.5, p => { kam.r = .28 * (1 - ez(p)); kam.sq = 1 - .18 * ez(p); kam.head = .2 * ez(p); }); yield* wait(3);
@@ -558,7 +627,7 @@
         kam.face = d; kam.head = -.22; emote('sparks', 2);
         yield* walkTo(W / 2 - 72, 40);
         // bonk: the edge of the scene
-        const v = view({}); kam.eyes = 'x'; emote('stars', 3.5); say('BONK', 1.2);
+        const v = view({}); kam.eyes = 'x'; emote('stars', 3.5); emote('burst', .9);
         yield* tween(.4, p => { kam.x = W / 2 - 72 - 30 * Math.sin(p * Math.PI / 2); kam.r = -.25 * (1 - p); shake(v, 6 * (1 - p)); });
         cur.post = null; kam.r = 0; kam.head = 0; yield* wait(3); kam.eyes = '';
         yield* walkTo(0, 60);
@@ -647,7 +716,7 @@
         const fog = fx('screen', 0, (g) => { const n = kp(10, 340), a = Math.min(.4, (cur.t - fogT) * .05);
           const gr = g.createRadialGradient(n.x, n.y, 10, n.x, n.y, 260); gr.addColorStop(0, `rgba(235,240,245,${a})`); gr.addColorStop(1, 'rgba(235,240,245,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); });
         const fogT = cur.t;
-        for (let k = 0; k < 6; k++) { say('SNIF', .5); yield* tween(.35, p => { kam.s = 4.3 + Math.sin(p * Math.PI) * .08; }); yield* wait(.3); }
+        for (let k = 0; k < 6; k++) { emote('sniff', .5); yield* tween(.35, p => { kam.s = 4.3 + Math.sin(p * Math.PI) * .08; }); yield* wait(.3); }
         yield* wait(1.2); kam.eyes = 'blij'; yield* wait(1.2); kam.eyes = '';
         yield* backOff(4); stop(fog);
       } },
@@ -711,7 +780,7 @@
       } },
       scheet: { run: function* () {
         emote('dots', 2); yield* wait(2.2);
-        say('PRRRT', 1.6); kam.sq = .96; yield* wait(.15); kam.sq = 1;
+        emote('stink', 2.5); kam.sq = .96; yield* wait(.15); kam.sq = 1;
         const gas = particles('front', { until: cur.t + 2, emit: (ps) => { if (rnd() < .5) { const b = kp(770, 700); ps.push(P({ x: b.x, y: b.y, vx: -kface() * (20 + rnd() * 40), vy: -10 - rnd() * 20, life: 4 + rnd() * 2 })); } },
           draw: (g, p, a) => { g.fillStyle = `rgba(140,200,60,${.35 * (1 - a)})`; g.beginPath(); g.arc(p.x, p.y, 8 + a * 34, 0, 7); g.fill(); } });
         yield* wait(1.5); kam.face = -kface(); kam.eyes = 'groot'; emote('!?', 1.5); yield* wait(2);
@@ -735,8 +804,8 @@
         kam.pose = ''; yield* shiver(1, 4); yield* tween(2, p => { kam.cold = 1 - p; }); emote('dots', 1.5); yield* wait(1.5);
       } },
       zingen: { run: function* () {
-        emote('notes', 11); say(pick(SING), 4);
-        yield* tween(11, p => { kam.mouth = Math.abs(Math.sin(p * 30)) * .9; kam.head = -.08 + Math.sin(p * 15) * .05; if (p > .5 && p < .52) say(pick(SING), 4); });
+        emote('notes', 11);
+        yield* tween(11, p => { kam.mouth = Math.abs(Math.sin(p * 30)) * .9; kam.head = -.08 + Math.sin(p * 15) * .05; });
         kam.mouth = 0; kam.head = 0; yield* wait(1);
       } },
       rondjes: { run: function* () {
@@ -813,7 +882,7 @@
       } },
       raket: { run: function* () {
         withOutfit(['astrohelm', 'astropak']); emote('sparks', 1); yield* wait(1.2);
-        say('3', .7); yield* wait(.8); say('2', .7); yield* wait(.8); say('1', .7); yield* wait(.8);
+        for (let k = 0; k < 3; k++) { emote('!', .6); yield* wait(.8); }
         const flame = particles('back', { emit: (ps) => { if (!fly) return; const f = { x: kx(), y: kfeet() };
             for (let k = 0; k < 6; k++) ps.push(P({ x: f.x + (rnd() - .5) * 50 * kam.s, y: f.y, vx: (rnd() - .5) * 60, vy: 180 + rnd() * 200, life: .35 + rnd() * .3, r: 5 + rnd() * 7 })); },
           draw: (g, p, a) => { g.fillStyle = a < .3 ? '#fff6b0' : a < .6 ? '#ffb02e' : `rgba(150,150,160,${.7 * (1 - a)})`; const r = p.r * (1 + a * 2); g.fillRect(p.x - r / 2, p.y - r / 2, r, r); } });
@@ -1020,7 +1089,7 @@
         yield* tween(4, p => { const hh = kp(200, 200), a = p * Math.PI * 4; c.x = hh.x + Math.cos(a) * 90; c.y = hh.y + Math.sin(a) * 60; kam.face = c.x > kx() ? 1 : -1; });
         const n = kp(10, 340); yield* moveTo(n.x, n.y, .5); emote('angry', 2); kam.eyes = 'boos'; yield* wait(1.2);
         yield* tween(.25, p => { kam.head = .2 * Math.sin(p * Math.PI); kam.x += kface() * 60 * st.dt; });
-        say('HAP', 1);
+        emote('burst', .8);
         yield* moveTo(c.x + (kface() > 0 ? 1 : -1) * 900, c.y - 300, .8);
         kam.eyes = 'blij'; yield* wait(2); kam.eyes = ''; if (kam.x) yield* walkTo(0, 50);
       } },
@@ -1102,7 +1171,7 @@
       kam.eyeT += dt;
       for (const a of cur.actors) {
         if (a.pose === 'walk') a.wt += a.rate * dt; a.eyeT += dt;
-        if (a.pose !== 'walk') { a.blinkT -= dt; a.pose = a.blinkT < 0 ? 'blink' : 'stand'; if (a.blinkT < -.14) a.blinkT = 2 + rnd() * 4; }
+        if (a.pose !== 'walk' && !a.lockPose) { a.blinkT -= dt; a.pose = a.blinkT < 0 ? 'blink' : 'stand'; if (a.blinkT < -.14) a.blinkT = 2 + rnd() * 4; }
       }
       let done = false;
       try { done = cur.gen.next().done; } catch (e) { console.error('event', cur.id, e); done = true; }
