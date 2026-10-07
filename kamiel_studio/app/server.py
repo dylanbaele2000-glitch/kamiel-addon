@@ -45,7 +45,7 @@ HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
 WEATHER_BUCKETS = ("zon", "bewolkt", "regen", "sneeuw", "mist")
-WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel")
+WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel", "roepen")
 def _read_static(name, pattern):
     """The tablet's own lists (clothes, events) are the single source: read the ids from its scripts."""
     try:
@@ -90,7 +90,8 @@ DEFAULT_SETTINGS = {
                            "verhouding": True, "lijn": True}, "color": True},
     "hills": {"chance": 40, "height": 18},           # % of places with hills; how high, in % of the screen
     "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
-    "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": []},
+    "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
+               "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -103,9 +104,9 @@ DEFAULT_SETTINGS = {
     "media_player": "",
     "departures": [],
     "board": [],
-    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True},
+    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True, "roepen": True},
     "window_titles": {"weer": "Weer.exe", "vertrek": "Vertrek.exe", "knoppen": "Knoppen.exe", "kleerkast": "Kleerkast.exe", "muziek": "Muziek.exe",
-                      "wandel": "Wandel.exe"},
+                      "wandel": "Wandel.exe", "roepen": "Roepen.exe"},
     "window_close": 60,
     "window_layout": "verspreid",
     "buttons": [],
@@ -163,6 +164,7 @@ def load_db():
                 if kind in s["counts"][part] and int(v) == 0:
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
+    ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
     for k in ("hills", "stack"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
@@ -678,6 +680,10 @@ async def api_settings(request):
             for k, top in (("lama_per_day", 5), ("common_per_day", 24), ("normal_per_week", 50)):
                 if k in b:
                     e[k] = max(0, min(top, int(b[k])))
+            if isinstance(b.get("pets_per_day"), dict):
+                e["pets_per_day"] = {k: max(0, min(12, int(v or 0))) for k, v in b["pets_per_day"].items() if k in EVENT_IDS}
+            if "pets_together" in b:
+                e["pets_together"] = max(0, min(100, int(b["pets_together"])))
             if isinstance(b.get("off"), list):
                 e["off"] = [x for x in b["off"] if x in EVENT_IDS]
         if isinstance(body.get("sizes"), dict):
@@ -1097,7 +1103,7 @@ async def tg_handle(token, upd):
     if cmd == "/event":
         rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
         if rest.lower() in ("lijst", "list", "alle"):
-            groups = {"lama": "Elke dag", "vaak": "Vaak", "soms": "Soms"}
+            groups = {"lama": "Elke dag", "dier": "Huisdieren", "vaak": "Vaak", "soms": "Soms"}
             out = []
             for cat, title in groups.items():
                 out.append(title + ":\n" + "\n".join(f"• {name} ({eid})" for eid, name, c in EVENTS if c == cat))

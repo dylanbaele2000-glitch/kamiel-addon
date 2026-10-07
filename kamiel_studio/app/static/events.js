@@ -5,6 +5,11 @@
 (function () {
   const LIST = [
     { id: 'lama', name: 'Heidi komt langs (de witte lama)', cat: 'lama' },
+    { id: 'wifi', name: 'Wifi wil spelen', cat: 'dier' },
+    { id: 'snoet', name: 'Snoet, de kleine tornado', cat: 'dier' },
+    { id: 'pippa', name: 'Pippa komt kijken', cat: 'dier' },
+    { id: 'pebbels', name: 'Pebbels op ontdekking', cat: 'dier' },
+    { id: 'dobby', name: 'Dobby het konijn', cat: 'dier' },
     { id: 'omdraaien', name: 'Verkeerde kant op', cat: 'vaak' },
     { id: 'camera', name: 'De camera volgt niet', cat: 'vaak' },
     { id: 'inspecteren', name: 'Een object inspecteren', cat: 'vaak' },
@@ -71,7 +76,8 @@
     { id: 'lucht-valt', name: 'De lucht valt naar beneden', cat: 'soms' },
   ];
 
-  const CATS = { lama: 'Elke dag', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+  const CATS = { lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+  const PETS = ['wifi', 'snoet', 'pippa', 'pebbels', 'dobby'];
 
   /* ---------- the plan: when today's events happen ---------- */
   // seeded random, so a day's plan stays the same after a reload
@@ -92,6 +98,8 @@
     const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false;
     for (let k = 0; k < num(cfg.lama_per_day, 1); k++) out.push({ at: minuteOf(r, ev), cat: 'lama' });
     for (let k = 0; k < num(cfg.common_per_day, 3); k++) out.push({ at: minuteOf(r, ev), cat: 'vaak' });
+    const pd = cfg.pets_per_day || {};
+    for (const p of PETS) for (let k = 0; k < num(pd[p], 2); k++) out.push({ at: minuteOf(r, ev), cat: 'dier', id: p });
     // "a few times a week": spread over the week, the same plan all week long
     const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const rw = seeded('week ' + ymd(mon)), today = (d.getDay() + 6) % 7;
@@ -171,8 +179,8 @@
     /* ---------- effects ---------- */
     function fx(layer, dur, draw) { const f = { layer, dur, born: cur.t, draw }; cur.fx.push(f); return f; }
     const stop = (f) => { if (cur && f) cur.fx = cur.fx.filter(x => x !== f); };
-    const headOf = (who) => who ? A.llamaPoint(who, 200, -30) : kp(200, -30);
-    const uOf = (who) => clamp(5.5 * (who ? who.s : kam.s), 3.5, 9);
+    const headOf = (who) => who ? (who.pet ? (p => ({ x: p.x, y: p.y - 4 }))(A.petPoint(who, 'head')) : A.llamaPoint(who, 200, -30)) : kp(200, -30);
+    const uOf = (who) => who && who.pet ? 3.6 : clamp(5.5 * (who ? who.s : kam.s), 3.5, 9);
     function emote(kind, dur, who) {
       return fx('screen', dur || 2, (g, age) => {
         const p = headOf(who), u = uOf(who), pop = Math.min(1, age * 6), y = p.y - 8 - 12 * pop;
@@ -287,6 +295,174 @@
     }
     const sideOfRoom = () => kam.x > 0 ? -1 : kam.x < 0 ? 1 : (rnd() < .5 ? -1 : 1);
 
+    /* ---------- the housemates ---------- */
+    const PET = { wifi: { s: 1, run: 95 }, snoet: { s: .85, run: 150 }, pippa: { s: 1, run: 60 }, pebbels: { s: 1.03, run: 45 }, dobby: { s: .95, run: 60 } };
+    const DOGS = ['wifi', 'snoet'], CATS2 = ['pippa', 'pebbels'];
+    function pet(name, side) {
+      return actor({ pet: name, s: PET[name].s, cx: W / 2 + side * (W / 2 + 70), feet: FEET, face: -side, rate: 9, lift: 0 });
+    }
+    const hold = (a, pose) => { a.lockPose = !!pose; a.pose = pose || 'stand'; };
+    function* petTo(a, x, speed) { yield* actorTo(a, x, speed); a.rate = 9; }
+    function* petJump(a, height, secs, toX) {
+      const x0 = a.cx; hold(a, 'jump');
+      yield* tween(secs || .5, p => { a.lift = Math.sin(p * Math.PI) * height; if (toX !== undefined) a.cx = lerp(x0, toX, p); });
+      a.lift = 0; hold(a, null);
+    }
+    function* petLeave(a, side, speed) { yield* petTo(a, W / 2 + side * (W / 2 + 90), speed); a.alpha = 0; }
+    const back = (fx) => kp(fx, 470);   // a spot on Kamiel's back
+    function ballFx(ball) {
+      return fx('front', 0, (g) => { if (!ball.on) return; const x = ball.x, y = ball.y; g.fillStyle = 'rgba(0,0,0,.18)'; g.beginPath(); g.ellipse(x, FEET + 2, 6, 2, 0, 0, 7); g.fill();
+        g.fillStyle = '#e2343a'; g.fillRect(x - 5, y - 10, 10, 10); g.fillStyle = '#ff8a8a'; g.fillRect(x - 3, y - 8, 3, 3); g.fillStyle = '#ffd23f'; g.fillRect(x - 5, y - 6, 10, 2); });
+    }
+
+    // Wifi: playful, and keeps insisting until Kamiel plays along
+    function* wifi(a, side) {
+      const ball = { on: true, x: 0, y: 0 }; let held = true;
+      const f = fx('front', 0, () => { if (held) { const n = A.petPoint(a, 'nose'); ball.x = n.x; ball.y = n.y + 6; } });
+      ballFx(ball);
+      yield* petTo(a, kx() + side * 120, PET.wifi.run); a.face = -side; kam.face = side;
+      held = false; ball.y = FEET - 1;
+      for (let k = 0; k < 3; k++) { hold(a, 'down'); yield* wait(.45); hold(a, null); yield* petJump(a, 14, .3); emote('burst', .5, a); yield* wait(.3); }
+      kam.face = -side; emote('dots', 2.2); yield* wait(2.2);
+      // insisting: pushes the ball closer and bounces around him
+      held = true; yield* petTo(a, kx() + side * 70, 70); a.face = -side; held = false; ball.y = FEET - 1;
+      a.layer = 'front';
+      yield* petJump(a, 30, .5, kx() - side * 70); a.face = side; emote('burst', .5, a);
+      yield* petJump(a, 30, .5, kx() + side * 70); a.face = -side; emote('burst', .5, a);
+      a.layer = 'back';
+      kam.face = side; kam.eyes = 'blij'; kam.head = .15; yield* wait(.4); kam.head = 0;
+      // Kamiel gives the ball a push; off she goes
+      const bx0 = ball.x, bx1 = ball.x + side * 700;
+      yield* par((function* () { yield* tween(1.4, p => { ball.x = lerp(bx0, bx1, p); ball.y = FEET - 1 - Math.abs(Math.sin(p * 9)) * 40 * (1 - p); }); })(),
+                 (function* () { yield* wait(.2); yield* petTo(a, W / 2 + side * (W / 2 + 80), PET.wifi.run * 1.8); })());
+      ball.on = false; yield* wait(1.5);
+      ball.on = true; held = true; yield* petTo(a, kx() + side * 90, PET.wifi.run * 1.4); a.face = -side; held = false; ball.y = FEET - 1;
+      emote('heart', 2, a); emote('hearts', 2.5);
+      for (let k = 0; k < 2; k++) yield* petJump(a, 22, .35);
+      held = true; yield* wait(.6); kam.eyes = '';
+      yield* petLeave(a, side, PET.wifi.run); stop(f); ball.on = false;
+    }
+    // Snoet: a small tornado. Over and on everything and everyone, licks and cuddles.
+    function* snoet(a, side) {
+      a.rate = 16;
+      for (let k = 0; k < 2; k++) { a.layer = k ? 'back' : 'front'; yield* petTo(a, kx() - side * 160, PET.snoet.run); yield* petTo(a, kx() + side * 160, PET.snoet.run); }
+      kam.face = side; kam.eyes = 'groot'; emote('!', 1.2);
+      // up onto Kamiel's back, along to his head, and lick
+      a.layer = 'front'; const b0 = back(side > 0 ? 740 : 300);
+      yield* petJump(a, 0, .01); hold(a, 'jump');
+      yield* tween(.5, p => { a.cx = lerp(a.cx, b0.x, p); a.feet = lerp(FEET, b0.y, p) - Math.sin(p * Math.PI) * 40; });
+      hold(a, null); a.face = -kface();
+      yield* tween(1.2, p => { const bb = back(lerp(700, 330, p)); a.cx = bb.x; a.feet = bb.y; a.pose = 'walk'; a.wt += st.dt * 14; });
+      a.pose = 'stand'; kam.eyes = 'dicht'; kam.blush = true; emote('hearts', 3, a);
+      yield* tween(2.5, p => { a.sx = 1 + Math.sin(p * 40) * .05; }); a.sx = 1;
+      // and off again, onto something on the ground if there's something
+      const gh = groundHits().filter(h => h.w < 200);
+      const t = gh.length ? pick(gh) : null;
+      hold(a, 'jump'); const x0 = a.cx, y0 = a.feet, tx = t ? t.x + t.w / 2 : kx() - side * 200, ty = t ? t.y + t.h * .12 : FEET;
+      yield* tween(.6, p => { a.cx = lerp(x0, tx, p); a.feet = lerp(y0, ty, p) - Math.sin(p * Math.PI) * 50; }); hold(a, null);
+      kam.eyes = 'blij'; kam.blush = false;
+      for (let k = 0; k < 4; k++) { a.face = -a.face; yield* wait(.25); }
+      if (t) { hold(a, 'jump'); const x1 = a.cx, y1 = a.feet; yield* tween(.45, p => { a.cx = x1 + side * 40 * p; a.feet = lerp(y1, FEET, p) - Math.sin(p * Math.PI) * 30; }); hold(a, null); }
+      // cuddles against his leg
+      yield* petTo(a, kx() + side * 50, PET.snoet.run); a.face = -side; a.layer = 'front';
+      emote('hearts', 2.5, a); kam.eyes = 'blij'; emote('heart', 2);
+      yield* tween(2.2, p => { a.sx = 1 + Math.sin(p * 30) * .04; }); a.sx = 1;
+      kam.eyes = ''; yield* petLeave(a, side, PET.snoet.run);
+    }
+    // Pippa: very sure of herself; sometimes ready to fight, sometimes suddenly scared
+    function* pippa(a, side) {
+      a.rate = 6;
+      yield* petTo(a, kx() + side * 140, PET.pippa.run); a.face = -side; a.layer = 'front';
+      hold(a, 'down'); yield* wait(2.5); hold(a, 'blink'); yield* wait(.5); hold(a, 'down'); yield* wait(1.5); hold(a, null);
+      const mood = pick(['boos', 'bang', 'baas']);
+      if (mood === 'boos') {
+        kam.face = side; yield* walkTo(side * 45, 35); kam.face = side;
+        yield* petJump(a, 8, .2); a.sq = 1.12; a.sx = .92; emote('angry', 2, a); emote('burst', .6, a);
+        kam.eyes = 'groot'; emote('sweat', 2.5); yield* walkTo(-side * 60, 120); kam.face = side; yield* wait(1.2);
+        a.sq = 1; a.sx = 1; yield* wait(1); emote('dots', 1.5, a);
+        yield* petLeave(a, side, PET.pippa.run); kam.eyes = ''; yield* walkTo(0, 50);
+      } else if (mood === 'bang') {
+        const bx = W / 2 + (rnd() - .5) * 500;
+        fx('screen', .5, (g, age) => { sprC(g, SP.burst, bx, FEET - 60, 4 + age * 6); });
+        a.sx = 1.18; a.sq = 1.08; a.eyes = 'groot';
+        yield* petJump(a, 70, .55); kam.eyes = 'groot'; emote('!?', 1.6);
+        a.layer = 'back'; a.rate = 18; yield* petTo(a, W / 2 + side * (W / 2 + 60), 260);
+        yield* wait(1.5); a.sx = 1; a.sq = 1; a.eyes = '';
+        yield* petTo(a, W / 2 + side * (W / 2 - 40), 30); a.face = -side; yield* wait(2.5); kam.eyes = ''; emote('?', 1.5);
+        yield* petLeave(a, side, 40);
+      } else {   // she's the boss: lies down right in front of him and stays
+        yield* petTo(a, kx() + side * 20, 40); a.face = -side; hold(a, 'down');
+        kam.eyes = 'triest'; yield* wait(3); kam.face = -side; yield* wait(1.5); kam.face = side; emote('dots', 2.5); yield* wait(4);
+        hold(a, 'blink'); yield* wait(.6); hold(a, 'down'); yield* wait(2); hold(a, null); kam.eyes = '';
+        yield* petLeave(a, -side, PET.pippa.run);
+      }
+    }
+    // Pebbels: calmer, curious and on her own; sometimes startled by random things
+    function* pebbels(a, side) {
+      a.rate = 5;
+      const gh = groundHits(), t = gh.length ? gh.sort((p, q) => Math.abs(p.x - W / 2) - Math.abs(q.x - W / 2))[0] : null;
+      const tx = t ? t.x + t.w / 2 + (t.x + t.w / 2 > W / 2 ? -1 : 1) * (t.w / 2 + 30) : kx() + side * 170;
+      yield* petTo(a, tx, PET.pebbels.run); if (t) a.face = t.x + t.w / 2 > a.cx ? 1 : -1;
+      hold(a, 'down'); emote('?', 2, a); yield* wait(2.5); hold(a, null); yield* wait(.8);
+      // something startles her
+      const lx = a.cx + a.face * 90; let leafY = 120, leafOn = true;
+      const leaf = fx('front', 0, (g) => { if (!leafOn) return; g.fillStyle = '#d98a2b'; g.fillRect(lx + Math.sin(cur.t * 3) * 16 - 4, leafY, 8, 5); g.fillStyle = '#9a5a1a'; g.fillRect(lx + Math.sin(cur.t * 3) * 16 - 1, leafY + 1, 2, 3); });
+      yield* tween(3, p => { leafY = lerp(120, FEET - 6, p); });
+      a.eyes = 'groot'; a.sx = 1.12; yield* petJump(a, 45, .45, a.cx - a.face * 60); hold(a, 'down'); yield* wait(2); a.sx = 1; a.eyes = '';
+      // ... then, carefully, a closer look
+      hold(a, null); yield* petTo(a, lx - a.face * 30, 16); hold(a, 'down'); emote('?', 1.5, a); yield* wait(2); hold(a, null);
+      leafOn = false; stop(leaf); emote('heart', 1.5, a); yield* wait(1);
+      if (rnd() < .5) { hold(a, 'down'); emote('zzz', 6, a); yield* wait(6); hold(a, null); }
+      yield* petLeave(a, a.cx > W / 2 ? 1 : -1, PET.pebbels.run);
+    }
+    // Dobby: a quiet rabbit; nibbles, freezes, thumps, and does a happy jump now and then
+    function* dobby(a, side) {
+      a.rate = 7;
+      yield* petTo(a, kx() + side * 150, PET.dobby.run); a.face = -side;
+      const nib = particles('front', { until: cur.t + 5, emit: (ps) => { if (rnd() < .15) { const n = A.petPoint(a, 'nose'); ps.push(P({ x: n.x, y: FEET - 2, vx: (rnd() - .5) * 30, vy: -30, grav: 120, life: .6 })); } },
+        draw: (g, p, k) => { g.fillStyle = `rgba(90,170,60,${1 - k})`; g.fillRect(p.x, p.y, 3, 2); } });
+      hold(a, 'down'); yield* tween(5, p => { a.sq = 1 + Math.sin(p * 60) * .02; }); a.sq = 1; hold(a, null); stop(nib);
+      const what = pick(['binky', 'stamp', 'flop']);
+      if (what === 'binky') {   // the happy jump with a twist
+        kam.face = side; for (let k = 0; k < 2; k++) { hold(a, 'jump'); yield* tween(.6, p => { a.lift = Math.sin(p * Math.PI) * 55; a.r = Math.sin(p * Math.PI * 2) * .4; if (p > .5) a.face = side; }); a.lift = 0; a.r = 0; hold(a, null); a.face = -side; yield* wait(.5); }
+        emote('hearts', 2, a); kam.eyes = 'blij'; yield* wait(2);
+      } else if (what === 'stamp') {   // freezes, then thumps the ground
+        a.eyes = 'groot'; yield* wait(2.5);
+        const v = view({}); for (let k = 0; k < 2; k++) { a.sq = .9; yield* tween(.2, () => shake(v, 4)); a.sq = 1; yield* wait(.3); } cur.post = null;
+        kam.eyes = 'groot'; emote('!', 1.5); yield* wait(2); a.eyes = ''; kam.eyes = '';
+      } else {   // flops over for a nap
+        hold(a, 'down'); a.r = side * .2; emote('zzz', 7, a); yield* wait(7); a.r = 0; hold(a, null);
+      }
+      kam.eyes = ''; yield* petLeave(a, side, PET.dobby.run);
+    }
+    // a second housemate comes along now and then
+    function* buddy(b, lead, side) {
+      yield* wait(2 + rnd() * 3);
+      yield* petTo(b, (lead.cx + W / 2) / 2 - side * 120, PET[b.pet].run);
+      b.face = lead.cx > b.cx ? 1 : -1;
+      if (CATS2.includes(b.pet) && DOGS.includes(lead.pet) && rnd() < .7) {   // a cat and a dog: not always friends
+        b.sq = 1.1; emote('angry', 2, b); yield* wait(1.5); b.sq = 1;
+        yield* petTo(b, W / 2 - side * (W / 2 + 90), PET[b.pet].run * 2.5);
+      } else if (DOGS.includes(b.pet) && DOGS.includes(lead.pet)) {   // two dogs: a chase
+        for (let k = 0; k < 2; k++) { yield* petTo(b, W / 2 + (k % 2 ? -1 : 1) * 260, PET[b.pet].run * 1.5); }
+        emote('hearts', 1.5, b); yield* petTo(b, W / 2 - side * (W / 2 + 90), PET[b.pet].run);
+      } else {   // a sniff and a hello
+        hold(b, 'down'); emote('heart', 1.5, b); yield* wait(2); hold(b, null); yield* wait(2 + rnd() * 4);
+        yield* petTo(b, W / 2 - side * (W / 2 + 90), PET[b.pet].run);
+      }
+      b.alpha = 0;
+    }
+    function* petVisit(name) {
+      const side = rnd() < .5 ? -1 : 1, a = pet(name, side);
+      const runs = { wifi, snoet, pippa, pebbels, dobby };
+      const others = PETS.filter(p => p !== name && !(cfg.off || []).includes(p));
+      const together = rnd() * 100 < (cfg.pets_together === undefined ? 25 : +cfg.pets_together) && others.length;
+      kam.face = side;
+      if (together) { const b = pet(pick(others), -side); yield* par(runs[name](a, side), buddy(b, a, -side)); }
+      else yield* runs[name](a, side);
+      kam.eyes = ''; kam.blush = false;
+    }
+
     /* ---------- the events ---------- */
     const DEF = {
       // Heidi: the white lama. Lots of personality, mostly annoying: she won't cooperate and hates everything.
@@ -389,6 +565,11 @@
           yield* leave(false); yield* wait(1.5);
         }
       } },
+      wifi: { run: function* () { yield* petVisit('wifi'); } },
+      snoet: { run: function* () { yield* petVisit('snoet'); } },
+      pippa: { run: function* () { yield* petVisit('pippa'); } },
+      pebbels: { run: function* () { yield* petVisit('pebbels'); } },
+      dobby: { run: function* () { yield* petVisit('dobby'); } },
       omdraaien: { walk: true, run: function* () {
         const d = rnd() < .5 ? -1 : 1;
         yield* walkTo(d * 150, 70); yield* wait(.8); emote('?', 1.8); yield* wait(1.6);
@@ -1179,7 +1360,7 @@
     }
     function draw(layer, g) {
       if (!cur) return;
-      if (layer === 'back' || layer === 'front') for (const a of cur.actors) if ((a.layer || 'back') === layer && a.alpha > 0) A.drawLlama(g, a);
+      if (layer === 'back' || layer === 'front') for (const a of cur.actors) if ((a.layer || 'back') === layer && a.alpha > 0) { if (a.pet) A.drawPet(g, a); else A.drawLlama(g, a); }
       for (const f of cur.fx.slice()) {
         if (f.layer !== layer) continue;
         const age = cur.t - f.born;
@@ -1200,7 +1381,7 @@
         const first = !planDay; plan = planFor(d, cfg); planDay = key;
         if (first) plan.forEach(p => { if (p.at < m) p.done = true; });   // after a reload: what's past is past
       }
-      for (const p of plan) if (!p.done && p.at <= m) { p.done = true; if (m - p.at <= 20) queue.push({ cat: p.cat }); }
+      for (const p of plan) if (!p.done && p.at <= m) { p.done = true; if (m - p.at <= 20) queue.push({ cat: p.cat, id: p.id }); }
     }
     function pump(msToWalk) {
       if (cur || A.walking() || !queue.length) return;
@@ -1211,6 +1392,7 @@
         if (id) start(id);
         return;
       }
+      if (q.cat === 'dier' && q.id) { queue.shift(); if (!offList().includes(q.id) && msToWalk > 50000) start(q.id); else if (msToWalk <= 50000) queue.push(q); return; }
       if (!q.id) { q.id = choose(q.cat); if (!q.id) { queue.shift(); return; } }
       if (DEF[q.id].walk) { walkEvent = q.id; queue.shift(); return; }   // waits for the walk timer
       if (msToWalk > 70000) { queue.shift(); if (can(q.id)) start(q.id); else { const alt = choose(q.cat); if (alt && !DEF[alt].walk) start(alt); } }

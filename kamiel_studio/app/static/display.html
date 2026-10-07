@@ -18,6 +18,7 @@
 <script src="static/outfits.js"></script>
 <script src="static/events.js"></script>
 <script src="static/compose.js"></script>
+<script src="static/pets.js"></script>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
 .stage{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -1120,6 +1121,41 @@ function drawLlama(g, o) {
   g.drawImage(src, -w / 2 - mx, -h - my, cw, ch);
   g.restore();
 }
+/* ---------- the housemates: Wifi, Snoet, Pippa, Pebbels, Dobby (pixel grids in pets.js) ---------- */
+const PETART = window.KamielPetArt || {}, petCache = {};
+const PET_U = 225 / 68.5;   // one of their pixels is as big as one of Kamiel's
+function petFrame(name, ph) {
+  const key = name + ph; if (petCache[key]) return petCache[key];
+  const art = PETART[name], fr = art.frames[ph] || art.frames.stand, c = document.createElement('canvas');
+  c.width = art.w; c.height = art.h; const g = c.getContext('2d');
+  fr.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (ch !== '.') { g.fillStyle = fr.pal[ch]; g.fillRect(x, y, 1, 1); } } });
+  return (petCache[key] = c);
+}
+// o: { pet, cx, feet, s, face, pose (stand/blink/walk/down/jump), wt, r, sq, sx, alpha, eyes }
+function drawPet(g, o) {
+  const art = PETART[o.pet]; if (!art) return;
+  const ph = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
+  const u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u;
+  g.save(); g.globalAlpha *= o.alpha === undefined ? 1 : o.alpha;
+  if (!o.noShadow) {   // a soft shadow on the ground, smaller as they jump
+    const k = Math.max(.3, 1 - (o.lift || 0) / 80);
+    g.fillStyle = `rgba(0,0,0,${.18 * k})`; g.beginPath(); g.ellipse(o.cx, o.feet, w * .3 * k, Math.max(2, u * .7) * k, 0, 0, 7); g.fill();
+  }
+  g.translate(o.cx, o.feet - (o.lift || 0) + u); g.rotate(o.r || 0); g.scale((o.face > 0 ? -1 : 1) * (o.sx || 1), o.sq || 1);
+  g.imageSmoothingEnabled = false; g.drawImage(petFrame(o.pet, ph), -w / 2, -h, w, h);
+  if (o.eyes === 'hart' || o.eyes === 'groot') {
+    const ex = -w / 2 + art.eye[0] * u, ey = -h + art.eye[1] * u;
+    if (o.eyes === 'hart') { g.fillStyle = '#ff3d8b'; g.fillRect(ex - u, ey - u * .5, u * 3, u * 2); }
+    else { g.fillStyle = '#f4e6c2'; g.fillRect(ex - u, ey - u, u * 3, u * 3); g.fillStyle = '#111'; g.fillRect(ex, ey, u, u); }
+  }
+  g.restore();
+}
+function petPoint(o, which) {
+  const art = PETART[o.pet], u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u, p = art[which] || art.head;
+  let x = (-w / 2 + (p[0] + .5) * u) * (o.face > 0 ? -1 : 1) * (o.sx || 1), y = (-h + (p[1] + .5) * u) * (o.sq || 1);
+  const r = o.r || 0, c = Math.cos(r), sn = Math.sin(r);
+  return { x: o.cx + x * c - y * sn, y: o.feet - (o.lift || 0) + u + x * sn + y * c };
+}
 // where a point of a llama's frame is on the screen (for speech bubbles, fire, tears…)
 function llamaPoint(o, fx, fy) {
   const s = o.s === undefined ? 1 : o.s, h = 225 * s, w = 128.3 * s;
@@ -1243,7 +1279,7 @@ function loop(ts) {
 }
 // the world events get a small window onto Kamiel's world
 EV = KamielEvents.create({
-  W, H, FEET, PLACE, HOR0, K, CL, OBJ, kam, kamReset, drawLlama, llamaPoint, kamObj, ready, tinted,
+  W, H, FEET, PLACE, HOR0, K, CL, OBJ, kam, kamReset, drawLlama, llamaPoint, kamObj, ready, tinted, drawPet, petPoint, PETS: Object.keys(PETART),
   settings: S.events || {}, params,
   cam: () => kx, setCam: (v) => { kx = v; }, dir: () => dir, setDir: (v) => { dir = v; },
   walking: () => walking, hits: () => hits, clouds: () => clouds, outfit: () => outfit,
@@ -1265,9 +1301,9 @@ setInterval(schedule, 15000);
 
 /* ---------- old-school windows: tap an empty spot ---------- */
 const deskEl = document.getElementById('desk');
-const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true }, S.windows || {});
-const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe' }, S.window_titles || {});
-const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙' };
+const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true, roepen: true }, S.windows || {});
+const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe' }, S.window_titles || {});
+const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾' };
 const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
   'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
 const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
@@ -1279,7 +1315,7 @@ async function loadDesk() { try { deskData = await (await fetch('api/desk', { ca
 async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { deskRows = []; } }
 function spots(keys) {
   const layout = S.window_layout || 'verspreid';
-  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6] };
+  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6], roepen: [30, 52] };
   return keys.map((k, n) => layout === 'netjes'
     ? [3 + (n % 3) * 32.5, 4 + Math.floor(n / 3) * 46]
     : [base[k][0] + (rnd() * 6 - 3), base[k][1] + (rnd() * 6 - 3)]);
@@ -1312,7 +1348,7 @@ function front(el) { el.style.zIndex = ++zTop; deskEl.querySelectorAll('.win').f
 function makeWin(k, [lx, ty]) {
   const el = document.createElement('div'); el.className = 'win'; el.dataset.k = k;
   el.style.left = lx + '%'; el.style.top = ty + '%';
-  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%' }[k];
+  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%', roepen: '40%' }[k];
   el.innerHTML = `<div class="tb"><span>${ICON[k]}</span><span class="tt">${escH(TITLES[k])}</span>
     <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div><div class="bd"></div>`;
   deskEl.appendChild(el); wins[k] = el; front(el);
@@ -1320,7 +1356,7 @@ function makeWin(k, [lx, ty]) {
   el.querySelector('[data-a=close]').addEventListener('click', () => closeWin(k));
   el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
   drag(el);
-  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel })[k]();
+  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel, roepen: fillRoepen })[k]();
   // keep it on screen
   const r = el.getBoundingClientRect(), dr = deskEl.getBoundingClientRect();
   if (r.right > dr.right - 4) el.style.left = Math.max(0, dr.width - r.width - 8) + 'px';
@@ -1455,6 +1491,26 @@ function tickWandel() {
   const left = Math.max(0, msToWalk()) / 1000, m = Math.floor(left / 60), sec = Math.floor(left % 60);
   c.textContent = walking ? 'ONDERWEG' : String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
   n.textContent = EV.active ? 'Er gebeurt iets…' : walking ? 'Kamiel wandelt nu' : (EV.walkPending() ? 'Er staat iets speciaals te gebeuren' : '\u00a0');
+}
+
+// call one of the housemates (or Heidi) to the scene
+const CALLS = [['wifi', 'Wifi'], ['snoet', 'Snoet'], ['pippa', 'Pippa'], ['pebbels', 'Pebbels'], ['dobby', 'Dobby'], ['lama', 'Heidi']];
+function fillRoepen() {
+  const b = bodyOf('roepen'); if (!b) return;
+  b.innerHTML = `<div class="kgrid">${CALLS.map(([id, n]) => `<button class="b95 kbtn" data-call="${id}"><canvas width="64" height="48" style="position:static;inset:auto;filter:none;width:3.4em;height:2.55em;image-rendering:pixelated"></canvas><span class="kl">${n}</span></button>`).join('')}</div>
+    <div class="muted rnote">Tik op wie je wilt roepen.</div>`;
+  b.querySelectorAll('[data-call]').forEach(el => {
+    const g = el.querySelector('canvas').getContext('2d'), id = el.dataset.call;
+    g.imageSmoothingEnabled = false;
+    if (PETART[id]) { const c = petFrame(id, 'stand'), k = Math.min(64 / c.width, 48 / c.height); g.drawImage(c, (64 - c.width * k) / 2, 48 - c.height * k, c.width * k, c.height * k); }
+    else if (ready(KH.stand)) { const im = KH.stand, k = 46 / im.height; g.drawImage(im, (64 - im.width * k) / 2, 1, im.width * k, im.height * k); }
+    else KH.stand.addEventListener('load', () => { if (wins.roepen) fillRoepen(); }, { once: true });
+    el.addEventListener('click', () => {
+      touchDesk(); EV.request(id);
+      b.querySelector('.rnote').textContent = (CALLS.find(c => c[0] === id) || ['', ''])[1] + (walking || EV.active ? ' komt zo meteen.' : ' komt eraan!');
+      setTimeout(() => closeDesk(), 900);
+    });
+  });
 }
 
 /* ---------- tapping: message, sun, moon, an element, or the empty scene ---------- */

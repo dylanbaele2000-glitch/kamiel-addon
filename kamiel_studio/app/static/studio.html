@@ -463,6 +463,7 @@ label.sw span{font-size:12.5px;color:var(--muted)}
           <tr><td><input type="checkbox" class="wOn" data-k="kleerkast" aria-label="Kleerkast aan"></td><td>Kleerkast</td><td><input type="text" class="wTitle" data-k="kleerkast" maxlength="24" placeholder="Kleerkast.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="muziek" aria-label="Muziek (als er een speaker gekozen is) aan"></td><td>Muziek (als er een speaker gekozen is)</td><td><input type="text" class="wTitle" data-k="muziek" maxlength="24" placeholder="Muziek.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="wandel" aria-label="Wandelen aan"></td><td>Wandelen: aftellen tot de volgende plek, met pijltjes om Kamiel zelf te sturen</td><td><input type="text" class="wTitle" data-k="wandel" maxlength="24" placeholder="Wandel.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="roepen" aria-label="Roepen aan"></td><td>Roepen: een huisdier of Heidi naar de scène roepen</td><td><input type="text" class="wTitle" data-k="roepen" maxlength="24" placeholder="Roepen.exe"></td></tr>
         </tbody>
       </table>
       <div class="settings" style="margin-top:14px">
@@ -522,6 +523,10 @@ label.sw span{font-size:12.5px;color:var(--muted)}
         <label class="field" for="eNormal">Soms<span>Keer per week, een willekeurige uit de lijst "soms".</span><input type="number" id="eNormal" min="0" max="50"></label>
         <label class="field" style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input type="checkbox" id="eEvening"> Vaker tussen 17:00 en 19:30</label>
       </div>
+      <h3 style="margin:16px 0 6px;font-size:15px">Huisdieren</h3>
+      <p class="hint">Wifi, Snoet, Pippa, Pebbels en Dobby komen langs, elk met hun eigen karakter. Meestal alleen, soms met z'n tweeën. Op de tablet kan je ze ook roepen (venster Roepen).</p>
+      <div class="settings" id="petDays"></div>
+      <div class="settings" style="margin-top:10px"><label class="field" for="ePetTogether">Kans dat er twee samen komen<label class="pct"><input type="number" id="ePetTogether" min="0" max="100" step="5"> %</label></label></div>
       <p class="hint" style="margin-top:10px">Vink uit wat nooit vanzelf mag gebeuren. Met ▶ zie je het meteen op de tablet (ook als het uitgevinkt is).</p>
       <div style="overflow-x:auto"><table class="chances" id="evTable"><thead><tr><th scope="col">Aan</th><th scope="col">Wat</th><th scope="col">Hoe vaak</th><th scope="col"><span class="sr">Nu tonen</span></th></tr></thead><tbody></tbody></table></div>
       <span class="status" id="evStatus" role="status"></span>
@@ -933,7 +938,11 @@ async function renderSettings() {
   const E = s.events || {};
   $('eOn').checked = E.on !== false; $('eLama').value = E.lama_per_day === undefined ? 1 : E.lama_per_day; $('eCommon').value = E.common_per_day === undefined ? 3 : E.common_per_day;
   $('eNormal').value = E.normal_per_week === undefined ? 4 : E.normal_per_week; $('eEvening').checked = E.evening !== false;
-  const CATN = { lama: 'Elke dag', vaak: 'Vaak', soms: 'Soms' };
+  const CATN = { lama: 'Elke dag', dier: 'Huisdier', vaak: 'Vaak', soms: 'Soms' };
+  const PD = E.pets_per_day || {};
+  $('petDays').innerHTML = [['wifi', 'Wifi'], ['snoet', 'Snoet'], ['pippa', 'Pippa'], ['pebbels', 'Pebbels'], ['dobby', 'Dobby']].map(([k, n]) =>
+    `<label class="field" for="pd_${k}">${n}<span>Keer per dag.</span><input type="number" id="pd_${k}" class="petDay" data-p="${k}" min="0" max="12" value="${PD[k] === undefined ? 2 : PD[k]}"></label>`).join('');
+  $('ePetTogether').value = E.pets_together === undefined ? 25 : E.pets_together;
   $('evTable').tBodies[0].innerHTML = (world.events || []).map(ev => `<tr><td><input type="checkbox" class="evOn" data-e="${ev.id}" ${(E.off || []).includes(ev.id) ? '' : 'checked'} aria-label="${esc(ev.name)} aan"></td>
     <td>${esc(ev.name)}</td><td>${CATN[ev.cat] || ev.cat}</td><td><button type="button" class="evPlay" data-e="${ev.id}" aria-label="${esc(ev.name)} nu tonen">▶</button></td></tr>`).join('');
   for (const k of ['grond', 'horizon', 'lucht', 'kader']) { $(`z_${k}_0`).value = s.sizes[k][0]; $(`z_${k}_1`).value = s.sizes[k][1]; }
@@ -998,7 +1007,8 @@ $('setForm').addEventListener('submit', async (e) => {
     compose: { styles: Object.fromEntries([...document.querySelectorAll('.cStyle')].map(e => [e.dataset.s, e.checked])), color: $('compColor').checked },
     hills: { chance: +$('hChance').value || 0, height: +$('hHeight').value || 18 }, stack: { chance: +$('stChance').value || 0, max: +$('stMax').value || 3 },
     counts: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`n_${part}_${k}_0`).value || 0, +$(`n_${part}_${k}_1`).value || 0]]))])),
-    events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0,
+    events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0, pets_together: +$('ePetTogether').value || 0,
+      pets_per_day: Object.fromEntries([...document.querySelectorAll('.petDay')].map(e => [e.dataset.p, +e.value || 0])),
       off: [...document.querySelectorAll('.evOn')].filter(e => !e.checked).map(e => e.dataset.e) }, giant_chance: +$('sGiant').value, horizon_sink: +$('sSink').value || 0,
     sizes: Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`z_${k}_0`).value || 3, +$(`z_${k}_1`).value || 3]])),
     tap_url: $('sTap').value, empty_tap: $('sEmpty').value, sun_script: $('sSunScript').value, moon_script: $('sMoonScript').value,
