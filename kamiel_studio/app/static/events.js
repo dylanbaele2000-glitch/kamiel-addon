@@ -1,7 +1,7 @@
 /* Kamiel's world events: little things that happen now and then, so Kamiel feels alive.
    Every event lasts at most a minute. The list below is also read by the add-on (Studio, Telegram /event),
    so keep one event per line, written exactly like this: id, name, cat.
-   cat: 'lama' = the daily visit, 'vaak' = a few times a day, 'soms' = a few times a week. */
+   cat: 'lama' = the daily visit, 'intern' = only when the house asks for it (doorbell, camera), 'vaak' = a few times a day, 'soms' = a few times a week. */
 (function () {
   const LIST = [
     { id: 'lama', name: 'Heidi komt langs (de witte lama)', cat: 'lama' },
@@ -74,6 +74,8 @@
     { id: 'muis-slepen', name: 'Een computermuis versleept Kamiel', cat: 'soms' },
     { id: 'echte-muis', name: 'Een echte muis', cat: 'soms' },
     { id: 'lucht-valt', name: 'De lucht valt naar beneden', cat: 'soms' },
+    { id: 'deurbel', name: 'Er wordt aangebeld', cat: 'intern' },
+    { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
   ];
 
   const CATS = { lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
@@ -564,6 +566,41 @@
           kam.eyes = 'groot'; emote('!?', 2); yield* wait(2); kam.eyes = '';
           yield* leave(false); yield* wait(1.5);
         }
+      } },
+      // the doorbell: a camera still appears in a frame next to Kamiel, and he goes to have a look
+      deurbel: { run: function* () {
+        kam.eyes = 'groot'; emote('!', 1.6);
+        yield* tween(.3, p => { kam.y = Math.sin(p * Math.PI) * 45; }); kam.y = 0;
+        yield* until(() => hitsOf(2, hh => hh.it.door).length > 0, 1.5);
+        const hh = hitsOf(2, h2 => h2.it.door)[0], dogs = A.doorPets ? A.doorPets() : !!(hh && hh.it.doorPets);
+        // with a camera still: walk up to its frame. Without: look at the edge of the screen, where the door would be
+        const side = hh ? (hh.x + hh.w / 2 - W / 2 > kam.x ? 1 : -1) : sideOfRoom();
+        const fx0 = hh ? hh.x + hh.w / 2 : W / 2 + side * (W / 2 + 40);
+        if (hh) yield* walkTo(clamp(fx0 - W / 2 - side * (hh.w / 2 + 70), -W / 2 + 90, W / 2 - 90), 110, 10);
+        else yield* walkTo(side * 140, 90);
+        kam.face = side; kam.eyes = ''; kam.head = .1; emote('?', 2); yield* wait(2);
+        yield* tween(2.2, p => { kam.head = .08 + Math.sin(p * 14) * .05; });
+        kam.head = 0;
+        if (dogs) {   // the dogs hear it too
+          const a = pet('wifi', -side), b = pet('snoet', -side);
+          const spot = (dx) => clamp(fx0 + side * dx, 60, W - 60);
+          yield* par(
+            (function* () { yield* petTo(a, spot(-60), PET.wifi.run * 1.4); for (let k = 0; k < 4; k++) { yield* petJump(a, 16, .28); emote('burst', .45, a); yield* wait(.25); } })(),
+            (function* () { yield* wait(.5); yield* petTo(b, spot(-110), PET.snoet.run * 1.4); for (let k = 0; k < 5; k++) { yield* petJump(b, 12, .22); emote('burst', .4, b); yield* wait(.2); } })());
+          kam.eyes = 'groot'; emote('sweat', 2.5); yield* wait(1.5);
+          yield* par(petLeave(a, -side, PET.wifi.run * 1.6), (function* () { yield* wait(.3); yield* petLeave(b, -side, PET.snoet.run * 1.6); })());
+        } else { emote('dots', 2.2); yield* wait(2.2); }
+        kam.eyes = 'blij'; emote(rnd() < .5 ? 'heart' : '!', 1.6); yield* wait(1.8); kam.eyes = '';
+        yield* walkTo(0, 70);
+      } },
+      // someone stands in front of the tablet: Kamiel comes closer to have a look, then goes back
+      kijken: { run: function* () {
+        kam.eyes = 'groot'; emote('!', 1.2); yield* wait(1.1); kam.eyes = '';
+        yield* approach(1.6, 390, 1370, FEET + 75, 2.6);
+        kam.head = .06; yield* wait(.6); kam.eyes = 'dicht'; yield* wait(.2); kam.eyes = ''; yield* wait(.8);
+        emote(pick(['heart', '?', 'hearts']), 2); kam.eyes = 'blij'; yield* wait(2.2);
+        kam.eyes = ''; kam.head = 0; yield* wait(.5);
+        yield* backOff(2.4);
       } },
       wifi: { run: function* () { yield* petVisit('wifi'); } },
       snoet: { run: function* () { yield* petVisit('snoet'); } },
@@ -1327,7 +1364,7 @@
     const offList = () => (cfg.off || []);
     const can = (id) => { const d = DEF[id]; try { return !!d && (!d.can || d.can()); } catch (e) { return false; } };
     function choose(cat, forced) {
-      const pool = LIST.filter(e => (!cat || e.cat === cat) && (forced || !offList().includes(e.id)) && can(e.id));
+      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern') && (forced || !offList().includes(e.id)) && can(e.id));
       return pool.length ? pick(pool).id : null;
     }
     function start(id) {

@@ -369,6 +369,7 @@ function schedule() {
   const d = now();
   updateSeason();
   if (remShown && !params.get('r') && !KamielReminder.isActive(remShown, d)) remShown = null;
+  if (calm()) return;   // the quiet mode (a rule, or 'niet storen'): no walking, no events
   EV.check(d);
   if (walking || EV.active) return;
   if (msToWalk() <= 0) { lastWalk = Date.now(); if (!EV.walkNow()) go(rnd() < .5 ? -1 : 1); }
@@ -523,12 +524,53 @@ async function pollLive() {
     if (lastEventN !== null && j.event.n !== lastEventN) EV.request(j.event.id || '');
     lastEventN = j.event.n;
   } else if (lastEventN === null) lastEventN = 0;
+  // things the rules and the doorbell ask for (see "Als dit, dan dat" in the Studio)
+  const acts = j.actions || [];
+  if (lastActionN === null) lastActionN = acts.length ? acts[acts.length - 1].n : 0;   // after a reload: nothing old again
+  for (const a of acts) if (a.n > lastActionN) { lastActionN = a.n; doAction(a); }
   const tr = j.trigger;
   if (tr && lastTrigger !== null && tr.changed !== lastTrigger && tr.on) showBoard();
   setTimers(j.timers);
   if (tr) lastTrigger = tr.changed;
 }
-let lastSnap = null, lastEventN = null;
+let lastSnap = null, lastEventN = null, lastActionN = null;
+let tempOutfit = null, tempOutfitUntil = 0, calmUntil = 0;
+let doorPets = false;   // the doorbell event: do Wifi and Snoet come barking along
+function doAction(a) {
+  if (a.type === 'event') { if (a.id === 'deurbel') doorPets = a.on !== false; EV.request(a.id || ''); }
+  else if (a.type === 'frame') { doorPets = !!a.pets; placeDoor('media/' + a.file, a.minutes || 10, a.pets); if (a.door !== false) EV.request('deurbel'); }
+  else if (a.type === 'kleren') { tempOutfit = a.ids || []; tempOutfitUntil = Date.now() + (a.minutes || 10) * 60000; }
+  else if (a.type === 'rust') calmUntil = a.on === false ? 0 : Date.now() + (a.minutes || 30) * 60000;
+  else if (a.type === 'vertrek') showBoard();
+  else if (a.type === 'beweging') sawSomeone(false);
+}
+/* the tablet's own camera: Fully Kiosk (PLUS) sees movement and tells us through its JavaScript interface */
+const MOT = S.motion || {};
+let lastMotion = Date.now();
+function sawSomeone(report) {
+  const n = Date.now(), recent = n - lastMotion < 25000; lastMotion = n;
+  if (report) fetch('api/motion', { method: 'POST' }).catch(() => {});
+  if (MOT.wake && window.fully) { try { if (!fully.getScreenOn()) fully.turnScreenOn(); } catch (e) { } }
+  if (!recent && MOT.look !== false && !calm()) EV.request('kijken');
+}
+window.__kamielMotion = () => sawSomeone(true);
+if (MOT.on && window.fully) { try { fully.bind('onMotion', 'window.__kamielMotion && window.__kamielMotion();'); } catch (e) { } }
+// no one around for a while: the screen may go dark (and comes back on with movement)
+setInterval(() => {
+  if (!MOT.on || !window.fully || !MOT.screen_off || MOT.screen_off === 'nooit') return;
+  if (MOT.screen_off === 'nacht' && !isNightTime(now())) return;
+  if (Date.now() - lastMotion > (MOT.off_after || 10) * 60000) { try { if (fully.getScreenOn()) fully.turnScreenOff(true); } catch (e) { } }
+}, 30000);
+const calm = () => Date.now() < calmUntil;
+// a still from a camera (the doorbell, or any rule): a frame right next to Kamiel, until its time is up or someone taps it
+let doorTimer = null;
+function placeDoor(url, minutes, pets) {
+  dropSign('door');
+  const o = FRAME(), i = placeIndex(), p = places[i]; if (!p) return;
+  placeSign('door', o, .42);
+  const it = p.items.find(x => x.door); if (it) { it.photo = url; it.cache = null; it.doorPets = !!pets; }
+  clearTimeout(doorTimer); doorTimer = setTimeout(() => dropSign('door'), minutes * 60000);
+}
 // /kijk on Telegram: a still of the screen, with the camcorder text on it
 function sendSnapshot(id) {
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
@@ -598,12 +640,12 @@ function placeSign(key, obj, size) {
   const asp0 = obj.size[0] / obj.size[1];
   size = Math.min(size, 340 / asp0 / H);
   const h = H * size, w = h * asp0;
-  const other = p.items.find(x => (x.board || x.timer) && !x[key]);
+  const other = p.items.find(x => (x.board || x.timer || x.door) && !x[key]);
   const weight = (sd) => p.items.filter(x => x.layer === 2 && Math.sign(x.dx) === sd && !x.hiddenBy).reduce((a, x) => a + x.h * x.o.size[0] / x.o.size[1], 0);
   const side = other ? -Math.sign(other.dx) : (weight(-1) <= weight(1) ? -1 : 1);
   const dx = side * Math.min(94 + w / 2 + 8, PLACE / 2 - 24 - w / 2);
   for (const x of p.items) {
-    if (x.layer !== 2 || x.on || x.board || x.timer || x.hiddenBy) continue;   // horizon and sky stay: the sign stands in front
+    if (x.layer !== 2 || x.on || x.board || x.timer || x.door || x.hiddenBy) continue;   // horizon and sky stay: the sign stands in front
     const xw = x.h * x.o.size[0] / x.o.size[1];
     if (x.dx + xw / 2 > dx - w / 2 - 20 && x.dx - xw / 2 < dx + w / 2 + 20) x.hiddenBy = key;
   }
@@ -1167,8 +1209,8 @@ function kamObj() {
   const ev = EV.active;
   return { cx: W / 2 + kam.x, feet: kam.feet !== null ? kam.feet : FEET - kam.y, s: kam.s, face: kam.face || dir,
     pose: ev ? (kam.pose || (blinkT < 0 ? 'blink' : 'stand')) : (walking ? 'walk' : (blinkT < 0 ? 'blink' : 'stand')),
-    wt: ev ? kam.wt : t * 6, r: kam.r, sq: kam.sq, sx: kam.sx, head: ev ? kam.head : nodAngle(), eyes: kam.eyes, eyeT: kam.eyeT, mouth: kam.mouth,
-    outfit: kam.outfit || outfit, tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush };
+    wt: ev ? kam.wt : t * 6, r: kam.r, sq: kam.sq, sx: kam.sx, head: ev ? kam.head : (calm() ? .14 : nodAngle()), eyes: !ev && calm() ? 'dicht' : kam.eyes, eyeT: kam.eyeT, mouth: kam.mouth,
+    outfit: kam.outfit || (Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush };
 }
 function drawKamiel() { if (!kam.hide) drawLlama(ctx, kamObj()); }
 let rockets = [], flash = null;
@@ -1290,9 +1332,9 @@ EV = KamielEvents.create({
   night: () => isNightTime(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
-  now,
+  now, doorPets: () => doorPets,
 });
-if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex };
+if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk };
 requestAnimationFrame(loop);
 pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
@@ -1301,9 +1343,9 @@ setInterval(schedule, 15000);
 
 /* ---------- old-school windows: tap an empty spot ---------- */
 const deskEl = document.getElementById('desk');
-const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true, roepen: true }, S.windows || {});
-const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe' }, S.window_titles || {});
-const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾' };
+const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true, roepen: true, lampen: true }, S.windows || {});
+const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe', lampen: 'Lampen.exe' }, S.window_titles || {});
+const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾', lampen: '💡' };
 const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
   'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
 const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
@@ -1315,13 +1357,13 @@ async function loadDesk() { try { deskData = await (await fetch('api/desk', { ca
 async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { deskRows = []; } }
 function spots(keys) {
   const layout = S.window_layout || 'verspreid';
-  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6], roepen: [30, 52] };
+  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6], roepen: [30, 52], lampen: [62, 20] };
   return keys.map((k, n) => layout === 'netjes'
     ? [3 + (n % 3) * 32.5, 4 + Math.floor(n / 3) * 46]
     : [base[k][0] + (rnd() * 6 - 3), base[k][1] + (rnd() * 6 - 3)]);
 }
 async function openDesk(only) {
-  const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player));
+  const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player) && (k !== 'lampen' || (S.lamps || []).length));
   if (!keys.length) return;
   closeDesk(true);
   deskOpen = true; touchDesk();
@@ -1337,6 +1379,7 @@ async function openDesk(only) {
     if (Date.now() - lastTouch > (S.window_close || 60) * 1000) { closeDesk(); return; }
     if (wins.vertrek) fillVertrek();
     if (wins.knoppen || wins.muziek) { await loadDesk(); if (wins.knoppen) fillKnoppen(); if (wins.muziek) fillMuziek(); }
+    if (wins.lampen) fillLampen();
   }, 5000);
 }
 function closeDesk(quiet) {
@@ -1348,7 +1391,7 @@ function front(el) { el.style.zIndex = ++zTop; deskEl.querySelectorAll('.win').f
 function makeWin(k, [lx, ty]) {
   const el = document.createElement('div'); el.className = 'win'; el.dataset.k = k;
   el.style.left = lx + '%'; el.style.top = ty + '%';
-  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%', roepen: '40%' }[k];
+  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%', roepen: '40%', lampen: '34%' }[k];
   el.innerHTML = `<div class="tb"><span>${ICON[k]}</span><span class="tt">${escH(TITLES[k])}</span>
     <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div><div class="bd"></div>`;
   deskEl.appendChild(el); wins[k] = el; front(el);
@@ -1356,7 +1399,7 @@ function makeWin(k, [lx, ty]) {
   el.querySelector('[data-a=close]').addEventListener('click', () => closeWin(k));
   el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
   drag(el);
-  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel, roepen: fillRoepen })[k]();
+  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel, roepen: fillRoepen, lampen: fillLampen })[k]();
   // keep it on screen
   const r = el.getBoundingClientRect(), dr = deskEl.getBoundingClientRect();
   if (r.right > dr.right - 4) el.style.left = Math.max(0, dr.width - r.width - 8) + 'px';
@@ -1493,6 +1536,21 @@ function tickWandel() {
   n.textContent = EV.active ? 'Er gebeurt iets…' : walking ? 'Kamiel wandelt nu' : (EV.walkPending() ? 'Er staat iets speciaals te gebeuren' : '\u00a0');
 }
 
+// the lights and sockets chosen in the Studio: tap to switch
+async function fillLampen() {
+  const b = bodyOf('lampen'); if (!b) return;
+  let list = []; try { list = await (await fetch('api/lamps', { cache: 'no-store' })).json(); } catch (e) { }
+  if (!wins.lampen) return;
+  if (!list.length) { b.innerHTML = '<p class="muted">Nog geen lampen gekozen. Dat doe je in Kamiel Studio → Instellingen → Lampen.</p>'; return; }
+  b.innerHTML = `<div class="kgrid">${list.map(l => `<button class="b95 kbtn ${l.on ? 'on' : ''}" data-l="${escH(l.entity)}" ${l.ok ? '' : 'disabled style="opacity:.45"'}>
+      <span class="ki">${l.kind === 'light' ? (l.on ? '💡' : '🔅') : '🔌'}</span><span class="kl">${escH(l.name)}</span><span class="led"></span></button>`).join('')}</div>`;
+  b.querySelectorAll('[data-l]').forEach(el => el.addEventListener('click', async () => {
+    touchDesk(); el.classList.toggle('on');
+    await post('api/lamp/' + encodeURIComponent(el.dataset.l));
+    setTimeout(fillLampen, 900);
+  }));
+}
+
 // call one of the housemates (or Heidi) to the scene
 const CALLS = [['wifi', 'Wifi'], ['snoet', 'Snoet'], ['pippa', 'Pippa'], ['pebbels', 'Pebbels'], ['dobby', 'Dobby'], ['lama', 'Heidi']];
 function fillRoepen() {
@@ -1527,6 +1585,10 @@ document.addEventListener('pointerup', (e) => {
       if (spotlight) post('api/photo-seen/' + spotlight.id);
       dropSpot(); return;
     }
+  }
+  for (let k = hits.length - 1; k >= 0; k--) {
+    const hh = hits[k];
+    if (hh.it.door && x >= hh.x && x <= hh.x + hh.w && y >= hh.y && y <= hh.y + hh.h) { dropSign('door'); return; }
   }
   if (message && msgAlpha > .3) { dismissed.add(message.id); post('api/seen/' + message.id); message = null; return; }   // "read it"
   if (remShown && remAlpha > .3) {   // a reminder: gone until its next time

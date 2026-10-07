@@ -149,6 +149,27 @@ label.sw span{font-size:12.5px;color:var(--muted)}
 .steps{margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .chatchip{display:inline-flex;align-items:center;gap:8px;background:var(--chip);border-radius:999px;padding:4px 6px 4px 12px;font-weight:600}
 .chatchip button{min-height:30px;padding:2px 10px;font-size:13px}
+/* Huis: rules as cards with ALS / MAG / DAN */
+.rule{border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--bg);display:flex;flex-direction:column;gap:10px}
+.rule.off{opacity:.6}
+.rhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rhead .rName{flex:1;min-width:180px;font-weight:600}
+.rpart{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px;align-items:start}
+.tag{font:700 12px var(--f-osd);letter-spacing:.08em;border-radius:8px;padding:6px 0;text-align:center;margin-top:24px}
+.tag.als{background:#ffe9a8;color:#5a4300}.tag.mag{background:var(--chip);color:var(--muted)}.tag.dan{background:#cfe0ff;color:#0b2a7a}
+.rfields{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.rule label.f{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:13px;min-width:120px}
+.rule label.f.grow{flex:1;min-width:200px}
+.rule .now{font-size:13px;color:var(--muted);padding-bottom:10px}
+.acts{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.act{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--card)}
+.act .full{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px 16px}
+.act .aDel{margin-left:auto}
+.ochips{display:flex;flex-wrap:wrap;gap:6px}
+.ochips label{display:inline-flex;gap:4px;align-items:center;background:var(--chip);border-radius:8px;padding:3px 8px;font-size:13px}
+.rsum{margin:0;font-size:14px;color:var(--muted);font-style:italic}
+#ruleExamples button{min-height:36px;padding:6px 12px;font-weight:500}
+@media (max-width:600px){.rpart{grid-template-columns:1fr}.tag{margin-top:0;width:52px}}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
@@ -169,6 +190,7 @@ label.sw span{font-size:12.5px;color:var(--muted)}
     <button type="button" role="tab" id="tab-foto" aria-controls="p-foto" aria-selected="false">Foto's</button>
     <button type="button" role="tab" id="tab-bord" aria-controls="p-bord" aria-selected="false">Bordteksten</button>
     <button type="button" role="tab" id="tab-her" aria-controls="p-her" aria-selected="false">Herinneringen</button>
+    <button type="button" role="tab" id="tab-huis" aria-controls="p-huis" aria-selected="false">Huis</button>
     <button type="button" role="tab" id="tab-inst" aria-controls="p-inst" aria-selected="false">Instellingen</button>
   </nav>
 
@@ -330,6 +352,114 @@ label.sw span{font-size:12.5px;color:var(--muted)}
   </section>
 
   <!-- INSTELLINGEN -->
+  <section id="p-huis" role="tabpanel" aria-labelledby="tab-huis" hidden style="display:flex;flex-direction:column;gap:18px">
+    <datalist id="entList"></datalist>
+
+    <div class="card" id="cardBel">
+      <h2>🔔 Deurbel</h2>
+      <p class="hint">Belt er iemand aan, dan hangt er meteen een foto van de deurcamera in een kader naast Kamiel. Kamiel schrikt, gaat kijken, en Wifi en Snoet komen blaffen. Tik op het kader om het weg te doen; anders verdwijnt het vanzelf. Zonder camera gaat Kamiel gewoon nieuwsgierig kijken.</p>
+      <details class="guide">
+        <summary>Hoe stel ik dit in? (stap voor stap)</summary>
+        <ol class="steps">
+          <li><b>Kies een deurbel die met Home Assistant praat.</b> Het makkelijkst zijn deurbellen die thuis in je eigen netwerk werken, zonder abonnement: <b>Reolink</b> (video-deurbel), <b>Amcrest</b>, <b>Doorbird</b> of <b>UniFi Protect</b>. Ring en Google Nest werken ook, maar zijn trager en tonen soms een ouder beeld. Een gewone (domme) bel kan ook, met een slim modulletje erachter (bijvoorbeeld Shelly).</li>
+          <li><b>Voeg de bel toe aan Home Assistant.</b> Instellingen → Apparaten en diensten → <i>Integratie toevoegen</i> → zoek het merk (bv. "Reolink") en volg de stappen. Meestal vraagt hij het IP-adres van de bel, een gebruikersnaam en een wachtwoord (die van de app van de bel).</li>
+          <li><b>Zoek de "er wordt gebeld"-entiteit.</b> Open in Home Assistant het apparaat van je bel. Je zoekt iets dat verandert als er iemand op de knop drukt. Meestal heet het:
+            <ul>
+              <li><code>event.…_bezoeker</code> of <code>event.…_doorbell</code> (een <i>gebeurtenis</i>: nieuwere integraties), of</li>
+              <li><code>binary_sensor.…_visitor</code>, <code>…_ding</code> of <code>…_doorbell</code> (een sensor die even op <i>aan</i> springt).</li>
+            </ul>
+            Niet zeker? Druk op de bel en kijk in Home Assistant welke entiteit op dat moment verandert (Instellingen → Logboek).</li>
+          <li><b>Zoek de camera.</b> Bij hetzelfde apparaat staat een entiteit die begint met <code>camera.</code>, bijvoorbeeld <code>camera.voordeur</code> of <code>camera.deurbel_vloeiend</code>. Kies liefst de "heldere" stroom (niet "vloeiend" of "sub"), dan is de foto scherper.</li>
+          <li><b>Vul ze hieronder in</b>, zet de deurbel aan en klik op <b>Opslaan</b>.</li>
+          <li><b>Probeer het.</b> Met <b>Test</b> doet het systeem alsof er gebeld wordt: je ziet binnen een paar seconden de foto op de tablet. Daarna echt eens aanbellen.</li>
+        </ol>
+        <p class="hint"><b>"Hoe weet hij dat er gebeld wordt?"</b> Laat dit op <i>Automatisch</i> staan. Een <code>event.</code>-entiteit verandert bij elke druk op de knop; een <code>binary_sensor</code> springt op aan. Werkt het niet, probeer dan "Als het verandert".</p>
+        <p class="hint"><b>Privacy:</b> de foto's blijven in Home Assistant bij jou thuis. Standaard worden enkel de laatste tien bewaard (en daarna overschreven), tenzij je "bewaren in het album" aanvinkt.</p>
+      </details>
+      <label class="sw"><input type="checkbox" id="dbOn"><span><b>Deurbel aan</b><span>Zonder dit vinkje gebeurt er niets als er gebeld wordt.</span></span></label>
+      <div class="settings">
+        <label class="field" for="dbTrigger">De bel (er wordt gebeld)
+          <span>Een <code>event.</code>, <code>binary_sensor.</code> of knop. Begin te typen om te zoeken.</span>
+          <input type="text" id="dbTrigger" list="entList" placeholder="bv. event.voordeur_bezoeker" autocomplete="off"></label>
+        <label class="field" for="dbMode">Hoe weet hij dat er gebeld wordt
+          <select id="dbMode"><option value="auto">Automatisch (aangeraden)</option><option value="aan">Als het aan gaat</option><option value="verandert">Als het verandert</option></select></label>
+        <label class="field" for="dbCam">De camera
+          <span>Optioneel. Zonder camera komt er geen foto.</span>
+          <select id="dbCam"></select></label>
+        <label class="field" for="dbMin">De foto blijft hangen (minuten)<input type="number" id="dbMin" min="1" max="240"></label>
+      </div>
+      <label class="sw"><input type="checkbox" id="dbPets"><span><b>Wifi en Snoet komen blaffen</b><span>Zoals echte honden als de bel gaat.</span></span></label>
+      <label class="sw"><input type="checkbox" id="dbTg"><span><b>Ook een berichtje via Telegram</b><span>"🔔 Er werd aangebeld", met de foto erbij (als er een camera is).</span></span></label>
+      <label class="sw"><input type="checkbox" id="dbKeep"><span><b>De foto's bewaren in het album</b><span>Dan komen ze later ook in de gewone fotokaders. Anders blijven alleen de laatste tien en verdwijnen ze uit het album.</span></span></label>
+      <div class="row"><button type="button" class="primary" id="dbSave">Opslaan</button><button type="button" id="dbTest">Test: doe alsof er gebeld wordt</button><span class="status" id="dbStatus" role="status"></span></div>
+    </div>
+
+    <div class="card" id="cardRules">
+      <h2>✨ Als dit, dan dat</h2>
+      <p class="hint">Hier laat je Kamiel reageren op wat er in huis gebeurt. Elke regel heeft twee delen: <b>ALS</b> er iets gebeurt in Home Assistant (een deur gaat open, iemand komt thuis, de wasmachine stopt…), <b>DAN</b> doet Kamiel iets (een event, een bericht, een camerafoto, andere kleren…). Een regel kan meerdere dingen tegelijk doen.</p>
+      <details class="guide">
+        <summary>Hoe werkt een regel? (met voorbeelden)</summary>
+        <ol class="steps">
+          <li><b>Geef de regel een naam</b>, zodat je later weet waarvoor hij dient. Bijvoorbeeld "Voordeur open".</li>
+          <li><b>ALS: kies wat er moet gebeuren.</b> Typ een stukje van de naam van een sensor, lamp, deur, persoon… en kies uit de lijst. Kies dan wanneer hij moet reageren:
+            <ul>
+              <li><b>gaat aan</b>: een deur gaat open, beweging, een lamp gaat aan, iemand komt thuis;</li>
+              <li><b>gaat uit</b>: de deur gaat dicht, de beweging stopt;</li>
+              <li><b>verandert</b>: bij elke verandering (handig voor knoppen en deurbellen);</li>
+              <li><b>wordt precies</b>: bv. de wasmachine wordt <i>klaar</i>, of een persoon wordt <i>home</i>;</li>
+              <li><b>gaat boven / zakt onder</b> een getal: bv. de temperatuur gaat boven 25, het stroomverbruik zakt onder 5.</li>
+            </ul>
+            Rechts van de keuze zie je wat de sensor <i>nu</i> zegt. Dat helpt om de juiste waarde te kiezen.</li>
+          <li><b>Wanneer mag het?</b> Altijd, enkel overdag of enkel 's nachts, en eventueel alleen tussen twee uren. Met "niet vaker dan elke … minuten" voorkom je dat het tien keer na elkaar gebeurt.</li>
+          <li><b>DAN: kies wat Kamiel doet.</b> Klik op "+ Nog iets doen" om meerdere dingen te combineren, bv. een foto van de camera <i>en</i> een Telegram-berichtje.</li>
+          <li><b>Testen</b> voert het DAN-deel meteen uit, zonder te wachten op de sensor. <b>Opslaan</b> onderaan bewaart alle regels.</li>
+        </ol>
+        <p class="hint"><b>Speciaal:</b> "Beweging voor de tablet" (<code>kamiel.beweging</code>) gaat aan als de camera van de tablet iemand ziet (zie <i>Camera van de tablet</i> hieronder).</p>
+        <p class="hint">Begin gerust met een voorbeeld hieronder en pas het aan.</p>
+      </details>
+      <div class="row" id="ruleExamples" aria-label="Voorbeelden"></div>
+      <div id="rules" class="rems"></div>
+      <div class="row"><button type="button" id="ruleAdd">+ Nieuwe regel</button><button type="button" class="primary" id="ruleSave">Alle regels opslaan</button><span class="status" id="ruleStatus" role="status"></span></div>
+    </div>
+
+    <div class="card" id="cardMot">
+      <h2>📷 Camera van de tablet</h2>
+      <p class="hint">De tablet kan met zijn eigen camera zien dat er iemand voor staat. Dan komt Kamiel nieuwsgierig dichterbij kijken, gaat het scherm aan, en kan het scherm uit als er lang niemand is. Er worden <b>geen</b> foto's of filmpjes gemaakt: de tablet ziet alleen "er beweegt iets".</p>
+      <details class="guide">
+        <summary>Hoe stel ik dit in? (in Fully Kiosk op de tablet)</summary>
+        <ol class="steps">
+          <li>Dit werkt met <b>Fully Kiosk Browser PLUS</b> (de betaalde versie, eenmalig een paar euro per tablet). Je hebt die licentie al als je het scherm via Fully aan en uit kan zetten.</li>
+          <li>Open op de tablet de instellingen van Fully: veeg van links naar rechts en tik op <b>Settings</b> (of tik vijf keer snel in de hoek).</li>
+          <li>Ga naar <b>Advanced Web Settings</b> en zet <b>Enable JavaScript Interface</b> aan. Daarmee mag Kamiels pagina horen wat de tablet ziet.</li>
+          <li>Ga naar <b>Motion Detection</b> en zet <b>Enable Visual Motion Detection</b> aan. Kies de camera aan de voorkant. Zet <b>Turn Screen On on Motion</b> gerust ook aan.</li>
+          <li>Tik op het scherm "terug" en herlaad Kamiel. Zwaai voor de tablet: Kamiel komt kijken.</li>
+          <li>Te gevoelig of niet gevoelig genoeg? In Motion Detection kan je de <i>Motion Sensitivity</i> aanpassen.</li>
+        </ol>
+        <p class="hint"><b>Geen Fully PLUS?</b> Kies dan hieronder een bewegingssensor van Home Assistant (bijvoorbeeld in de gang). Dat werkt net zo.</p>
+      </details>
+      <label class="sw"><input type="checkbox" id="mOn"><span><b>Reageren op beweging</b><span>Van de tablet zelf, of van de sensor hieronder.</span></span></label>
+      <label class="sw"><input type="checkbox" id="mLook"><span><b>Kamiel komt kijken</b><span>Hij komt even dichterbij als er iemand voor de tablet staat (niet vaker dan om de halve minuut).</span></span></label>
+      <label class="sw"><input type="checkbox" id="mWake"><span><b>Scherm aan bij beweging</b></span></label>
+      <div class="settings">
+        <label class="field" for="mOff">Scherm uit als er niemand is
+          <select id="mOff"><option value="nooit">Nooit</option><option value="nacht">Alleen 's nachts</option><option value="altijd">Altijd</option></select></label>
+        <label class="field" for="mAfter">Na hoeveel minuten zonder beweging<input type="number" id="mAfter" min="1" max="240"></label>
+        <label class="field" for="mEnt">Of een bewegingssensor van Home Assistant
+          <span>Optioneel, in plaats van (of naast) de camera van de tablet.</span>
+          <select id="mEnt"></select></label>
+      </div>
+      <div class="row"><button type="button" class="primary" id="mSave">Opslaan</button><span class="status" id="mStatus" role="status"></span></div>
+    </div>
+
+    <div class="card" id="cardLamps">
+      <h2>💡 Lampen en stopcontacten</h2>
+      <p class="hint">Kies de lampen en stopcontacten die je op de tablet wil kunnen aan- en uitzetten. Ze verschijnen als knoppen in het venster <b>Lampen</b> (tik op een lege plek in de scène). Alleen wat je hier aanvinkt kan de tablet bedienen.</p>
+      <input type="search" id="lampSearch" placeholder="Zoeken, bv. keuken" aria-label="Lampen zoeken" style="max-width:320px">
+      <div id="lampList" class="choices"></div>
+      <div class="row"><button type="button" class="primary" id="lampSave">Opslaan</button><span class="status" id="lampStatus" role="status"></span></div>
+    </div>
+  </section>
+
   <section id="p-inst" role="tabpanel" aria-labelledby="tab-inst" hidden>
     <form class="card" id="setForm">
       <h2>Instellingen</h2>
@@ -464,6 +594,7 @@ label.sw span{font-size:12.5px;color:var(--muted)}
           <tr><td><input type="checkbox" class="wOn" data-k="muziek" aria-label="Muziek (als er een speaker gekozen is) aan"></td><td>Muziek (als er een speaker gekozen is)</td><td><input type="text" class="wTitle" data-k="muziek" maxlength="24" placeholder="Muziek.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="wandel" aria-label="Wandelen aan"></td><td>Wandelen: aftellen tot de volgende plek, met pijltjes om Kamiel zelf te sturen</td><td><input type="text" class="wTitle" data-k="wandel" maxlength="24" placeholder="Wandel.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="roepen" aria-label="Roepen aan"></td><td>Roepen: een huisdier of Heidi naar de scène roepen</td><td><input type="text" class="wTitle" data-k="roepen" maxlength="24" placeholder="Roepen.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="lampen" aria-label="Lampen aan"></td><td>Lampen: lampen en stopcontacten aan- en uitzetten (kies ze in het tabblad Huis)</td><td><input type="text" class="wTitle" data-k="lampen" maxlength="24" placeholder="Lampen.exe"></td></tr>
         </tbody>
       </table>
       <div class="settings" style="margin-top:14px">
@@ -943,7 +1074,7 @@ async function renderSettings() {
   $('petDays').innerHTML = [['wifi', 'Wifi'], ['snoet', 'Snoet'], ['pippa', 'Pippa'], ['pebbels', 'Pebbels'], ['dobby', 'Dobby']].map(([k, n]) =>
     `<label class="field" for="pd_${k}">${n}<span>Keer per dag.</span><input type="number" id="pd_${k}" class="petDay" data-p="${k}" min="0" max="12" value="${PD[k] === undefined ? 2 : PD[k]}"></label>`).join('');
   $('ePetTogether').value = E.pets_together === undefined ? 25 : E.pets_together;
-  $('evTable').tBodies[0].innerHTML = (world.events || []).map(ev => `<tr><td><input type="checkbox" class="evOn" data-e="${ev.id}" ${(E.off || []).includes(ev.id) ? '' : 'checked'} aria-label="${esc(ev.name)} aan"></td>
+  $('evTable').tBodies[0].innerHTML = (world.events || []).filter(ev => ev.cat !== 'intern').map(ev => `<tr><td><input type="checkbox" class="evOn" data-e="${ev.id}" ${(E.off || []).includes(ev.id) ? '' : 'checked'} aria-label="${esc(ev.name)} aan"></td>
     <td>${esc(ev.name)}</td><td>${CATN[ev.cat] || ev.cat}</td><td><button type="button" class="evPlay" data-e="${ev.id}" aria-label="${esc(ev.name)} nu tonen">▶</button></td></tr>`).join('');
   for (const k of ['grond', 'horizon', 'lucht', 'kader']) { $(`z_${k}_0`).value = s.sizes[k][0]; $(`z_${k}_1`).value = s.sizes[k][1]; }
   $('sGiant').value = s.giant_chance; $('sSink').value = s.horizon_sink;
@@ -1028,6 +1159,200 @@ $('setForm').addEventListener('submit', async (e) => {
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
 
+
+/* ---------- Huis: doorbell, if-this-then-that, the tablet's camera, lamps ---------- */
+let ENTS = [], ENTMAP = {}, RULES = [], huisDone = false;
+const BEWEGING = { id: 'kamiel.beweging', name: 'Beweging voor de tablet', state: '' };
+const COND_NL = [['aan', 'gaat aan / open'], ['uit', 'gaat uit / dicht'], ['verandert', 'verandert'], ['is', 'wordt precies'], ['boven', 'gaat boven'], ['onder', 'zakt onder']];
+const WHEN_NL = [['altijd', 'Altijd'], ['dag', 'Enkel overdag'], ['nacht', "Enkel 's nachts"]];
+const ACT_NL = [['event', '🎬 Een event of huisdier'], ['bericht', '💬 Een bericht op het scherm'], ['camera', '📷 Een camerafoto in een kader'], ['kleren', '🎩 Andere kleren aan'],
+  ['rust', '😴 Rustig (geen events, ogen dicht)'], ['vertrek', '🚌 Het vertrekbord tonen'], ['ha', '🏠 Iets in Home Assistant starten'], ['telegram', '✉️ Een Telegram-bericht sturen']];
+const HA_DOMS = ['script', 'scene', 'automation', 'light', 'switch', 'input_boolean', 'fan', 'cover'];
+const LAMP_DOMS = ['light', 'switch', 'input_boolean', 'fan'];
+const entName = (id) => id === BEWEGING.id ? BEWEGING.name : (ENTMAP[id] || {}).name || id;
+const entOpts = (doms, v, none) => `<option value="">${none}</option>` + ENTS.filter(e => doms.includes(e.id.split('.')[0])).map(e => `<option value="${e.id}" ${e.id === v ? 'selected' : ''}>${esc(e.name)} (${e.id})</option>`).join('')
+  + (v && !ENTMAP[v] ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : '');
+const newAct = (type) => ({ type: type || 'event', id: '', text: '', entity: '', minutes: 10, ids: [], photo: false, keep: false, on: true });
+const EXAMPLES = [
+  ['🚪 Voordeur gaat open', { name: 'Voordeur gaat open', entity: '', cond: 'aan', cooldown: 2, actions: [newAct('event')].map(a => Object.assign(a, { id: 'schrikken' })) }],
+  ['🧺 De was is klaar', { name: 'De was is klaar', entity: '', cond: 'onder', value: '5', cooldown: 30, actions: [Object.assign(newAct('bericht'), { text: 'DE WAS IS KLAAR', minutes: 30 })] }],
+  ['🏡 Iemand komt thuis', { name: 'Iemand komt thuis', entity: '', cond: 'is', value: 'home', cooldown: 10, actions: [Object.assign(newAct('event'), { id: 'blij' }), Object.assign(newAct('bericht'), { text: 'WELKOM THUIS', minutes: 10 })] }],
+  ['🌧️ Het regent', { name: 'Het regent', entity: '', cond: 'is', value: 'rainy', cooldown: 60, actions: [Object.assign(newAct('kleren'), { ids: ['regenjas'], minutes: 120 })] }],
+  ['🌙 Beweging bij de tablet, \'s nachts', { name: 'Nachtwandelaar', entity: BEWEGING.id, cond: 'aan', when: 'nacht', cooldown: 15, actions: [Object.assign(newAct('event'), { id: 'slapen' })] }],
+];
+function newRule(o) { return Object.assign({ id: Math.random().toString(36).slice(2, 10), name: '', on: true, entity: '', cond: 'aan', value: '', from: '', to: '', when: 'altijd', cooldown: 5, actions: [newAct('event')] }, JSON.parse(JSON.stringify(o || {}))); }
+
+function actFields(a) {
+  const evs = (world.events || []).filter(e => e.id !== 'kijken');
+  const CATN = { lama: 'Heidi', dier: 'Huisdieren', vaak: 'Kamiel', soms: 'Kamiel (zeldzaam)', intern: 'Huis' };
+  const groups = [...new Set(evs.map(e => e.cat))].map(c => `<optgroup label="${CATN[c] || c}">` + evs.filter(e => e.cat === c).map(e => `<option value="${e.id}" ${e.id === a.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('') + '</optgroup>').join('');
+  const min = (label) => `<label class="f">${label}<input type="number" class="aMin" min="1" max="240" value="${a.minutes || 10}"></label>`;
+  const chk = (cls, on, label) => `<label class="sw"><input type="checkbox" class="${cls}" ${on ? 'checked' : ''}><span><b>${label}</b></span></label>`;
+  switch (a.type) {
+    case 'event': return `<label class="f">Welk<select class="aId"><option value="">Iets willekeurigs</option>${groups}</select></label>`;
+    case 'bericht': return `<label class="f grow">Tekst<input type="text" class="aText" maxlength="200" value="${esc(a.text)}" placeholder="bv. DE WAS IS KLAAR"></label>${min('Blijft staan (min.)')}`;
+    case 'camera': return `<label class="f grow">Camera<select class="aEnt">${entOpts(['camera'], a.entity, 'Kies een camera')}</select></label>${min('Blijft hangen (min.)')}
+      <div class="full">${chk('aOn', a.on !== false, 'Kamiel gaat kijken')} ${chk('aPets', a.id === 'pets', 'Wifi en Snoet komen blaffen')} ${chk('aKeep', a.keep, 'Bewaren in het album')}</div>`;
+    case 'kleren': return `<div class="full"><div class="ochips">${KamielOutfits.OUTFITS.map(o => `<label><input type="checkbox" class="aIds" value="${o.id}" ${(a.ids || []).includes(o.id) ? 'checked' : ''}> ${esc(o.name)}</label>`).join('')}</div>
+      <span class="hint">Tot vijf stuks. Daarna draagt hij weer zijn eigen kleren.</span></div>${min('Hoe lang (min.)')}`;
+    case 'rust': return `<label class="f">Rustmodus<select class="aOnSel"><option value="1" ${a.on !== false ? 'selected' : ''}>Aan: Kamiel wordt rustig</option><option value="0" ${a.on === false ? 'selected' : ''}>Uit: weer gewoon</option></select></label>${a.on !== false ? min('Hoe lang (min.)') : ''}`;
+    case 'vertrek': return `<span class="hint">Het bord met bus en tram verschijnt naast Kamiel.</span>`;
+    case 'ha': return `<label class="f grow">Wat<select class="aEnt">${entOpts(HA_DOMS, a.entity, 'Kies een script, scène of lamp')}</select></label><span class="hint">Scripts en scènes worden gestart; lampen en schakelaars gaan aan of uit.</span>`;
+    case 'telegram': return `<label class="f grow">Tekst<input type="text" class="aText" maxlength="200" value="${esc(a.text)}" placeholder="bv. De voordeur ging open"></label>
+      <div class="full">${chk('aPhoto', a.photo, 'Met een foto van een camera')}</div>${a.photo ? `<label class="f grow">Camera<select class="aEnt">${entOpts(['camera'], a.entity, 'Kies een camera')}</select></label>` : ''}`;
+  }
+  return '';
+}
+function ruleSentence(r) {
+  if (!r.entity) return 'Kies bij ALS nog wat er moet gebeuren.';
+  const c = (COND_NL.find(x => x[0] === r.cond) || [])[1] || '';
+  const v = ['is', 'boven', 'onder'].includes(r.cond) ? ` "${r.value || '…'}"` : '';
+  const w = r.when === 'dag' ? ', overdag' : r.when === 'nacht' ? ", 's nachts" : '';
+  const t = r.from && r.to ? `, tussen ${r.from} en ${r.to}` : '';
+  const acts = r.actions.map(a => {
+    if (a.type === 'event') { const e = (world.events || []).find(x => x.id === a.id); return e ? `"${e.name}"` : 'een willekeurig event'; }
+    if (a.type === 'bericht') return `het bericht "${a.text || '…'}"`;
+    if (a.type === 'camera') return 'een camerafoto in een kader';
+    if (a.type === 'kleren') return 'andere kleren' + (a.ids.length ? ' (' + a.ids.map(id => (KamielOutfits.OUTFITS.find(o => o.id === id) || {}).name || id).join(', ') + ')' : '');
+    if (a.type === 'rust') return a.on !== false ? 'rust' : 'geen rust meer';
+    if (a.type === 'vertrek') return 'het vertrekbord';
+    if (a.type === 'ha') return a.entity ? entName(a.entity) : 'iets in Home Assistant';
+    if (a.type === 'telegram') return 'een Telegram-bericht';
+    return '';
+  }).filter(Boolean);
+  return `Als ${entName(r.entity)} ${c}${v}${w}${t}, dan: ${acts.length ? acts.join(' + ') : 'nog niets'}.`;
+}
+function renderRules() {
+  $('rules').innerHTML = RULES.length ? RULES.map((r, i) => {
+    const st = r.entity && (r.entity === BEWEGING.id ? '' : (ENTMAP[r.entity] || {}).state);
+    return `<div class="rule${r.on ? '' : ' off'}" data-i="${i}">
+    <div class="rhead"><label class="sw" title="Regel aan of uit"><input type="checkbox" class="rOn" ${r.on ? 'checked' : ''} aria-label="Regel aan"></label>
+      <input type="text" class="rName" maxlength="60" value="${esc(r.name)}" placeholder="Naam van de regel" aria-label="Naam van de regel">
+      <button type="button" class="rTest">▶ Testen</button><button type="button" class="rDel danger">Wissen</button></div>
+    <div class="rpart"><span class="tag als">ALS</span><div class="rfields">
+      <label class="f grow">Dit<input type="text" class="rEnt" list="entList" value="${esc(r.entity)}" placeholder="Typ om te zoeken: deur, beweging, wasmachine…" autocomplete="off"></label>
+      <label class="f">Wanneer het<select class="rCond">${COND_NL.map(([k, n]) => `<option value="${k}" ${k === r.cond ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      ${['is', 'boven', 'onder'].includes(r.cond) ? `<label class="f">Waarde<input type="text" class="rVal" value="${esc(r.value)}" placeholder="${r.cond === 'is' ? 'bv. home' : 'bv. 25'}"></label>` : ''}
+      ${st ? `<span class="now">Nu: <b>${esc(st)}</b></span>` : ''}
+      </div></div>
+    <div class="rpart"><span class="tag mag">MAG</span><div class="rfields">
+      <label class="f">Wanneer<select class="rWhen">${WHEN_NL.map(([k, n]) => `<option value="${k}" ${k === r.when ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="f">Vanaf (optioneel)<input type="time" class="rFrom" value="${r.from}"></label>
+      <label class="f">Tot<input type="time" class="rTo" value="${r.to}"></label>
+      <label class="f">Niet vaker dan elke (min.)<input type="number" class="rCool" min="0" max="1440" value="${r.cooldown}"></label>
+      </div></div>
+    <div class="rpart"><span class="tag dan">DAN</span><div class="acts">
+      ${r.actions.map((a, j) => `<div class="act" data-j="${j}"><label class="f">Kamiel doet<select class="aType">${ACT_NL.map(([k, n]) => `<option value="${k}" ${k === a.type ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        ${actFields(a)}${r.actions.length > 1 ? `<button type="button" class="aDel" aria-label="Weg">✕</button>` : ''}</div>`).join('')}
+      ${r.actions.length < 6 ? `<button type="button" class="aAdd">+ Nog iets doen</button>` : ''}
+    </div></div>
+    <p class="rsum">${esc(ruleSentence(r))}</p>
+  </div>`; }).join('') : '<div class="empty">Nog geen regels. Kies een voorbeeld hierboven, of maak een nieuwe regel.</div>';
+}
+// read one card back into the rules list
+function readRule(card) {
+  const r = RULES[+card.dataset.i], q = (c) => card.querySelector(c);
+  r.on = q('.rOn').checked; r.name = q('.rName').value; r.entity = q('.rEnt').value.trim(); r.cond = q('.rCond').value;
+  r.value = q('.rVal') ? q('.rVal').value : r.value; r.when = q('.rWhen').value; r.from = q('.rFrom').value; r.to = q('.rTo').value; r.cooldown = +q('.rCool').value || 0;
+  card.querySelectorAll('.act').forEach(el => {
+    const a = r.actions[+el.dataset.j], f = (c) => el.querySelector(c);
+    const type = f('.aType').value; if (type !== a.type) { r.actions[+el.dataset.j] = newAct(type); return; }
+    if (f('.aId')) a.id = f('.aId').value;
+    if (f('.aText')) a.text = f('.aText').value;
+    if (f('.aMin')) a.minutes = +f('.aMin').value || 10;
+    if (f('.aEnt')) a.entity = f('.aEnt').value;
+    if (f('.aOn')) a.on = f('.aOn').checked;
+    if (f('.aPets')) a.id = f('.aPets').checked ? 'pets' : '';
+    if (f('.aKeep')) a.keep = f('.aKeep').checked;
+    if (f('.aPhoto')) a.photo = f('.aPhoto').checked;
+    if (f('.aOnSel')) a.on = f('.aOnSel').value === '1';
+    if (el.querySelector('.aIds')) a.ids = [...el.querySelectorAll('.aIds:checked')].map(x => x.value).slice(0, 5);
+  });
+}
+$('rules').addEventListener('change', (e) => {
+  const card = e.target.closest('.rule'); if (!card) return;
+  readRule(card);
+  // things that change which fields show: draw the card again (keeps the others as they are)
+  if (e.target.matches('.aType, .rCond, .rEnt, .aOnSel, .aPhoto, .rOn')) { renderRules(); return; }
+  card.querySelector('.rsum').textContent = ruleSentence(RULES[+card.dataset.i]);
+});
+$('rules').addEventListener('input', (e) => { const card = e.target.closest('.rule'); if (card && e.target.matches('.rName, .aText, .rVal')) { readRule(card); card.querySelector('.rsum').textContent = ruleSentence(RULES[+card.dataset.i]); } });
+$('rules').addEventListener('click', async (e) => {
+  const card = e.target.closest('.rule'); if (!card) return;
+  const i = +card.dataset.i; readRule(card); const r = RULES[i];
+  if (e.target.closest('.rDel')) { if (confirm(`Regel "${r.name || 'zonder naam'}" wissen?`)) { RULES.splice(i, 1); renderRules(); status($('ruleStatus'), 'Niet vergeten: klik op "Alle regels opslaan".'); } }
+  else if (e.target.closest('.aAdd')) { r.actions.push(newAct('bericht')); renderRules(); }
+  else if (e.target.closest('.aDel')) { r.actions.splice(+e.target.closest('.act').dataset.j, 1); renderRules(); }
+  else if (e.target.closest('.rTest')) {
+    const res = await fetch('api/rule-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r) });
+    status($('ruleStatus'), res.ok ? `"${r.name || 'Regel'}" wordt nu uitgevoerd. Kijk op de tablet.` : 'Testen lukte niet.', res.ok ? 'ok' : 'err');
+  }
+});
+$('ruleAdd').addEventListener('click', () => { RULES.push(newRule()); renderRules(); $('rules').lastElementChild.querySelector('.rName').focus(); });
+$('ruleSave').addEventListener('click', async () => {
+  document.querySelectorAll('#rules .rule').forEach(readRule);
+  const missing = RULES.filter(r => !r.entity).length;
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules: RULES }) });
+  status($('ruleStatus'), !r.ok ? 'Opslaan mislukt.' : missing ? `Bewaard. Let op: ${missing} regel(s) zonder ALS werden niet bewaard.` : 'Bewaard. De regels werken meteen.', !r.ok || missing ? 'err' : 'ok');
+  if (r.ok) { const w = await (await fetch('api/world', { cache: 'no-store' })).json(); RULES = JSON.parse(JSON.stringify(w.settings.rules || [])); renderRules(); }
+});
+
+function renderLamps() {
+  const q = $('lampSearch').value.trim().toLowerCase(), chosen = new Set(LAMPS);
+  const list = ENTS.filter(e => LAMP_DOMS.includes(e.id.split('.')[0]) && (!q || (e.name + ' ' + e.id).toLowerCase().includes(q)));
+  $('lampList').innerHTML = list.length ? list.map(e => `<label class="choice"><input type="checkbox" class="lampOn" value="${e.id}" ${chosen.has(e.id) ? 'checked' : ''}>
+    <span><b>${{ light: '💡', switch: '🔌', input_boolean: '🔘', fan: '🌀' }[e.id.split('.')[0]] || ''} ${esc(e.name)}</b><span>${e.id} · nu ${esc(e.state)}</span></span></label>`).join('')
+    : `<div class="empty">${ENTS.length ? 'Niets gevonden.' : 'Niet verbonden met Home Assistant.'}</div>`;
+}
+let LAMPS = [];
+$('lampSearch').addEventListener('input', renderLamps);
+$('lampList').addEventListener('change', (e) => { const c = e.target.closest('.lampOn'); if (!c) return; LAMPS = LAMPS.filter(x => x !== c.value); if (c.checked) LAMPS.push(c.value); });
+$('lampSave').addEventListener('click', async () => {
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lamps: LAMPS }) });
+  status($('lampStatus'), r.ok ? `Bewaard: ${LAMPS.length} lamp(en). Op de tablet staan ze in het venster Lampen.` : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+
+const dbBody = () => ({ doorbell: { on: $('dbOn').checked, trigger: $('dbTrigger').value.trim(), mode: $('dbMode').value, camera: $('dbCam').value,
+  minutes: +$('dbMin').value || 10, pets: $('dbPets').checked, telegram: $('dbTg').checked, keep: $('dbKeep').checked } });
+$('dbSave').addEventListener('click', async () => {
+  const b = dbBody();
+  if (b.doorbell.on && !b.doorbell.trigger) { status($('dbStatus'), 'Kies eerst de bel (de entiteit die verandert als er gebeld wordt).', 'err'); return; }
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  status($('dbStatus'), r.ok ? (b.doorbell.on ? 'Bewaard. De deurbel staat aan.' : 'Bewaard. De deurbel staat uit.') : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+$('dbTest').addEventListener('click', async () => {
+  await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dbBody()) });
+  const r = await fetch('api/rule-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doorbell: true, actions: [] }) });
+  status($('dbStatus'), r.ok ? 'Ding dong! Kijk op de tablet (binnen een paar seconden).' : 'Testen lukte niet.', r.ok ? 'ok' : 'err');
+});
+$('mSave').addEventListener('click', async () => {
+  const b = { motion: { on: $('mOn').checked, look: $('mLook').checked, wake: $('mWake').checked, screen_off: $('mOff').value, off_after: +$('mAfter').value || 10, entity: $('mEnt').value } };
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  status($('mStatus'), r.ok ? 'Bewaard. Herlaad de tablet om het te laten werken.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+
+async function renderHuis() {
+  const s = world.settings, D = s.doorbell || {}, M = s.motion || {};
+  try { const j = await (await fetch('api/entities?domain=*')).json(); ENTS = j.connected ? j.entities : []; } catch { ENTS = []; }
+  ENTMAP = Object.fromEntries(ENTS.map(e => [e.id, e]));
+  $('entList').innerHTML = [BEWEGING].concat(ENTS).map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  $('dbOn').checked = !!D.on; $('dbTrigger').value = D.trigger || ''; $('dbMode').value = D.mode || 'auto';
+  $('dbCam').innerHTML = entOpts(['camera'], D.camera || '', 'Geen camera'); $('dbMin').value = D.minutes || 10;
+  $('dbPets').checked = D.pets !== false; $('dbTg').checked = D.telegram !== false; $('dbKeep').checked = !!D.keep;
+  $('mOn').checked = !!M.on; $('mLook').checked = M.look !== false; $('mWake').checked = M.wake !== false; $('mOff').value = M.screen_off || 'nooit'; $('mAfter').value = M.off_after || 10;
+  $('mEnt').innerHTML = entOpts(['binary_sensor'], M.entity || '', 'Geen (alleen de tablet)');
+  RULES = JSON.parse(JSON.stringify(s.rules || []));
+  $('ruleExamples').innerHTML = '<span class="hint" style="flex-basis:100%;max-width:none">Voorbeelden (klik om toe te voegen):</span>' + EXAMPLES.map(([n], k) => `<button type="button" class="ex" data-k="${k}">${esc(n)}</button>`).join('');
+  renderRules();
+  LAMPS = (s.lamps || []).slice(); renderLamps();
+}
+$('ruleExamples').addEventListener('click', (e) => {
+  const b = e.target.closest('.ex'); if (!b) return;
+  RULES.push(newRule(EXAMPLES[+b.dataset.k][1])); renderRules();
+  const last = $('rules').lastElementChild; last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!RULES[RULES.length - 1].entity) last.querySelector('.rEnt').focus();
+  status($('ruleStatus'), 'Voorbeeld toegevoegd. Kies bij ALS je eigen sensor en klik dan op "Alle regels opslaan".');
+});
 
 /* songs Kamiel nods along to: saved right away */
 function renderSongs(list) {
@@ -1218,7 +1543,7 @@ $('remAdd').addEventListener('click', async () => {
 });
 
 let settingsDone = false;
-function render() { renderLib(); renderPano(); renderAlbum(); renderRems(); if (!settingsDone) { renderSettings(); settingsDone = true; } }
+function render() { renderLib(); renderPano(); renderAlbum(); renderRems(); if (!settingsDone) { renderSettings(); renderHuis(); settingsDone = true; } }
 load();
 })();
 </script>

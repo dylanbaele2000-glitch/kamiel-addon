@@ -45,7 +45,7 @@ HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
 WEATHER_BUCKETS = ("zon", "bewolkt", "regen", "sneeuw", "mist")
-WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel", "roepen")
+WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel", "roepen", "lampen")
 def _read_static(name, pattern):
     """The tablet's own lists (clothes, events) are the single source: read the ids from its scripts."""
     try:
@@ -88,6 +88,14 @@ DEFAULT_SETTINGS = {
     # composing a scene like a photographer: which ways of looking may be used, and colour harmony
     "compose": {"styles": {"vrij": True, "held": True, "diepte": True, "leegte": True, "groepje": True, "ritme": True,
                            "verhouding": True, "lijn": True}, "color": True},
+    # a doorbell with a camera: when it rings, a still from the camera hangs in a frame next to Kamiel
+    "doorbell": {"on": False, "trigger": "", "mode": "auto", "camera": "", "minutes": 10, "keep": False, "telegram": True, "pets": True},
+    # "if this happens, then Kamiel does that": a list of rules (see RULES below)
+    "rules": [],
+    # the tablet's own camera (Fully Kiosk PLUS: motion detection + JavaScript interface)
+    "motion": {"on": False, "look": True, "wake": True, "screen_off": "nooit", "off_after": 10, "entity": ""},
+    # lights and sockets to switch from the Lampen window on the tablet
+    "lamps": [],
     "hills": {"chance": 40, "height": 18},           # % of places with hills; how high, in % of the screen
     "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
@@ -104,9 +112,9 @@ DEFAULT_SETTINGS = {
     "media_player": "",
     "departures": [],
     "board": [],
-    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True, "roepen": True},
+    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True, "roepen": True, "lampen": True},
     "window_titles": {"weer": "Weer.exe", "vertrek": "Vertrek.exe", "knoppen": "Knoppen.exe", "kleerkast": "Kleerkast.exe", "muziek": "Muziek.exe",
-                      "wandel": "Wandel.exe", "roepen": "Roepen.exe"},
+                      "wandel": "Wandel.exe", "roepen": "Roepen.exe", "lampen": "Lampen.exe"},
     "window_close": 60,
     "window_layout": "verspreid",
     "buttons": [],
@@ -165,7 +173,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack"):
+    for k in ("hills", "stack", "doorbell", "motion"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); s["compose"] = cp
@@ -274,8 +282,8 @@ async def api_state(request):
 async def api_entities(request):
     states = await ha_get("/states") or []
     doms = tuple(d.strip() + "." for d in request.query.get("domain", "weather").split(",") if d.strip())
-    ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"])}
-            for s in states if s["entity_id"].startswith(doms)]
+    ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]), "state": s.get("state", "")}
+            for s in states if request.query.get("domain") == "*" or s["entity_id"].startswith(doms)]
     ents.sort(key=lambda e: e["name"].lower())
     return web.json_response({"connected": bool(TOKEN), "entities": ents})
 
@@ -661,6 +669,33 @@ async def api_settings(request):
                         s["compose"]["styles"][k] = bool(c["styles"][k])
             if "color" in c:
                 s["compose"]["color"] = bool(c["color"])
+        if isinstance(body.get("doorbell"), dict):
+            d, b = s["doorbell"], body["doorbell"]
+            for k in ("on", "keep", "telegram", "pets"):
+                if k in b:
+                    d[k] = bool(b[k])
+            for k in ("trigger", "camera"):
+                if k in b:
+                    d[k] = str(b[k]).strip()[:120]
+            if b.get("mode") in ("auto", "aan", "verandert"):
+                d["mode"] = b["mode"]
+            if "minutes" in b:
+                d["minutes"] = max(1, min(240, int(b["minutes"])))
+        if isinstance(body.get("motion"), dict):
+            m, b = s["motion"], body["motion"]
+            for k in ("on", "look", "wake"):
+                if k in b:
+                    m[k] = bool(b[k])
+            if b.get("screen_off") in ("nooit", "nacht", "altijd"):
+                m["screen_off"] = b["screen_off"]
+            if "off_after" in b:
+                m["off_after"] = max(1, min(240, int(b["off_after"])))
+            if "entity" in b:
+                m["entity"] = str(b["entity"]).strip()[:120]
+        if isinstance(body.get("rules"), list):
+            s["rules"] = [r for r in (_clean_rule(x) for x in body["rules"][:40]) if r]
+        if isinstance(body.get("lamps"), list):
+            s["lamps"] = [str(e).strip()[:120] for e in body["lamps"] if str(e).split(".")[0] in TOGGLE][:60]
         if isinstance(body.get("hills"), dict):
             if "chance" in body["hills"]:
                 s["hills"]["chance"] = max(0, min(100, int(body["hills"]["chance"])))
@@ -804,7 +839,8 @@ async def api_live(request):
     out = {"message": None, "media": None, "trigger": None, "outfit": current_outfit(db), "dismissed": db.get("dismissed", {}),
            "spotlight": ({k: v for k, v in db["spotlight"].items() if k != "chat"}
                          if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
-           "snapshot": SNAP.get("id"), "event": db.get("event_req")}
+           "snapshot": SNAP.get("id"), "event": db.get("event_req"),
+           "actions": [a for a in db.get("actions", []) if a.get("at", 0) > time.time() - 120]}
     try:
         out["message"] = await current_message(db)
         if s.get("media_player"):
@@ -1584,6 +1620,259 @@ async def api_delete_reminder(request):
     return web.json_response({"ok": True})
 
 
+# ----------------------------------------------------------------- if this, then that
+CONDS = ("aan", "uit", "verandert", "is", "boven", "onder")
+ACTIONS = ("event", "bericht", "camera", "kleren", "rust", "vertrek", "ha", "telegram")
+ON_STATES = ("on", "open", "home", "detected", "playing", "unlocked", "ringing", "active", "true")
+OFF_STATES = ("off", "closed", "not_home", "clear", "idle", "paused", "locked", "false", "standby")
+
+
+def _clean_rule(r):
+    if not isinstance(r, dict):
+        return None
+    out = {"id": str(r.get("id") or uuid.uuid4().hex[:8])[:12], "name": str(r.get("name", "")).strip()[:60],
+           "on": bool(r.get("on", True)), "entity": str(r.get("entity", "")).strip()[:120],
+           "cond": r.get("cond") if r.get("cond") in CONDS else "aan", "value": str(r.get("value", "")).strip()[:60],
+           "from": str(r.get("from", ""))[:5], "to": str(r.get("to", ""))[:5],
+           "when": r.get("when") if r.get("when") in ("altijd", "dag", "nacht") else "altijd",
+           "cooldown": max(0, min(1440, int(r.get("cooldown", 5) or 0))), "actions": []}
+    for a in (r.get("actions") or [])[:6]:
+        if not isinstance(a, dict) or a.get("type") not in ACTIONS:
+            continue
+        out["actions"].append({"type": a["type"], "id": str(a.get("id", ""))[:40], "text": str(a.get("text", ""))[:200],
+                               "entity": str(a.get("entity", "")).strip()[:120], "minutes": max(1, min(240, int(a.get("minutes", 10) or 10))),
+                               "ids": [x for x in (a.get("ids") or []) if x in OUTFIT_SLOTS][:5], "photo": bool(a.get("photo", False)),
+                               "keep": bool(a.get("keep", False)), "on": bool(a.get("on", True))})
+    return out if out["entity"] else None
+
+
+WATCH = {"last": {}, "fired": {}, "motion": 0.0}
+
+
+def _now_hm():
+    t = time.localtime()
+    return t.tm_hour * 60 + t.tm_min
+
+
+def _hm_min(v, default):
+    try:
+        h, m = str(v).split(":"); return int(h) * 60 + int(m)
+    except ValueError:
+        return default
+
+
+def _in_window(a, b):
+    if not a or not b:
+        return True
+    m, x, y = _now_hm(), _hm_min(a, 0), _hm_min(b, 1440)
+    return x <= m < y if x <= y else (m >= x or m < y)
+
+
+def _matches(cond, value, old, new):
+    lo, ln = str(old).lower(), str(new).lower()
+    if ln in ("unavailable", "unknown") or old is None:
+        return False
+    if cond == "aan":
+        return ln in ON_STATES and lo not in ON_STATES
+    if cond == "uit":
+        return ln in OFF_STATES and lo not in OFF_STATES
+    if cond == "verandert":
+        return ln != lo
+    if cond == "is":
+        return ln == value.lower() and lo != value.lower()
+    try:
+        fv, fo, fn = float(value.replace(",", ".")), float(lo), float(ln)
+    except ValueError:
+        return False
+    return (fn > fv and not fo > fv) if cond == "boven" else (fn < fv and not fo < fv)
+
+
+def push_action(db, act):
+    """Something for the tablet to do; it picks these up via api/live."""
+    acts = db.setdefault("actions", [])
+    n = (acts[-1]["n"] if acts else 0) + 1
+    acts.append(dict(act, n=n, at=time.time()))
+    db["actions"] = acts[-20:]
+
+
+async def camera_still(entity):
+    """A still from a camera in Home Assistant (as JPEG bytes), or None."""
+    if not TOKEN or not entity:
+        return None
+    async with ClientSession(timeout=ClientTimeout(total=12)) as s:
+        async with s.get(f"{HA_URL}/camera_proxy/{entity}", headers={"Authorization": "Bearer " + TOKEN}) as r:
+            return await r.read() if r.status == 200 else None
+
+
+async def tg_broadcast(text, photo=None):
+    conf = tg_conf()
+    if not conf.get("token"):
+        return
+    for c in conf.get("chats", []):
+        try:
+            if photo:
+                await tg_call(conf["token"], "sendPhoto", {"chat_id": c["id"], "caption": text}, files={"photo": ("deur.jpg", photo, "image/jpeg")})
+            else:
+                await tg_call(conf["token"], "sendMessage", {"chat_id": c["id"], "text": text})
+        except Exception as e:
+            print("Telegram: " + str(e), flush=True)
+
+
+async def run_actions(rule_name, actions):
+    for a in actions:
+        try:
+            t = a["type"]
+            if t in ("event", "kleren", "rust", "vertrek", "beweging"):
+                async with lock:
+                    db = load_db(); push_action(db, {k: a[k] for k in ("type", "id", "ids", "minutes", "on")}); save_db(db, bump=False)
+            elif t == "bericht" and a.get("text"):
+                now = time.time()
+                async with lock:
+                    db = load_db()
+                    db["message"] = {"id": uuid.uuid4().hex[:8], "text": a["text"][:200], "since": now, "until": now + 60 * a["minutes"], "sign": ""}
+                    save_db(db, bump=False)
+            elif t == "camera":
+                data = await camera_still(a.get("entity"))
+                if not data:
+                    print(f"Regel '{rule_name}': geen camerabeeld van {a.get('entity')}", flush=True); continue
+                p = await run_blocking(_photo, data)
+                p["label"] = (rule_name or "Camera")[:40] + " " + time.strftime("%d/%m %H:%M")
+                async with lock:
+                    db = load_db()
+                    if a.get("keep"):
+                        db["photos"].append(p)
+                    else:
+                        db.setdefault("camera_stills", []).append(p)
+                        old = db["camera_stills"][:-10]   # only the last ten stay
+                        db["camera_stills"] = db["camera_stills"][-10:]
+                        remove_files([o["file"] for o in old] + [o.get("original") for o in old if o.get("original")])
+                    push_action(db, {"type": "frame", "file": p["file"], "minutes": a["minutes"], "door": bool(a.get("on", True)), "pets": a.get("id") == "pets"})
+                    save_db(db, bump=False)
+            elif t == "ha" and a.get("entity"):
+                dom = a["entity"].split(".")[0]
+                if dom in ("script", "scene"):
+                    await ha_service(dom, "turn_on", {"entity_id": a["entity"]})
+                elif dom == "automation":
+                    await ha_service("automation", "trigger", {"entity_id": a["entity"]})
+                elif dom in TOGGLE:
+                    await ha_service("homeassistant", "toggle", {"entity_id": a["entity"]})
+            elif t == "telegram":
+                photo = await camera_still(a.get("entity")) if a.get("photo") and a.get("entity") else None
+                await tg_broadcast(a.get("text") or rule_name or "Kamiel", photo)
+        except Exception as e:
+            print(f"Regel '{rule_name}': {e}", flush=True)
+
+
+def doorbell_rule(s):
+    d = s.get("doorbell") or {}
+    if not d.get("on") or not d.get("trigger"):
+        return None
+    mode = d.get("mode", "auto")
+    if mode == "auto":   # an event entity (event.*) changes its state on every ring; a binary sensor turns on
+        mode = "verandert" if d["trigger"].startswith(("event.", "button.", "input_button.")) else "aan"
+    acts = []
+    if d.get("camera"):
+        acts.append({"type": "camera", "entity": d["camera"], "minutes": d.get("minutes", 10), "keep": d.get("keep", False), "on": True,
+                     "id": "pets" if d.get("pets") else ""})
+    else:   # no camera: Kamiel (and maybe the dogs) still go and look
+        acts.append({"type": "event", "id": "deurbel", "minutes": 1, "ids": [], "on": bool(d.get("pets"))})
+    if d.get("telegram"):
+        acts.append({"type": "telegram", "text": "🔔 Er werd aangebeld", "entity": d.get("camera", ""), "photo": bool(d.get("camera"))})
+    return {"id": "deurbel", "name": "Deurbel", "on": True, "entity": d["trigger"], "cond": mode, "value": "", "from": "", "to": "",
+            "when": "altijd", "cooldown": 0.5, "actions": acts}
+
+
+def is_night(s):
+    return not _in_window(s.get("night_end", "06:00"), s.get("night_start", "22:00"))
+
+
+async def watch_loop():
+    """Every two seconds: look at the entities the rules (and the doorbell) depend on, and act on changes."""
+    while True:
+        await asyncio.sleep(2)
+        try:
+            s = load_db()["settings"]
+            rules = [r for r in s.get("rules", []) if r.get("on")]
+            db_rule = doorbell_rule(s)
+            if db_rule:
+                rules.append(db_rule)
+            m = s.get("motion") or {}
+            if m.get("on") and m.get("entity"):   # a motion sensor in Home Assistant instead of (or next to) the tablet's camera
+                rules.append({"id": "beweging", "name": "Beweging", "on": True, "entity": m["entity"], "cond": "aan", "value": "", "from": "", "to": "",
+                              "when": "altijd", "cooldown": .3, "actions": [{"type": "beweging", "id": "", "ids": [], "minutes": 1, "on": True}]})
+            if not rules:
+                continue
+            states = {}
+            for ent in {r["entity"] for r in rules}:
+                if ent == "kamiel.beweging":   # movement in front of the tablet (its camera)
+                    states[ent] = "on" if time.time() - WATCH["motion"] < 60 else "off"
+                    continue
+                st = await ha_get("/states/" + ent)
+                if st:
+                    states[ent] = st.get("state")
+            for r in rules:
+                ent = r["entity"]
+                if ent not in states:
+                    continue
+                old = WATCH["last"].get(ent)
+                new = states[ent]
+                if old is None or not _matches(r["cond"], r.get("value", ""), old, new):
+                    continue
+                if not _in_window(r.get("from"), r.get("to")):
+                    continue
+                if r.get("when") == "dag" and is_night(s) or r.get("when") == "nacht" and not is_night(s):
+                    continue
+                key = r["id"]
+                if time.time() - WATCH["fired"].get(key, 0) < 60 * float(r.get("cooldown", 0)):
+                    continue
+                WATCH["fired"][key] = time.time()
+                print(f"Regel '{r.get('name') or ent}': {old} → {new}", flush=True)
+                asyncio.ensure_future(run_actions(r.get("name") or ent, r["actions"]))
+            WATCH["last"].update(states)
+        except Exception as e:
+            print("Regels: " + str(e), flush=True)
+            await asyncio.sleep(10)
+
+
+async def api_motion(request):
+    """The tablet saw someone (Fully Kiosk motion detection)."""
+    WATCH["motion"] = time.time()
+    return web.json_response({"ok": True})
+
+
+async def api_rule_test(request):
+    """Studio: try the actions of a rule right now."""
+    body = await request.json()
+    r = _clean_rule(dict(body, entity=body.get("entity") or "test.test"))
+    if not r:
+        return web.json_response({"ok": False}, status=400)
+    if body.get("doorbell"):
+        r = doorbell_rule(dict(load_db()["settings"], doorbell=dict(load_db()["settings"]["doorbell"], on=True, trigger="test.bel")))
+        if not r:
+            return web.json_response({"ok": False}, status=400)
+    asyncio.ensure_future(run_actions(r.get("name") or "Test", r["actions"]))
+    return web.json_response({"ok": True})
+
+
+async def api_lamps(request):
+    """The lights and sockets for the Lampen window, with their state."""
+    out = []
+    for ent in load_db()["settings"].get("lamps", []):
+        st = await ha_get("/states/" + ent)
+        a = (st or {}).get("attributes", {})
+        out.append({"entity": ent, "name": a.get("friendly_name", ent), "on": (st or {}).get("state") == "on", "ok": bool(st),
+                    "kind": ent.split(".")[0], "brightness": a.get("brightness")})
+    return web.json_response(out)
+
+
+async def api_lamp(request):
+    """Switch one of the lamps chosen in the Studio (nothing else)."""
+    ent = request.match_info["entity"]
+    if ent not in load_db()["settings"].get("lamps", []):
+        return web.json_response({"ok": False}, status=403)
+    return web.json_response({"ok": await ha_service("homeassistant", "toggle", {"entity_id": ent})})
+
+
 # ----------------------------------------------------------------- apps
 def common_routes(app):
     app.router.add_get("/display", page("display.html"))
@@ -1603,6 +1892,9 @@ def common_routes(app):
     app.router.add_post("/api/reminder-dismiss/{id}", api_dismiss_reminder)
     app.router.add_post("/api/photo-seen/{id}", api_photo_seen)
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
+    app.router.add_post("/api/motion", api_motion)
+    app.router.add_get("/api/lamps", api_lamps)
+    app.router.add_post("/api/lamp/{entity}", api_lamp)
 
 
 def make_studio():
@@ -1631,6 +1923,7 @@ def make_studio():
     app.router.add_put("/api/songs/{id}", api_edit_song)
     app.router.add_delete("/api/songs/{id}", api_delete_song)
     app.router.add_post("/api/event", api_event)
+    app.router.add_post("/api/rule-test", api_rule_test)
     return app
 
 
@@ -1676,6 +1969,7 @@ async def main():
             print("Verbinding met Home Assistant mislukt: " + str(e), flush=True)
     asyncio.ensure_future(tg_loop())
     asyncio.ensure_future(measure_old_assets())
+    asyncio.ensure_future(watch_loop())
     await asyncio.Event().wait()
 
 

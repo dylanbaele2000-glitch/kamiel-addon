@@ -1,6 +1,6 @@
 # Kamiel: technische handleiding
 
-Stand: 7 oktober 2026 (versie 0.10.1)
+Stand: 7 oktober 2026 (versie 0.11.0)
 
 ## Voor wie dit is
 
@@ -161,8 +161,12 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | `departure_trigger` | "" | Sensor die het vertrekbord automatisch toont. |
 | `timer_entities` | \[\] | Google Home `_timers`-sensoren. |
 | `message_entity`, `message_minutes` | "", 60 | Tekst-helper voor berichten uit automatiseringen. |
+| `doorbell` | uit, `mode` auto, 10 min, telegram en honden aan | Deurbel: `on`, `trigger` (event./binary_sensor./knop), `mode` (`auto`/`aan`/`verandert`; auto = verandert voor `event.`/knoppen, anders aan), `camera`, `minutes`, `keep` (in het album), `telegram`, `pets`. |
+| `rules` | \[\] | "Als dit, dan dat" (max 40): `id`, `name`, `on`, `entity` (of `kamiel.beweging`), `cond` (`aan`/`uit`/`verandert`/`is`/`boven`/`onder`), `value`, `from`/`to` (HH:MM), `when` (`altijd`/`dag`/`nacht`), `cooldown` (min.), `actions` (max 6): `type` (`event`/`bericht`/`camera`/`kleren`/`rust`/`vertrek`/`ha`/`telegram`) met `id`, `text`, `entity`, `minutes`, `ids`, `photo`, `keep`, `on`. Bij `camera` betekent `on` "Kamiel gaat kijken" en `id: "pets"` "de honden blaffen". |
+| `motion` | uit, kijken en scherm aan, scherm-uit `nooit` na 10 min | Camera van de tablet (Fully PLUS) of een `binary_sensor`: `on`, `look`, `wake`, `screen_off` (`nooit`/`nacht`/`altijd`), `off_after`, `entity`. |
+| `lamps` | \[\] | Lampen/stopcontacten voor Lampen.exe (alleen light, switch, input_boolean, fan; max 60). |
 
-Buiten `settings` staan ook `songs` (de nummerlijst: `id`, `title`, `bpm`; vooraf gevuld met 13 nummers) en `event_req` (`n`, `id`, `at`: het laatst gevraagde event).
+Buiten `settings` staan ook `actions` (de laatste 20 opdrachten voor de tablet uit regels en de deurbel: `type` `event`/`frame`/`kleren`/`rust`/`vertrek`/`beweging`, `n`, `at`; de tablet kijkt alleen naar die van de laatste 2 minuten en nooit opnieuw na herladen), `camera_stills` (de laatste 10 camerabeelden, oudere bestanden worden gewist), `songs` (de nummerlijst: `id`, `title`, `bpm`; vooraf gevuld met 13 nummers) en `event_req` (`n`, `id`, `at`: het laatst gevraagde event).
 
 Oude, ongebruikte sleutels die nog kunnen voorkomen: `night_walks` (0.8.0: Kamiel wandelt nu ook 's nachts gewoon om de `walk_minutes`), `chances` (vervangen door `counts`; een soort die op 0 % stond, krijgt 0–0), `nod_bpm`, `min_frames`, `frame_ratio`, `departures` (vervangen door `board`), `people` (afstand-functie, verwijderd).
 
@@ -186,8 +190,11 @@ De tablet gebruikt poort 8100, de Studio 8099; de "gedeelde" endpoints bestaan o
 | `POST /api/outfit` | beide | Kleren kiezen (één per lichaamsdeel). |
 | `POST /api/seen/{id}`, `/api/photo-seen/{id}` | beide | Iemand tikte een bericht/foto weg → Telegram meldt "gezien". |
 | `POST /api/reminder-dismiss/{id}` | beide | Herinnering weg tot de volgende keer. |
+| `POST /api/motion` | beide | De tablet zag beweging (Fully). Zet `kamiel.beweging` 60 s op aan. |
+| `GET /api/lamps`, `POST /api/lamp/{entity}` | beide | Lampen.exe: status van de gekozen lampen, één toggelen. Alleen entiteiten uit `settings.lamps` (anders 403). |
+| `POST /api/rule-test` | 8099 | De DAN-acties van een regel meteen uitvoeren (`{actions}`), of de deurbel testen (`{"doorbell": true}`). |
 | `POST /api/snapshot/{id}` | beide | De tablet levert een JPEG voor /kijk; alleen geldig als er een verzoek openstaat. |
-| `GET /api/entities?domain=a,b` | 8099 | Lijst van Home Assistant-entiteiten voor de keuzelijsten. |
+| `GET /api/entities?domain=a,b` | 8099 | Lijst van Home Assistant-entiteiten (`id`, `name`, `state`) voor de keuzelijsten; `domain=*` geeft alles. |
 | `POST/PATCH/DELETE /api/assets[/id]` | 8099 | Elementen uploaden (multipart: `kind`, `dag`, `nacht`, `rare`, `sign`, `weer`, `files`), aanpassen, verwijderen. |
 | `POST /api/photos`, `DELETE /api/photos/{id}` | 8099 | Foto's. |
 | `POST /api/panorama` | 8099 | Panorama vervangen (alle delen in één verzoek, in de browser verkleind tot 600 px hoog). |
@@ -299,7 +306,10 @@ Kamiel Studio staat in de zijbalk van Home Assistant (ingress). Het is een gewon
 | Foto's | Foto's voor de kaders (ook die uit Telegram komen hier terecht). |
 | Bordteksten | De woorden op de tekstborden, één per regel. |
 | Herinneringen | Herinneringen met live voorbeeld en "volgende keer: …". |
+| Huis | **Deurbel** (met stappenplan: merk kiezen, integratie toevoegen, de bel-entiteit en de camera vinden, testen), **Als dit, dan dat** (regelkaarten ALS / MAG / DAN met zoeklijst van alle entiteiten, huidige waarde ernaast, zin die de regel uitlegt, voorbeelden, ▶ Testen), **Camera van de tablet** (stappenplan Fully PLUS), **Lampen en stopcontacten** (zoekbare vinkjeslijst). Elk blok heeft een eigen Opslaan-knop. |
 | Instellingen | Weer, wandeltijd, hoeveel objecten per soort (minstens–hoogstens, dag/nacht), ruimte tussen objecten, vrije ruimte rond Kamiel, hoe groot, reuzen, zakdiepte, maximum, sensoren onder de datum, tikken (zon, maan, elders, adres), vensters, 9 knoppen, kleerkast, muziek (speaker, nummerlijst om mee te knikken), gebeurtenissen (hoe vaak, aan/uit per event, ▶ om te testen), vertrekbord (met stappenplan voor De Lijn), Google Home-timers (met stappenplan), berichten via een tekst-helper, seizoenskleuren. |
+
+**Regels-motor (`watch_loop`)**: elke 2 s haalt de server de status op van alle entiteiten die in actieve regels, de deurbel of `motion.entity` staan, vergelijkt met de vorige waarde (`_matches`), houdt rekening met tijdvenster, dag/nacht en "niet vaker dan", en voert dan `run_actions` uit. De eerste meting na een herstart vuurt nooit. Camerabeelden komen via `/camera_proxy/<camera>`, gaan door `_photo` (dreamcore-filter) en worden als `frame`-actie naar de tablet gestuurd; die hangt het beeld in een kader naast Kamiel (`placeDoor`, tikken = weg) en start het interne event `deurbel`. Interne events (`cat: 'intern'`: `deurbel`, `kijken`) worden nooit willekeurig gekozen en staan niet in de gebeurtenissenlijst.
 
 Keuzelijsten met Home Assistant-entiteiten komen uit `api/entities?domain=…` (meerdere domeinen met komma's). Staat er "Niet verbonden met Home Assistant", dan heeft de add-on geen token (zie Valkuilen).
 
@@ -316,7 +326,8 @@ Alles behalve Home Assistant zelf is optioneel; zonder koppeling valt alleen die
 | Google Home-timers | HACS-integratie "Google Home" (leikoilja/ha-google-home): `sensor.<speaker>_timers`, attribuut `timers` met `local_time_iso`, `fire_time`, `status` (set/ringing/paused), `label`. | Timerbord. |
 | Telegram | Eigen bot via @BotFather; Kamiel doet **long polling** (`getUpdates`), dus niets openzetten op de router. Alleen gekoppelde chats (koppelcode van 6 cijfers, 10 min geldig) mogen iets. Commando's: tekst, foto, `/bus`, `/kijk`, `/wis`, `/muziek Titel 127`, `/muziek`, `/event`, `/event lijst`, `/event <naam>`, `/help`. | Berichten en foto's van op afstand, "gezien"-meldingen, screenshot van het scherm. |
 | Tekst-helper | Een `input_text.*` gekozen in de Studio | Berichten uit automatiseringen ("de was is klaar"). |
-| Fully Kiosk Browser | Op de Android-tablet, Start URL `http://<ip-HA>:8100`, Keep Screen On, Launch on Boot, Reload on network reconnect, Reload on idle | Kamiel permanent tonen. Fully PLUS (betalend) nodig voor kiosk-vergrendeling, bewegingsdetectie en bediening vanuit HA. |
+| Deurbel | Elke bel met een HA-integratie: liefst lokaal (Reolink, Amcrest, Doorbird, UniFi Protect), ook Ring/Nest (trager). Een `event.*` (verandert bij elke druk) of `binary_sensor.*` (gaat aan) + een `camera.*`. | Foto in een kader naast Kamiel, honden blaffen, Telegram met foto. |
+| Fully Kiosk Browser | Op de Android-tablet, Start URL `http://<ip-HA>:8100`, Keep Screen On, Launch on Boot, Reload on network reconnect, Reload on idle | Kamiel permanent tonen. Fully PLUS (betalend) nodig voor kiosk-vergrendeling, bewegingsdetectie en bediening vanuit HA. Voor de camera van de tablet: *Advanced Web Settings → Enable JavaScript Interface* en *Motion Detection → Enable Visual Motion Detection*; de pagina doet `fully.bind('onMotion', …)`, `fully.turnScreenOn()`, `fully.turnScreenOff(true)`. `getUserMedia` werkt niet (http, geen https), daarom via Fully. |
 
 De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zonder internet valt hij terug op systeemlettertypes.
 
@@ -339,7 +350,7 @@ De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zond
 
 **Gegevens bij updates:** `/data` blijft altijd bewaard; nooit opnieuw uploaden. Alleen verwijderen van de add-on wist alles. Nieuwe instellingen krijgen hun standaardwaarde via `DEFAULT_SETTINGS`; schrijf migraties in `load_db()` als een sleutel van betekenis verandert.
 
-**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.10.1 huisdieren getekend naar echte foto's (pluizige oren en staart, Snoets crème masker, Pippa smoking met witte buik en poten, Pebbels met M-streep en witte pootjes, Dobby als compact dwergkonijn met witte bef en vlekje op de neus); 0.10.0 huisdieren (Wifi, Snoet, Pippa, Pebbels, Dobby) + Roepen.exe; 0.9.1 Heidi met eigen uiterlijk en karakter, geen tekstballonnen, persoonlijke info uit de handleiding, locatie uit Home Assistant; 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
+**Versiegeschiedenis in het kort:** 0.11.0 toekomstbestendig: deurbel met camerafoto in een kader (Kamiel gaat kijken, Wifi en Snoet blaffen, Telegram met foto), "Als dit, dan dat"-regels, camera van de tablet via Fully (Kamiel komt kijken, scherm aan/uit), Lampen.exe, nieuw tabblad Huis; 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.10.1 huisdieren getekend naar echte foto's (pluizige oren en staart, Snoets crème masker, Pippa smoking met witte buik en poten, Pebbels met M-streep en witte pootjes, Dobby als compact dwergkonijn met witte bef en vlekje op de neus); 0.10.0 huisdieren (Wifi, Snoet, Pippa, Pebbels, Dobby) + Roepen.exe; 0.9.1 Heidi met eigen uiterlijk en karakter, geen tekstballonnen, persoonlijke info uit de handleiding, locatie uit Home Assistant; 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
 
 ## Testen en debuggen
 
@@ -410,6 +421,7 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 - Het panorama heeft een echt horizonprofiel; alles wat op de grond staat moet dat volgen.
 - De Studio-pagina tekent na elke `load()` alles opnieuw: niet-opgeslagen invoer in herinneringskaarten verdwijnt als je ondertussen iets anders opslaat.
 - Alleen-lezen op poort 8100 is een belofte aan de eigenaar: nieuwe schrijvende endpoints daar mogen alleen dingen doen die vooraf in de Studio zijn ingesteld.
+- Een rule-actie `ha` mag alles starten wat in de Studio gekozen werd; via poort 8100 kan dat niet (rule-test bestaat alleen op 8099).
 - De Telegram-sleutel staat in `kamiel.json` en mag nooit via `api/world` of `api/live` naar de tablet; chat-id's worden er ook uit gefilterd.
 
 ## Beslissingen en openstaande ideeën
@@ -426,7 +438,6 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 **Openstaande ideeën (niet gebouwd):**
 
 - [ ] Pixel-editor in Kamiel Studio om zelf hoeden en kleren te tekenen (raster over Kamiels hoofd, kleuren kiezen, lichaamsdeel en naam); de eigenaar vroeg ernaar, wacht op zijn "ja".
-- [ ] Scherm uit na middernacht tenzij er beweging is (Fully Kiosk PLUS + Home Assistant-integratie).
 - [ ] Diepte door een lichte blauwe waas op horizon-objecten; schaduwen die van de zon weg vallen en langer worden bij lage zon.
 - [ ] Kleurharmonie per scène (hoofdkleur bij upload bepalen) en thema-labels per element.
 - [ ] Boodschappen.txt (HA-boodschappenlijst), Agenda.exe, Kamiel.exe ("over Kamiel"), een zeldzame nep-foutmelding.
