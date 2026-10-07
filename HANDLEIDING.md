@@ -1,6 +1,6 @@
 # Kamiel: technische handleiding
 
-Stand: 7 oktober 2026 (versie 0.10.0)
+Stand: 7 oktober 2026 (versie 0.10.1)
 
 ## Voor wie dit is
 
@@ -339,7 +339,7 @@ De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zond
 
 **Gegevens bij updates:** `/data` blijft altijd bewaard; nooit opnieuw uploaden. Alleen verwijderen van de add-on wist alles. Nieuwe instellingen krijgen hun standaardwaarde via `DEFAULT_SETTINGS`; schrijf migraties in `load_db()` als een sleutel van betekenis verandert.
 
-**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.10.0 huisdieren (Wifi, Snoet, Pippa, Pebbels, Dobby) + Roepen.exe; 0.9.1 Heidi met eigen uiterlijk en karakter, geen tekstballonnen, persoonlijke info uit de handleiding, locatie uit Home Assistant; 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
+**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.10.1 huisdieren getekend naar echte foto's (pluizige oren en staart, Snoets crème masker, Pippa smoking met witte buik en poten, Pebbels met M-streep en witte pootjes, Dobby als compact dwergkonijn met witte bef en vlekje op de neus); 0.10.0 huisdieren (Wifi, Snoet, Pippa, Pebbels, Dobby) + Roepen.exe; 0.9.1 Heidi met eigen uiterlijk en karakter, geen tekstballonnen, persoonlijke info uit de handleiding, locatie uit Home Assistant; 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
 
 ## Testen en debuggen
 

@@ -59,6 +59,24 @@ class Grid:
         g = Grid(s.w, s.h); g.c = dict(s.c); return g
 
 
+def fluff(g, col, box, prob, seed, dirs=((0, -1), (-1, 0), (1, 0), (0, 1))):
+    """Long hair: little tufts sticking out of the edge, inside a box."""
+    x0, y0, x1, y1 = box
+    add = []
+    for (x, y), c in list(g.c.items()):
+        if not (x0 <= x <= x1 and y0 <= y <= y1):
+            continue
+        for dx, dy in dirs:
+            p = (x + dx, y + dy)
+            if p in g.c:
+                continue
+            hsh = int(hashlib.md5(f"{seed}{p}".encode()).hexdigest()[:4], 16) / 65535
+            if hsh < prob:
+                add.append(p)
+    for p in add:
+        g.put(p[0], p[1], col)
+
+
 def outline(g, keep=()):
     """Selective outline: edge pixels get a darker version of their own colour."""
     out = g.copy()
@@ -103,33 +121,40 @@ def rows_of(g):
 # ------------------------------------------------------------------ the pets (all facing left)
 def dog(name, C, small=False):
     """Long-haired chihuahua. C: colours."""
-    W, H = 34, 28
+    W, H = 36, 31
+    OY = 3
     def body(legs, crouch=0, jump=False):
-        g = Grid(W, H); dy = crouch
-        # tail: a fluffy plume curling up over the back
-        g.thick([(25, 16 + dy), (28, 12 + dy), (29, 8 + dy), (27.5, 5.5 + dy)], 1.6, C["fur"])
-        g.ell(29, 9 + dy, 2.2, 3.4, C["fur"]); g.ell(28.4, 6.5 + dy, 1.6, 1.8, C["tip"])
+        g = Grid(W, H); dy = crouch + OY
+        # tail: a long fluffy plume curling up over the back
+        g.thick([(25, 16 + dy), (28, 12 + dy), (29.5, 8 + dy), (28, 5 + dy)], 1.7, C["fur"])
+        g.ell(29.5, 9 + dy, 2.6, 3.8, C["fur"]); g.ell(28.6, 5.6 + dy, 1.8, 1.9, C["tip"])
+        fluff(g, C["fringe"], (26, 2 + dy, 33, 14 + dy), .55, name + "tail", dirs=((1, 0), (0, -1), (1, -1)))
         # legs (behind the body first: far legs darker)
         for (x, top, bottom, far, dx) in legs:
             col = shade(C["leg"], .78) if far else C["leg"]
-            g.rect(int(x + dx), top + dy, int(x + dx) + 1, bottom, C["fur2"] if far else C["fur"])
-            g.rect(int(x + dx), bottom - 2, int(x + dx) + 1, bottom, col)
-            g.put(int(x + dx) - 1, bottom, col)   # a little paw
+            front = x < 18
+            g.rect(int(x + dx), top + dy, int(x + dx) + 1, bottom + OY, C["fur2"] if far else C["fur"])
+            g.rect(int(x + dx), (top + 2 if front and C.get("leg_full") else bottom - 2) + dy - (0 if front and C.get("leg_full") else 0), int(x + dx) + 1, bottom + OY, col) if front and C.get("leg_full") else g.rect(int(x + dx), bottom - 2 + OY, int(x + dx) + 1, bottom + OY, col)
+            g.put(int(x + dx) - 1, bottom + OY, col)   # a little paw
         g.ell(19, 17 + dy, 8.6, 5.2, C["fur"])               # body
-        g.ell(19, 21.5 + dy, 6.5, 1.3, C["fringe"])          # long belly fringe
         g.ell(11.5, 15 + dy, 4.4, 5.4, C["fur"])             # neck and chest
-        g.ell(10.8, 17 + dy, 2.6, 3.4, C["bib"])             # chest bib
+        g.ell(10.5, 17.2 + dy, 2.8, 3.8, C["bib"])           # chest bib
         g.ell(8.5, 9.6 + dy, 6.2, 5.6, C["fur"])             # head
-        # ears: big, a bit fluffy
-        g.poly([(3.5, 7 + dy), (1.5, -0.5 + dy), (8.5, 5 + dy)], C["fur"])
-        g.poly([(9.5, 5 + dy), (15, 0 + dy), (14, 8 + dy)], C["fur"])
-        g.poly([(4.5, 6 + dy), (3, 1.5 + dy), (7, 5 + dy)], C["ear"])
-        g.poly([(10.5, 5.5 + dy), (13.7, 2 + dy), (13, 7 + dy)], C["ear"])
-        for (x, y) in ((1, 1), (2, 3), (15, 1), (15, 4), (14, 7), (0, 0)):
-            g.put(x, y + dy, C["fringe"])
+        # ears: big, wide, fluffy
+        g.poly([(3, 7.5 + dy), (0.5, -2.5 + dy), (9, 5 + dy)], C["fur"])
+        g.poly([(9, 5 + dy), (16.5, -1.5 + dy), (14.5, 8.5 + dy)], C["fur"])
+        g.poly([(4, 6.5 + dy), (2, 0 + dy), (7.5, 5 + dy)], C["ear"])
+        g.poly([(10.5, 5.5 + dy), (14.8, 1 + dy), (13.5, 7.5 + dy)], C["ear"])
+        fluff(g, C["fringe"], (0, -3 + dy, 3, 8 + dy), .6, name + "earl", dirs=((-1, 0), (0, -1), (-1, -1)))
+        fluff(g, C["fringe"], (14, -3 + dy, 18, 9 + dy), .6, name + "earr", dirs=((1, 0), (0, -1), (1, -1), (1, 1)))
+        # long hair under the belly and on the chest
+        fluff(g, C["fringe"], (12, 20 + dy, 27, 23 + dy), .7, name + "belly", dirs=((0, 1),))
+        fluff(g, C["bib"], (8, 16 + dy, 13, 22 + dy), .6, name + "bib", dirs=((-1, 0), (0, 1), (-1, 1)))
+        if C.get("mask"):   # a light mask around the eyes and down the snout (Snoet)
+            g.ell(6.5, 10.5 + dy, 3.2, 2.6, C["mask"], only=(C["fur"],))
         g.ell(3.6, 12 + dy, 3.2, 2.1, C["muzzle"])           # muzzle
-        g.ell(7.2, 13.6 + dy, 3, 1.3, C["muzzle"], only=(C["fur"],))
-        for (x, y) in ((6, 7), (10, 7)):                     # eyebrow dots / face mask
+        g.ell(7.2, 13.6 + dy, 3, 1.4, C["muzzle"], only=(C["fur"],))   # cheek
+        for (x, y) in ((6, 7), (5, 7), (10, 7)):             # eyebrow dots
             g.put(x, y + dy, C["brow"])
         return g
     def legset(phase):
@@ -138,7 +163,7 @@ def dog(name, C, small=False):
         sw = {"stand": (0, 0, 0, 0), "walk1": (-1, 1, 1, -1), "walk2": (0, 0, 0, 0), "walk3": (1, -1, -1, 1), "walk4": (0, 0, 0, 0)}[phase]
         out = []
         for (x, t, b, far, _), d in zip(base, sw):
-            lift = 1 if (phase == "walk1" and d < 0) or (phase == "walk3" and d < 0) else 0
+            lift = 1 if d < 0 else 0
             out.append((x, t, b - lift, far, d))
         return out
     frames = {}
@@ -146,8 +171,8 @@ def dog(name, C, small=False):
         frames[ph] = body(legset(ph))
     frames["down"] = body([(12, 21, 26, False, -1), (14.5, 21, 26, True, -1), (22, 21, 26, False, 1), (24.5, 21, 26, True, 1)], crouch=3)
     frames["jump"] = body([(10, 19, 24, False, 0), (12.5, 19, 24, True, 0), (24, 19, 25, False, 1), (26.5, 19, 25, True, 1)])
-    eye, nose, mouth = (6, 10), (0, 11), (2, 13)
-    return finish(name, frames, eye, nose, mouth, head=(9, 1), C=C, small=small)
+    eye, nose, mouth = (6, 10 + OY), (0, 11 + OY), (2, 13 + OY)
+    return finish(name, frames, eye, nose, mouth, head=(9, 1), C=C, small=small, oy=OY)
 
 
 def cat(name, C, chubby=False):
@@ -158,6 +183,11 @@ def cat(name, C, chubby=False):
         for (x, top, bottom, far, dx, sock) in legs:
             col = C["fur2"] if far else C["leg"]
             g.rect(int(x + dx), top + dy, int(x + dx) + 1, bottom, col)
+            if C.get("leg_white") and (x < 20 or C.get("hind_white")):
+                g.rect(int(x + dx), top + dy + 2, int(x + dx) + 1, bottom, shade(C["leg_white"], .85) if far else C["leg_white"])
+            if C.get("stripes") and not far:
+                for yy in range(top + dy + 1, bottom - 1, 2):
+                    g.put(int(x + dx), yy, C["stripes"])
             g.rect(int(x + dx) - 1, bottom, int(x + dx) + 1, bottom, sock)
             if sock != col:
                 g.rect(int(x + dx), bottom - 1, int(x + dx) + 1, bottom, sock)
@@ -168,17 +198,24 @@ def cat(name, C, chubby=False):
         g.poly([(9.5, 6 + dy), (13.6, 1.6 + dy), (13.4, 9 + dy)], C["fur"])
         g.poly([(4.3, 7 + dy), (4.5, 3.4 + dy), (6.6, 6 + dy)], C["ear"])
         g.poly([(10.6, 6.5 + dy), (12.9, 3.6 + dy), (12.6, 8.3 + dy)], C["ear"])
+        if C.get("belly"):   # tuxedo: white underneath
+            g.ell(19, 22.5 + dy, 10, 3.2, C["belly"], only=(C["fur"],))
+            g.ell(28, 19 + dy, 2.5, 2.5, C["belly"], only=(C["fur"],))
+        if C.get("warm"):    # warm orange patches in the coat
+            g.ell(24, 16.5 + dy, 2.2, 1.4, C["warm"], only=(C["fur"],))
         if C.get("chest"):
-            g.ell(11.5, 18.5 + dy, 3.4, 4.4, C["chest"])
-            g.ell(13, 22 + dy, 5, 2, C["chest"], only=(C["fur"],))
+            g.ell(11.5, 18.5 + dy, 3 if C.get("narrow") else 3.4, 4.6, C["chest"])
+            if not C.get("narrow"):
+                g.ell(13, 22 + dy, 5, 2, C["chest"], only=(C["fur"],))
         if C.get("blaze"):
             g.poly([(5.6, 16 + dy), (7.6, 8 + dy), (9.4, 16 + dy)], C["blaze"])   # white blaze up the face
         g.ell(4.4, 13.6 + dy, 3.4, 2.2, C["muzzle"])                    # muzzle/chin
         if C.get("stripes"):
             for sx in range(14, 31, 3):
                 g.rect(sx, 13 + dy, sx, 21 + dy, C["stripes"], only=(C["fur"],))
-            for sy in (9, 11):
-                g.rect(6, sy + dy, 12, sy + dy, C["stripes"], only=(C["fur"],))
+            for sx in (7, 9, 11):   # the "M" on the forehead
+                g.rect(sx, 6 + dy, sx, 9 + dy, C["stripes"], only=(C["fur"],))
+            g.rect(10, 13 + dy, 13, 13 + dy, C["stripes"], only=(C["fur"],))
             for k in range(29, 36, 2):
                 g.rect(k, 2, k, 18, C["stripes"], only=(C["tail"],))
         return g
@@ -195,30 +232,33 @@ def cat(name, C, chubby=False):
 
 
 def rabbit(name, C):
-    W, H = 30, 31
+    W, H = 30, 30
     def body(phase):
         g = Grid(W, H)
         # a hop: gather, push off, fly, land; everything lifts together
         up = {"stand": 0, "walk1": 0, "walk2": 2, "walk3": 4, "walk4": 1, "jump": 5, "down": -1}[phase]
         st = {"stand": 0, "walk1": 0, "walk2": 1, "walk3": 2, "walk4": 1, "jump": 2, "down": 0}[phase]
         dy = 5 - up
-        g.ell(24.5 + st * .5, 16 + dy, 2.4, 2.4, C["tail"])                                   # cotton tail
-        g.ell(20.5 + st * 1.2, 23 + dy, 4.5 + st * .6, 1.4, C["fur2"])                        # big hind foot
-        g.ell(17 + st * .5, 17 + dy, 8.2 + st * .5, 6.4 - (1 if phase == "down" else 0), C["fur"])   # round body
+        g.ell(20.5 + st * 1.2, 23 + dy, 4.2 + st * .6, 1.4, C["fur2"])                       # hind foot
+        g.ell(17 + st * .5, 16.5 + dy, 8 + st * .5, 6.8 - (1 if phase == "down" else 0), C["fur"])   # round, compact body
+        g.ell(23.5 + st * .5, 14 + dy, 2, 2, C["fur"])                                         # rump / tail
         g.rect(9 - st, 20 + dy, 10 - st, 23 + dy - (1 if phase in ("walk3", "jump") else 0), C["fur"])   # front paw
-        g.ell(8, 12.5 + dy, 5.2, 4.6, C["fur"])                                               # head
+        g.ell(8, 11.5 + dy, 5.8, 5.2, C["fur"])                                               # big round head
         tilt = 1 if phase == "down" else 0
-        g.ell(8.5 - tilt, 4.5 + dy + tilt * 2, 1.5, 5.2, C["fur"]); g.ell(11.2 - tilt, 4.8 + dy + tilt * 2, 1.4, 5, C["fur2"])   # long ears
-        g.ell(8.5 - tilt, 4.5 + dy + tilt * 2, .7, 3.6, C["ear"])
-        g.ell(4, 14 + dy, 2.4, 2, C["muzzle"], only=(C["fur"],))
-        g.rect(3, 12 + dy, 3, 13 + dy, C["blaze"])                                            # little white blaze on the nose
-        g.ell(10, 17.5 + dy, 2.2, 2.2, C["chest"], only=(C["fur"],))                          # lighter bit on the chest
+        # short, upright ears close together
+        g.ell(9.5 - tilt, 3.6 + dy + tilt * 2, 1.4, 3.6, C["fur"]); g.ell(12 - tilt, 4 + dy + tilt * 2, 1.3, 3.4, C["fur2"])
+        g.ell(9.5 - tilt, 3.8 + dy + tilt * 2, .6, 2.4, C["ear"])
+        g.ell(10.5, 18.5 + dy, 3, 4.2, C["chest"])                                            # white bib on the chest
+        fluff(g, C["chest"], (7, 15 + dy, 14, 24 + dy), .45, name + "bib", dirs=((-1, 0), (0, 1)))
+        g.ell(10.5, 18.5 + dy, 1.2, 1.6, C["chest2"], only=(C["chest"],))
+        g.ell(3.5, 13.5 + dy, 2.2, 2, C["muzzle"], only=(C["fur"],))
+        g.put(3, 14 + dy, C["blaze"]); g.put(4, 14 + dy, C["blaze"]); g.put(3, 15 + dy, C["blaze"])   # the white spot on his nose
         return g
     frames = {ph: body(ph) for ph in ("stand", "walk1", "walk2", "walk3", "walk4", "down", "jump")}
-    return finish(name, frames, (6, 13), (1, 15), (2, 16), head=(9, 0), C=C, ground_fix=True)
+    return finish(name, frames, (7, 11), (1, 14), (2, 15), head=(10, 0), C=C, ground_fix=True)
 
 
-def finish(name, frames, eye, nose, mouth, head, C, small=False, ground_fix=False):
+def finish(name, frames, eye, nose, mouth, head, C, small=False, ground_fix=False, oy=0):
     out = {}
     seed = name
     for ph, g in frames.items():
@@ -228,8 +268,11 @@ def finish(name, frames, eye, nose, mouth, head, C, small=False, ground_fix=Fals
         if ph == "down":
             dy = 3 if name in ("wifi", "snoet") else 4 if name in ("pippa", "pebbels") else 1
         if name == "dobby":
-            dy = 4 + {"walk2": -2, "walk3": -4, "walk4": -1, "jump": -5, "down": 1}.get(ph, 0)
+            dy = 5 + {"walk2": -2, "walk3": -4, "walk4": -1, "jump": -5, "down": 1}.get(ph, 0)
         ex, ey = eye[0], eye[1] + dy
+        if C.get("ring"):   # a brownish ring around a big dark eye (Dobby)
+            for (x, y) in ((ex - 2, ey), (ex - 2, ey + 1), (ex + 1, ey), (ex + 1, ey + 1), (ex - 1, ey - 1), (ex, ey - 1), (ex - 1, ey + 2), (ex, ey + 2)):
+                g.put(x, y, C["ring"])
         g.put(ex, ey, C["eye"]); g.put(ex, ey + 1, C["eye"]); g.put(ex - 1, ey + 1, C["eye"]); g.put(ex - 1, ey, C["eye"])
         g.put(ex - 1, ey, "#ffffff")
         g.put(nose[0], nose[1] + dy, C["nose"]); g.put(nose[0] + 1, nose[1] + dy, C["nose"])
@@ -237,7 +280,7 @@ def finish(name, frames, eye, nose, mouth, head, C, small=False, ground_fix=Fals
         g = texture(g, seed + ph, skip=(C["eye"], "#ffffff", C["nose"]))
         out[ph] = g
     blink = out["stand"].copy()
-    ex, ey = eye[0], eye[1] + (4 if name == "dobby" else 0)
+    ex, ey = eye[0], eye[1] + (5 if name == "dobby" else 0)
     lid = shade(C["fur"], .9)
     for (x, y) in ((ex, ey), (ex - 1, ey), (ex, ey + 1), (ex - 1, ey + 1)):
         blink.c[(x, y)] = lid
@@ -251,16 +294,17 @@ def finish(name, frames, eye, nose, mouth, head, C, small=False, ground_fix=Fals
 
 
 PETS = {
-    "wifi": dog("wifi", {"fur": "#231c18", "fur2": "#17120f", "tip": "#3a2f28", "fringe": "#4a3d33", "bib": "#efe6d6", "leg": "#c9864a",
-                         "ear": "#b97a4c", "muzzle": "#c98a4f", "brow": "#d39556", "eye": "#3b200f", "nose": "#0b0909"}),
-    "snoet": dog("snoet", {"fur": "#7c3f1d", "fur2": "#5d2d14", "tip": "#e2c39a", "fringe": "#a8622f", "bib": "#ead2ac", "leg": "#e2c39a",
-                           "ear": "#e0b48c", "muzzle": "#e7caa1", "brow": "#e7caa1", "eye": "#2a1408", "nose": "#4a2416"}, small=True),
-    "pippa": cat("pippa", {"fur": "#1d1b1d", "fur2": "#121112", "tail": "#1d1b1d", "leg": "#1d1b1d", "ear": "#5a3c40", "chest": "#f2f0ea",
-                           "blaze": "#f2f0ea", "muzzle": "#f2f0ea", "socks": "#f2f0ea", "hind_socks": "#f2f0ea", "eye": "#c9a227", "nose": "#e8a3a6"}),
-    "pebbels": cat("pebbels", {"fur": "#776656", "fur2": "#5a4c40", "tail": "#776656", "leg": "#776656", "ear": "#a07f70", "chest": "#ece6dc",
-                               "muzzle": "#ece6dc", "socks": "#f1ede6", "stripes": "#3e342b", "eye": "#8a8f3a", "nose": "#d79b8f"}, chubby=True),
-    "dobby": rabbit("dobby", {"fur": "#1f1d20", "fur2": "#141315", "tail": "#4a4750", "ear": "#3a2c2f", "muzzle": "#2c2a2e", "blaze": "#f0ede8",
-                              "chest": "#4c4952", "eye": "#5a2a12", "nose": "#2a2224"}),
+    "wifi": dog("wifi", {"fur": "#1e1815", "fur2": "#140f0d", "tip": "#2f2620", "fringe": "#3e3229", "bib": "#efe6d6", "leg": "#c9864a", "leg_full": True,
+                         "ear": "#a8703f", "muzzle": "#c48548", "brow": "#d39556", "eye": "#3b200f", "nose": "#0b0909"}),
+    "snoet": dog("snoet", {"fur": "#8a3b19", "fur2": "#6a2b11", "tip": "#e6c9a0", "fringe": "#d9b085", "bib": "#ecd3ad", "leg": "#e6c9a0", "leg_full": True,
+                           "mask": "#e8c79c", "ear": "#e3b98f", "muzzle": "#ecd0a8", "brow": "#ecd0a8", "eye": "#2a1408", "nose": "#5a2a18"}, small=True),
+    "pippa": cat("pippa", {"fur": "#1b191b", "fur2": "#121112", "tail": "#1b191b", "leg": "#1b191b", "ear": "#5a3c40", "chest": "#f3f1ec",
+                           "belly": "#f3f1ec", "leg_white": "#f3f1ec", "hind_white": True, "blaze": "#f3f1ec", "muzzle": "#f3f1ec",
+                           "socks": "#f3f1ec", "hind_socks": "#f3f1ec", "eye": "#d9a51e", "nose": "#eaa1a6"}),
+    "pebbels": cat("pebbels", {"fur": "#6e5f50", "fur2": "#54483d", "tail": "#6e5f50", "leg": "#6e5f50", "ear": "#a07f70", "chest": "#efeae1", "narrow": True,
+                               "warm": "#7f6047", "muzzle": "#efeae1", "socks": "#f3efe8", "stripes": "#342b23", "eye": "#9a9a3a", "nose": "#e0a39a"}, chubby=True),
+    "dobby": rabbit("dobby", {"fur": "#1c1a1d", "fur2": "#121113", "tail": "#1c1a1d", "ear": "#3a2a2e", "muzzle": "#262428", "blaze": "#f0ede8",
+                              "chest": "#eeebe6", "chest2": "#c9c6c2", "eye": "#1a1418", "ring": "#7a4a36", "nose": "#2a2224"}),
 }
 
 with open(OUT_JS, "w") as f:
