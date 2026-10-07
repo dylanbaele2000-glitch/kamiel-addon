@@ -296,3 +296,30 @@ def process_panorama(files: list):
     hz[~al.any(0)] = H
     hz = ndimage.median_filter(hz, size=31, mode="wrap")
     return P, [int(v) for v in hz[::8]]
+
+
+def metrics(a: np.ndarray) -> dict:
+    """How an element 'weighs' in a picture, for composing scenes like a photographer:
+    wt  = visual weight 0..1 (dark and saturated things weigh more),
+    hue = main colour (degrees), sat = how colourful (0..1)."""
+    a = resize_max(a, 96)
+    al = a[..., 3]
+    m = al > 0.5
+    if m.sum() < 10:
+        return {"wt": 0.5, "hue": 0, "sat": 0.0}
+    rgb = a[..., :3][m]
+    mx, mn = rgb.max(1), rgb.min(1)
+    lum = rgb @ np.array([0.3, 0.59, 0.11], dtype=np.float32)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    wt = float(np.clip(0.6 * (1 - lum.mean()) + 0.4 * sat.mean(), 0, 1))
+    # main hue: a histogram of the colourful pixels, weighted by how colourful they are
+    col = sat > 0.2
+    if col.sum() < 10:
+        return {"wt": round(wt, 3), "hue": 0, "sat": round(float(sat.mean()), 3)}
+    r, g, b = rgb[col, 0], rgb[col, 1], rgb[col, 2]
+    mxc, mnc = mx[col], mn[col]
+    d = np.maximum(mxc - mnc, 1e-6)
+    h = np.where(mxc == r, ((g - b) / d) % 6, np.where(mxc == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    hist, edges = np.histogram(h, bins=24, range=(0, 360), weights=sat[col])
+    k = int(hist.argmax())
+    return {"wt": round(wt, 3), "hue": int((edges[k] + edges[k + 1]) / 2), "sat": round(float(sat[col].mean()), 3)}

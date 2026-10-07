@@ -71,7 +71,7 @@ legend{font-weight:600;margin-bottom:6px;padding:0}
 .pano img{display:block;height:180px;max-width:none}
 label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width:420px}
 label.field span{font-weight:400;color:var(--muted);font-size:13px}
-input[type=number],input[type=time],input[type=date],input[type=text],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+input[type=number],input[type=time],input[type=date],input[type=text],input[type=search],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
 table.chances{border-collapse:collapse;width:auto}
 table.chances th,table.chances td{text-align:left;padding:6px 14px 6px 0}
@@ -110,6 +110,42 @@ details.guide pre{background:var(--card);border:1px solid var(--line);border-rad
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 input.cnt{width:4.2em}
 #songTable input[type=text]{min-width:16em}
+/* element library: small tiles, everything else in one clear panel */
+.libhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.libhead input{max-width:260px}
+.filters button .n{font-weight:400;color:var(--muted);margin-left:4px}
+.etiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.etile{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0;min-height:0;border-radius:12px;overflow:hidden;text-align:left;font-weight:400}
+.etile .th{height:104px;background:var(--sky);display:grid;place-items:center;padding:8px}
+.etile.night .th{background:linear-gradient(#070b24,#1d2350)}
+.etile .th img{max-width:100%;max-height:88px;object-fit:contain}
+.etile .nm{font-weight:600;font-size:13px;padding:7px 9px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.etile .bd{display:flex;gap:4px;flex-wrap:wrap;padding:4px 9px 9px;font-size:12px;color:var(--muted);min-height:26px}
+.etile.off{opacity:.45}
+dialog#elDlg{width:min(940px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:16px;padding:0;background:var(--bg);color:var(--fg)}
+dialog#elDlg::backdrop{background:rgba(0,0,0,.5)}
+.dlg-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:1}
+.dlg-head h2{margin:0;font-size:17px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlg-body{display:grid;grid-template-columns:minmax(0,280px) minmax(0,1fr);gap:16px;padding:16px}
+@media (max-width:720px){.dlg-body{grid-template-columns:1fr}}
+.dlg-side{display:flex;flex-direction:column;gap:12px;align-self:start;position:sticky;top:64px}
+.dlg-prev{background:var(--sky);border-radius:12px;height:260px;display:grid;place-items:center;padding:12px}
+.dlg-prev.night{background:linear-gradient(#070b24,#1d2350)}
+.dlg-prev img{max-width:100%;max-height:236px;object-fit:contain}
+.dlg-main{display:flex;flex-direction:column;gap:12px;min-width:0}
+.sect{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+.sect h3{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.opt{display:flex;flex-direction:column;gap:6px}
+.opt .lbl{font-weight:600;font-size:14px}
+.opt .sub{font-size:12.5px;color:var(--muted);margin-top:-3px}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{min-height:34px;padding:5px 11px;font-weight:500;font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+label.sw{display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+label.sw input{width:20px;height:20px;accent-color:var(--accent);margin-top:1px;flex-shrink:0}
+label.sw b{display:block;font-size:14px}
+label.sw span{font-size:12.5px;color:var(--muted)}
+.dlg-foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .steps{margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .chatchip{display:inline-flex;align-items:center;gap:8px;background:var(--chip);border-radius:999px;padding:4px 6px 4px 12px;font-weight:600}
 .chatchip button{min-height:30px;padding:2px 10px;font-size:13px}
@@ -117,6 +153,7 @@ input.cnt{width:4.2em}
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
 <script src="static/outfits.js"></script>
+<script src="static/compose.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -230,16 +267,11 @@ input.cnt{width:4.2em}
     </form>
 
     <div class="card">
-      <h2>Bibliotheek</h2>
-      <div class="filters" id="filters">
-        <button type="button" data-f="alles" aria-pressed="true">Alles</button>
-        <button type="button" data-f="grond" aria-pressed="false">Grond</button>
-        <button type="button" data-f="horizon" aria-pressed="false">Horizon</button>
-        <button type="button" data-f="lucht" aria-pressed="false">Lucht</button>
-        <button type="button" data-f="wolk" aria-pressed="false">Wolken</button>
-        <button type="button" data-f="kader" aria-pressed="false">Kaders</button>
-      </div>
-      <div class="grid" id="lib"></div>
+      <div class="libhead"><h2>Bibliotheek</h2><input type="search" id="libSearch" placeholder="Zoeken op naam" aria-label="Zoeken op naam"></div>
+      <p class="hint">Tik op een element om alles ervan aan te passen.</p>
+      <div class="filters" id="filters"></div>
+      <div class="etiles" id="lib"></div>
+      <dialog id="elDlg" aria-labelledby="dlgTitle"></dialog>
     </div>
   </section>
 
@@ -350,7 +382,26 @@ input.cnt{width:4.2em}
           <span>Hoeveel ruimte links en rechts van Kamiels midden leeg blijft. Kamiel zelf is ongeveer 130 breed. Standaard 94.</span>
           <label class="pct"><input type="number" id="sLane" min="64" max="300" step="2"> px</label>
         </label>
-        <label class="field" style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input type="checkbox" id="sMix"> Grondobjecten mogen vóór horizonobjecten staan (voller)</label>
+      </div>
+      <p class="hint" style="margin-top:8px">Grondobjecten staan nooit vóór horizonobjecten, en niets raakt net iets anders (of de rand, of de horizonlijn): dingen overlappen duidelijk of houden duidelijk afstand.</p>
+
+      <h2 style="margin-top:18px">Compositie</h2>
+      <p class="hint">Elke plek krijgt één "kijkwijze", zoals een fotograaf die soms zo en soms anders werkt. Kamiel probeert telkens een hoop opstellingen en houdt de mooiste. Vink uit wat je nooit wilt zien.</p>
+      <div class="choices" id="compStyles"></div>
+      <label class="sw" style="margin-top:6px"><input type="checkbox" id="compColor"><span><b>Kleurharmonie</b><span>Op ongeveer de helft van de plekken kiest Kamiel opstellingen waarvan de kleuren bij elkaar passen, met hooguit één felle uitschieter.</span></span></label>
+
+      <h2 style="margin-top:18px">Heuvels</h2>
+      <p class="hint">Zachte heuvels ver weg, achter de horizon, gemaakt van het gras van je eigen panorama. Ze wisselen mee met de plekken. Horizonobjecten staan dan soms kleiner op een heuvel.</p>
+      <div class="settings">
+        <label class="field" for="hChance">Op hoeveel plekken<label class="pct"><input type="number" id="hChance" min="0" max="100" step="5"> %</label></label>
+        <label class="field" for="hHeight">Hoe hoog (hoogstens)<span>In procent van de schermhoogte.</span><label class="pct"><input type="number" id="hHeight" min="4" max="40"> %</label></label>
+      </div>
+
+      <h2 style="margin-top:18px">Stapelen</h2>
+      <p class="hint">In de bibliotheek duid je per element aan of het "kan stapelen" (op iets anders staan) en "kan dragen". Op een drager komt dan soms iets te staan, met een logische grootte. Ook de muziek-tv kan op een drager staan.</p>
+      <div class="settings">
+        <label class="field" for="stChance">Kans dat een drager iets draagt<label class="pct"><input type="number" id="stChance" min="0" max="100" step="5"> %</label></label>
+        <label class="field" for="stMax">Hoogste stapel<span>Alles samen, de drager meegeteld.</span><select id="stMax"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
       </div>
       <h2 style="margin-top:18px">Hoe groot</h2>
       <p class="hint">Hoogte op het scherm, in procent van de schermhoogte. Kamiel zelf is ongeveer 38&nbsp;%. Op de grond worden objecten vooraan groter en achteraan kleiner, binnen deze grenzen. Per element kun je in de bibliotheek nog "Grootte" aanpassen.</p>
@@ -675,102 +726,137 @@ $('upForm').addEventListener('submit', async (e) => {
   $('upBtn').disabled = false;
 });
 
-/* library */
-document.querySelectorAll('#filters button').forEach(b => b.addEventListener('click', () => {
-  filter = b.dataset.f; document.querySelectorAll('#filters button').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false')); renderLib();
-}));
-function renderLib() {
-  const lib = $('lib'); lib.innerHTML = '';
-  const list = world.assets.filter(a => filter === 'alles' || a.kind === filter);
-  if (!list.length) { lib.innerHTML = '<div class="empty">Nog niets in deze categorie. Voeg hierboven iets toe.</div>'; return; }
-  for (const a of list) {
-    const el = document.createElement('div'); el.className = 'item';
-    const night = a.moment === 'nacht';
-    el.innerHTML = `
-      <div class="thumb ${night ? 'night' : ''}"><img alt="" loading="lazy"></div>
-      <div class="meta">
-        <div class="name"></div>
-        <div class="chips"><span class="chip">${KIND_NL[a.kind]}</span>${a.sign ? '<span class="chip">Tekstbord</span>' : ''}${a.tv ? '<span class="chip">Tv</span>' : ''}${a.period && a.period !== 'altijd' ? `<span class="chip">${(PERIOD_NL.find(p => p[0] === a.period) || ['', ''])[1]}</span>` : ''}${a.kind === 'kader' && !a.hole ? '<span class="chip">Geen fotovlak gevonden</span>' : ''}</div>
-        <div class="edit">
-          <label><input type="checkbox" data-k="dag" ${a.moment !== 'nacht' ? 'checked' : ''}> Overdag</label>
-          <label><input type="checkbox" data-k="nacht" ${a.moment !== 'dag' ? 'checked' : ''}> 's Nachts</label>
-          ${a.kind !== 'wolk' ? `<span class="wxs" title="Bij welk weer (niets aangevinkt = altijd)">${[['zon', '☀️'], ['bewolkt', '☁️'], ['regen', '🌧️'], ['sneeuw', '❄️'], ['mist', '🌫️']].map(([k, e]) => `<label class="wx"><input type="checkbox" data-wx="${k}" ${(a.weather || []).includes(k) ? 'checked' : ''}> ${e}</label>`).join('')}</span>` : ''}
-          ${a.kind === 'grond' ? `<label><input type="checkbox" data-sign ${a.sign ? 'checked' : ''}> Tekstbord</label>` : ''}
-          <label>Soort <select data-kind>${Object.entries(KIND_NL).map(([k, v]) => `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-          ${a.kind !== 'wolk' ? `<label>Wanneer <select data-period>${PERIOD_NL.map(([k, n]) => `<option value="${k}" ${(a.period || 'altijd') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-          <span data-own ${a.period === 'eigen' ? '' : 'hidden'}><label>Van <input type="text" data-pf placeholder="dd-mm" size="5" value="${a.period_from ? a.period_from.split('-').reverse().join('-') : ''}"></label> <label>tot <input type="text" data-pt placeholder="dd-mm" size="5" value="${a.period_to ? a.period_to.split('-').reverse().join('-') : ''}"></label></span>
-          <label>Bij tikken <select data-tap><option value="niets">Niets</option><option value="vertrek" ${(a.tap || {}).action === 'vertrek' ? 'selected' : ''}>Toon het vertrekbord</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${(a.tap || {}).action === 'script' && a.tap.entity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>
-          ${a.kind === 'kader' ? `<label><input type="checkbox" data-tv ${a.tv ? 'checked' : ''}> Tv voor muziek</label>` : ''}` : ''}
-          ${a.kind === 'horizon' ? `<label>Zakt in de grond <select data-sink><option value="">Standaard</option>${[0, 3, 5, 8, 10, 15, 20, 25, 30, 40].map(v => `<option value="${v}" ${a.sink === v ? 'selected' : ''}>${v} %</option>`).join('')}</select></label>` : ''}
-          ${a.kind !== 'wolk' ? `<label>Grootte <select data-scale>${SCALE_NL.map(([v, n]) => `<option value="${v}" ${Math.abs((a.scale || 1) - v) < .01 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
-          <label>Hoe vaak <select data-k="rare">${Object.entries(RARE_NL).map(([k, v]) => `<option value="${k}" ${a.rare === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-        </div>
-        <div class="actions"><button type="button" class="danger" data-act="del">Verwijderen</button><span class="status"></span></div>
-      </div>`;
-    el.querySelector('img').src = 'media/' + a.files.main;
-    el.querySelector('.name').textContent = a.label || KIND_NL[a.kind];
-    const st = el.querySelector('.status');
-    const save = async () => {
-      const dag = el.querySelector('[data-k=dag]').checked, nacht = el.querySelector('[data-k=nacht]').checked;
-      if (!dag && !nacht) { status(st, 'Kies minstens één', 'err'); return; }
-      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dag, nacht, rare: el.querySelector('[data-k=rare]').value }) });
-      status(st, r.ok ? 'Bewaard' : 'Mislukt', r.ok ? 'ok' : 'err');
-      el.querySelector('.thumb').classList.toggle('night', nacht && !dag);
-    };
-    el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', save));
-    const patch = async (body) => {
-      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (r.ok) Object.assign(a, await r.json());
-      status(st, r.ok ? 'Bewaard' : 'Mislukt', r.ok ? 'ok' : 'err');
-    };
-    const pe = el.querySelector('[data-period]');
-    const toMd = (v) => { const m = String(v).trim().match(/^(\d{1,2})[-/.](\d{1,2})$/); return m ? m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0') : ''; };
-    const savePeriod = () => {
-      el.querySelector('[data-own]').hidden = pe.value !== 'eigen';
-      if (pe.value === 'eigen') {
-        const f = toMd(el.querySelector('[data-pf]').value), t2 = toMd(el.querySelector('[data-pt]').value);
-        if (!f || !t2) { status(st, 'Vul van en tot in, zoals 01-12', 'err'); return; }
-        patch({ period: 'eigen', period_from: f, period_to: t2 });
-      } else patch({ period: pe.value });
-    };
-    if (pe) { pe.addEventListener('change', savePeriod); el.querySelectorAll('[data-pf],[data-pt]').forEach(i => i.addEventListener('change', savePeriod)); }
-    const tp = el.querySelector('[data-tap]');
-    if (tp) tp.addEventListener('change', () => {
-      const v = tp.value; patch({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } });
-    });
-    el.querySelectorAll('[data-wx]').forEach(i => i.addEventListener('change', () =>
-      patch({ weather: [...el.querySelectorAll('[data-wx]:checked')].map(x => x.dataset.wx) })));
-    const sk = el.querySelector('[data-sink]');
-    if (sk) sk.addEventListener('change', () => patch({ sink: sk.value === '' ? null : +sk.value }));
-    const tv = el.querySelector('[data-tv]');
-    if (tv) tv.addEventListener('change', () => patch({ tv: tv.checked }));
-    const sc = el.querySelector('[data-scale]');
-    if (sc) sc.addEventListener('change', async () => {
-      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scale: +sc.value }) });
-      if (r.ok) a.scale = +sc.value;
-      status(st, r.ok ? 'Bewaard' : 'Mislukt', r.ok ? 'ok' : 'err');
-    });
-    const kd = el.querySelector('[data-kind]');
-    kd.addEventListener('change', async () => {
-      kd.disabled = true; status(st, 'Bezig met aanpassen…');
-      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: kd.value }) });
-      if (r.ok) { await load(); } else { status(st, await r.text(), 'err'); kd.value = a.kind; kd.disabled = false; }
-    });
-    const sg = el.querySelector('[data-sign]');
-    if (sg) sg.addEventListener('change', async () => {
-      sg.disabled = true; status(st, 'Bezig…');
-      const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sign: sg.checked }) });
-      if (r.ok) { await load(); } else { status(st, await r.text(), 'err'); sg.checked = !sg.checked; sg.disabled = false; }
-    });
-    const del = el.querySelector('[data-act=del]');
-    del.addEventListener('click', async () => {
-      if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { del.dataset.sure = ''; del.textContent = 'Verwijderen'; }, 4000); return; }
-      const r = await fetch('api/assets/' + a.id, { method: 'DELETE' });
-      if (r.ok) { await load(); } else status(st, 'Verwijderen mislukt', 'err');
-    });
-    lib.appendChild(el);
-  }
+/* library: tiles; tapping one opens a panel with every option, grouped */
+const KINDS_ORDER = ['grond', 'horizon', 'lucht', 'wolk', 'kader'];
+const KIND_HELP = { grond: 'Staat vooraan op de grond, naast Kamiel.', horizon: 'Staat ver weg op de horizon (of kleiner op de heuvels).', lucht: 'Zweeft in de lucht.', wolk: 'Een wolk: drijft met de wind.', kader: 'Een kader waar foto\'s (en de albumhoes) in komen.' };
+const WX = [['zon', '☀️', 'Zon'], ['bewolkt', '☁️', 'Bewolkt'], ['regen', '🌧️', 'Regen'], ['sneeuw', '❄️', 'Sneeuw'], ['mist', '🌫️', 'Mist']];
+let libSearch = '', openId = null;
+$('libSearch').addEventListener('input', (e) => { libSearch = e.target.value.trim().toLowerCase(); renderLib(); });
+$('filters').addEventListener('click', (e) => { const b = e.target.closest('button[data-f]'); if (!b) return; filter = b.dataset.f; renderLib(); });
+const libList = () => world.assets.filter(a => (filter === 'alles' || a.kind === filter) && (!libSearch || (a.label || '').toLowerCase().includes(libSearch)));
+function badges(a) {
+  const b = [];
+  b.push(a.moment === 'nacht' ? '🌙' : a.moment === 'dag' ? '☀️' : '☀️🌙');
+  if (a.active === false) b.push('uit');
+  if (a.rare === 'zeldzaam') b.push('★'); if (a.rare === 'heelzeldzaam') b.push('★★');
+  (a.weather || []).forEach(w => b.push((WX.find(x => x[0] === w) || ['', ''])[1]));
+  if (a.sign) b.push('🪧'); if (a.tv) b.push('📺'); if (a.grass_only) b.push('🌱');
+  if (a.stack) b.push('⬆ stapelt'); if (a.carry) b.push('⬇ draagt');
+  if (a.period && a.period !== 'altijd') b.push((PERIOD_NL.find(p => p[0] === a.period) || ['', ''])[1]);
+  if (a.kind === 'kader' && !a.hole) b.push('⚠ geen fotovlak');
+  return b.map(x => `<span>${esc(x)}</span>`).join('');
 }
+function renderLib() {
+  const counts = Object.fromEntries(KINDS_ORDER.map(k => [k, world.assets.filter(a => a.kind === k).length]));
+  $('filters').innerHTML = [['alles', 'Alles', world.assets.length]].concat(KINDS_ORDER.map(k => [k, KIND_NL[k] === 'Wolk' ? 'Wolken' : KIND_NL[k] === 'Kader' ? 'Kaders' : KIND_NL[k], counts[k]]))
+    .map(([k, n, c]) => `<button type="button" data-f="${k}" aria-pressed="${filter === k}">${n}<span class="n">${c}</span></button>`).join('');
+  const lib = $('lib'), list = libList();
+  if (!list.length) { lib.innerHTML = `<div class="empty">${libSearch ? 'Niets gevonden.' : 'Nog niets in deze categorie. Voeg hierboven iets toe.'}</div>`; return; }
+  lib.innerHTML = list.map(a => `<button type="button" class="etile ${a.moment === 'nacht' ? 'night' : ''} ${a.active === false ? 'off' : ''}" data-id="${a.id}">
+      <span class="th"><img alt="" loading="lazy" src="media/${a.files.main}"></span><span class="nm">${esc(a.label || KIND_NL[a.kind])}</span><span class="bd">${badges(a)}</span></button>`).join('');
+}
+$('lib').addEventListener('click', (e) => { const b = e.target.closest('.etile'); if (b) openEl(b.dataset.id); });
+const seg = (key, opts, val) => `<div class="seg" role="group" data-seg="${key}">${opts.map(([v, n]) => `<button type="button" data-v="${esc(v)}" aria-pressed="${String(v) === String(val)}">${n}</button>`).join('')}</div>`;
+const sw = (key, on, title, sub) => `<label class="sw"><input type="checkbox" data-sw="${key}" ${on ? 'checked' : ''}><span><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</span></label>`;
+function openEl(id) {
+  const a = world.assets.find(x => x.id === id); if (!a) return;
+  openId = id;
+  const dlg = $('elDlg'), list = libList(), idx = list.findIndex(x => x.id === id);
+  const isWolk = a.kind === 'wolk', md = toDm => toDm ? toDm.split('-').reverse().join('-') : '';
+  const tapVal = (a.tap || {}).action === 'script' ? 'script:' + a.tap.entity : ((a.tap || {}).action || 'niets');
+  dlg.innerHTML = `
+    <div class="dlg-head">
+      <button type="button" data-nav="-1" aria-label="Vorige" ${idx <= 0 ? 'disabled' : ''}>‹</button>
+      <h2 id="dlgTitle">${esc(a.label || KIND_NL[a.kind])}</h2>
+      <span class="status" id="dlgStatus" role="status"></span>
+      <button type="button" data-nav="1" aria-label="Volgende" ${idx < 0 || idx >= list.length - 1 ? 'disabled' : ''}>›</button>
+      <button type="button" data-close aria-label="Sluiten">✕</button>
+    </div>
+    <div class="dlg-body">
+      <div class="dlg-side">
+        <div class="dlg-prev ${a.moment === 'nacht' ? 'night' : ''}"><img alt="" src="media/${a.files.main}"></div>
+        <label class="field" style="max-width:none">Naam<input type="text" data-text="label" maxlength="60" value="${esc(a.label || '')}"></label>
+        ${sw('active', a.active !== false, 'In de wereld', 'Uit = blijft bewaard, maar verschijnt niet.')}
+      </div>
+      <div class="dlg-main">
+        <section class="sect"><h3>Wat is het</h3>
+          <div class="opt"><span class="lbl">Soort</span><span class="sub">${KIND_HELP[a.kind]}</span>${seg('kind', KINDS_ORDER.map(k => [k, KIND_NL[k]]), a.kind)}</div>
+          ${a.kind === 'grond' ? sw('sign', a.sign, 'Tekstbord', 'Er komt een tekst op uit Bordteksten, in wisselende kleuren.') : ''}
+          ${a.kind === 'kader' ? sw('tv', a.tv, 'Tv voor muziek', 'Gebruikt als tv op een wolk of op iets dat kan dragen, met de albumhoes erin.') : ''}
+        </section>
+        <section class="sect"><h3>Wanneer</h3>
+          <div class="opt"><span class="lbl">Moment</span>${seg('moment', [['dag', 'Overdag'], ['nacht', "'s Nachts"], ['altijd', 'Dag en nacht']], a.moment)}</div>
+          ${isWolk ? '' : `<div class="opt"><span class="lbl">Bij welk weer</span><span class="sub">Niets gekozen = bij elk weer.</span>
+            <div class="seg" role="group" data-multi="weather">${WX.map(([k, e, n]) => `<button type="button" data-v="${k}" aria-pressed="${(a.weather || []).includes(k)}">${e} ${n}</button>`).join('')}</div></div>
+          <div class="opt"><span class="lbl">Periode</span><select data-sel="period" style="max-width:260px">${PERIOD_NL.map(([k, n]) => `<option value="${k}" ${(a.period || 'altijd') === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+            <span class="row" data-own ${a.period === 'eigen' ? '' : 'hidden'}><label>Van <input type="text" data-pf placeholder="dd-mm" size="6" value="${md(a.period_from)}"></label><label>tot <input type="text" data-pt placeholder="dd-mm" size="6" value="${md(a.period_to)}"></label></span></div>`}
+          <div class="opt"><span class="lbl">Hoe vaak</span>${seg('rare', Object.entries(RARE_NL), a.rare)}</div>
+        </section>
+        ${isWolk ? '' : `<section class="sect"><h3>Plaatsing</h3>
+          <div class="opt"><span class="lbl">Grootte</span>${seg('scale', SCALE_NL.map(([v, n]) => [v, n]), (SCALE_NL.find(([v]) => Math.abs((a.scale || 1) - v) < .01) || [1])[0])}</div>
+          ${a.kind === 'horizon' ? `<div class="opt"><span class="lbl">Zakt in de grond</span><span class="sub">Hoeveel van het object achter de grond verdwijnt.</span>
+            ${seg('sink', [['', 'Standaard']].concat([0, 3, 5, 10, 15, 20, 30].map(v => [v, v + ' %'])), a.sink === null || a.sink === undefined ? '' : a.sink)}</div>` : ''}
+          ${a.kind === 'grond' ? sw('grass_only', a.grass_only, 'Enkel op het gras', 'Steekt nooit boven de horizon uit. Handig voor bloemen, paddenstoelen, kleine dingen.') : ''}
+          <div class="opt"><span class="lbl">Kijkt naar</span><span class="sub">Kijkt het element een kant op? Dan draait Kamiel het zo dat het naar hem kijkt.</span>
+            ${seg('gaze', [['', 'Nergens'], ['links', '← Links'], ['rechts', 'Rechts →']], a.gaze || '')}</div>
+        </section>`}
+        <section class="sect"><h3>Stapelen</h3>
+          ${isWolk ? '' : sw('stack', a.stack, 'Kan op iets anders staan', 'Verschijnt soms bovenop een element dat kan dragen, met een logische grootte.')}
+          ${sw('carry', a.carry, 'Kan iets dragen', isWolk ? 'Er kan soms iets op deze wolk staan.' : 'Er kan soms iets op staan (ook de muziek-tv).')}
+        </section>
+        ${isWolk ? '' : `<section class="sect"><h3>Tikken</h3>
+          <div class="opt"><span class="lbl">Bij tikken op dit element</span><select data-sel="tap" style="max-width:360px"><option value="niets">Niets</option><option value="vertrek" ${tapVal === 'vertrek' ? 'selected' : ''}>Toon het vertrekbord</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${tapVal === 'script:' + e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
+        </section>`}
+        <div class="dlg-foot"><button type="button" class="danger" data-del>Verwijderen</button></div>
+      </div>
+    </div>`;
+  if (!dlg.open) dlg.showModal();
+}
+async function patchEl(body, reload) {
+  const a = world.assets.find(x => x.id === openId); if (!a) return;
+  status($('dlgStatus'), reload ? 'Bezig…' : '');
+  const r = await fetch('api/assets/' + a.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { status($('dlgStatus'), (await r.text()) || 'Mislukt', 'err'); openEl(a.id); return; }
+  const upd = await r.json(); Object.assign(a, upd);
+  if (reload) { await load(); }
+  renderLib(); openEl(a.id); status($('dlgStatus'), 'Bewaard ✓', 'ok');
+}
+const toMd = (v) => { const m = String(v).trim().match(/^(\d{1,2})[-/.](\d{1,2})$/); return m ? m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0') : ''; };
+$('elDlg').addEventListener('click', async (e) => {
+  const dlg = $('elDlg'), t = e.target;
+  if (t === dlg || t.closest('[data-close]')) { dlg.close(); return; }
+  const nav = t.closest('[data-nav]'); if (nav) { const list = libList(), i = list.findIndex(x => x.id === openId) + +nav.dataset.nav; if (list[i]) openEl(list[i].id); return; }
+  const b = t.closest('.seg button');
+  if (b) {
+    const g = b.parentElement, key = g.dataset.seg, v = b.dataset.v;
+    if (g.dataset.multi) { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); patchEl({ weather: [...g.querySelectorAll('[aria-pressed=true]')].map(x => x.dataset.v) }); return; }
+    if (key === 'kind') return patchEl({ kind: v }, true);
+    if (key === 'moment') return patchEl({ dag: v !== 'nacht', nacht: v !== 'dag' });
+    if (key === 'scale') return patchEl({ scale: +v });
+    if (key === 'sink') return patchEl({ sink: v === '' ? null : +v });
+    return patchEl({ [key]: v });
+  }
+  const del = t.closest('[data-del]');
+  if (del) {
+    if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { if (del.isConnected) { del.dataset.sure = ''; del.textContent = 'Verwijderen'; } }, 4000); return; }
+    const r = await fetch('api/assets/' + openId, { method: 'DELETE' });
+    if (r.ok) { dlg.close(); await load(); } else status($('dlgStatus'), 'Verwijderen mislukt', 'err');
+  }
+});
+$('elDlg').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.sw) return patchEl({ [t.dataset.sw]: t.checked }, t.dataset.sw === 'sign');
+  if (t.dataset.text) return patchEl({ [t.dataset.text]: t.value });
+  if (t.dataset.sel === 'tap') { const v = t.value; return patchEl({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } }); }
+  if (t.dataset.sel === 'period' || t.matches('[data-pf],[data-pt]')) {
+    const dlg = $('elDlg'), pe = dlg.querySelector('[data-sel=period]').value;
+    dlg.querySelector('[data-own]').hidden = pe !== 'eigen';
+    if (pe !== 'eigen') return patchEl({ period: pe });
+    const f = toMd(dlg.querySelector('[data-pf]').value), t2 = toMd(dlg.querySelector('[data-pt]').value);
+    if (!f || !t2) { status($('dlgStatus'), 'Vul van en tot in, zoals 01-12', 'err'); return; }
+    return patchEl({ period: 'eigen', period_from: f, period_to: t2 });
+  }
+});
 
 /* panorama */
 function renderPano() {
@@ -836,7 +922,13 @@ async function renderSettings() {
   $('sWalk').value = s.walk_minutes; $('sNightStart').value = s.night_start; $('sNightEnd').value = s.night_end;
   const C = s.counts || {};
   for (const part of ['dag', 'nacht']) for (const k of ['grond', 'horizon', 'lucht', 'kader']) { const r = (C[part] || {})[k] || [0, 0]; $(`n_${part}_${k}_0`).value = r[0]; $(`n_${part}_${k}_1`).value = r[1]; }
-  $('sMax').value = s.max_objects; $('sSpacing').value = s.spacing === undefined ? 30 : s.spacing; $('sLane').value = s.lane || 94; $('sMix').checked = s.mix_layers !== false;
+  $('sMax').value = s.max_objects; $('sSpacing').value = s.spacing === undefined ? 30 : s.spacing; $('sLane').value = s.lane || 94;
+  const CS = (s.compose && s.compose.styles) || {};
+  $('compStyles').innerHTML = KamielCompose.STYLES.map(([id, , txt]) => { const [n, d] = txt.split(': ');
+    return `<label class="choice"><input type="checkbox" class="cStyle" data-s="${id}" ${CS[id] !== false ? 'checked' : ''}><span><b>${esc(n)}</b><span>${esc(d)}</span></span></label>`; }).join('');
+  $('compColor').checked = !(s.compose && s.compose.color === false);
+  $('hChance').value = (s.hills || {}).chance === undefined ? 40 : s.hills.chance; $('hHeight').value = (s.hills || {}).height || 18;
+  $('stChance').value = (s.stack || {}).chance === undefined ? 35 : s.stack.chance; $('stMax').value = String((s.stack || {}).max || 3);
   renderSongs(world.songs || []);
   const E = s.events || {};
   $('eOn').checked = E.on !== false; $('eLama').value = E.lama_per_day === undefined ? 1 : E.lama_per_day; $('eCommon').value = E.common_per_day === undefined ? 3 : E.common_per_day;
@@ -882,7 +974,7 @@ async function renderSettings() {
   document.querySelectorAll('#btnTable tbody tr').forEach((tr, i) => { tr.querySelector('.kIcon').value = (BT[i] || {}).icon || ''; tr.querySelector('.kLab').value = (BT[i] || {}).label || ''; });
   fill('light,switch,input_boolean,fan,cover,script,scene,automation,button,input_button,media_player,climate,lock', [...document.querySelectorAll('.kEnt')], [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => (BT[i] || {}).entity), 'Niets');
   $('sOutMode').value = s.outfit_mode || 'kiezen'; $('sKTap').checked = s.kamiel_tap !== 'niets';
-  const on = s.outfits_on && s.outfits_on.length ? s.outfits_on : KamielOutfits.OUTFITS.map(o => o.id);
+  const offList = s.outfits_off || [], on = KamielOutfits.OUTFITS.map(o => o.id).filter(id => !offList.includes(id));
   const box = $('oTiles'); box.innerHTML = '';
   const kim = new Image(); kim.src = 'static/kamiel/stand.webp';
   kim.onload = () => KamielOutfits.OUTFITS.forEach(o => {
@@ -902,7 +994,9 @@ async function renderSettings() {
 $('setForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value, night_start: $('sNightStart').value, night_end: $('sNightEnd').value,
-    max_objects: +$('sMax').value, spacing: +$('sSpacing').value || 0, lane: +$('sLane').value || 94, mix_layers: $('sMix').checked,
+    max_objects: +$('sMax').value, spacing: +$('sSpacing').value || 0, lane: +$('sLane').value || 94,
+    compose: { styles: Object.fromEntries([...document.querySelectorAll('.cStyle')].map(e => [e.dataset.s, e.checked])), color: $('compColor').checked },
+    hills: { chance: +$('hChance').value || 0, height: +$('hHeight').value || 18 }, stack: { chance: +$('stChance').value || 0, max: +$('stMax').value || 3 },
     counts: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`n_${part}_${k}_0`).value || 0, +$(`n_${part}_${k}_1`).value || 0]]))])),
     events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0,
       off: [...document.querySelectorAll('.evOn')].filter(e => !e.checked).map(e => e.dataset.e) }, giant_chance: +$('sGiant').value, horizon_sink: +$('sSink').value || 0,
@@ -918,7 +1012,7 @@ $('setForm').addEventListener('submit', async (e) => {
     window_close: +$('sWinClose').value, window_layout: $('sWinLayout').value,
     buttons: [...document.querySelectorAll('#btnTable tbody tr')].map(tr => ({ icon: tr.querySelector('.kIcon').value, label: tr.querySelector('.kLab').value, entity: tr.querySelector('.kEnt').value })),
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
-    outfits_on: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => e.checked).map(e => e.dataset.o) : undefined,
+    outfits_off: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => !e.checked).map(e => e.dataset.o) : undefined,
     osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');

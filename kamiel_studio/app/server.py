@@ -84,7 +84,12 @@ DEFAULT_SETTINGS = {
     "max_objects": 12,
     "spacing": 30,          # px between objects
     "lane": 94,             # px kept free on each side of Kamiel's middle
-    "mix_layers": True,     # ground objects may stand in front of horizon objects
+    "mix_layers": False,    # (no longer used: ground objects never stand in front of horizon objects)
+    # composing a scene like a photographer: which ways of looking may be used, and colour harmony
+    "compose": {"styles": {"vrij": True, "held": True, "diepte": True, "leegte": True, "groepje": True, "ritme": True,
+                           "verhouding": True, "lijn": True}, "color": True},
+    "hills": {"chance": 40, "height": 18},           # % of places with hills; how high, in % of the screen
+    "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": []},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
@@ -106,6 +111,7 @@ DEFAULT_SETTINGS = {
     "buttons": [],
     "outfit_mode": "kiezen",
     "outfits_on": [],
+    "outfits_off": [],      # clothes NOT in the wardrobe; new clothes are in it by themselves
     "kamiel_tap": "kleerkast",
     "timer_entities": [],
     "departure_trigger": "",
@@ -145,6 +151,10 @@ def load_db():
     if "board" not in stored and stored.get("departures"):
         s["board"] = [{"entity": d["entity"], "label": d.get("label", "")[:14], "lines": d.get("lines", ""),
                        "dest": "", "kind": "alles", "count": 1} for d in stored["departures"]]
+    if "outfits_off" not in stored and stored.get("outfits_on"):
+        # up to 0.8.0 the Studio saved the clothes that were ON, so clothes added later never showed up
+        first12 = ["feesthoed", "kroon", "muts", "cowboy", "bloemen", "koptelefoon", "zonnebril", "nerdbril", "sjaal", "strik", "rodeneus", "snor"]
+        s["outfits_off"] = [o for o in first12 if o not in stored["outfits_on"]]
     if "counts" not in stored and "chances" in stored:
         # older versions had a chance per kind; start from the new, fuller defaults but keep "never" as never
         for part in ("dag", "nacht"):
@@ -152,6 +162,10 @@ def load_db():
                 if kind in s["counts"][part] and int(v) == 0:
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
+    for k in ("hills", "stack"):
+        merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
+    cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
+    cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); s["compose"] = cp
     for k in ("windows", "window_titles"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     if "songs" not in db:
@@ -326,8 +340,22 @@ def _asset_from_upload(data, kind, moment, rare, is_sign, label):
         "id": aid, "label": label, "kind": kind, "moment": moment, "rare": rare,
         "sign": bool(is_sign and meta.get("plate")),
         "size": [int(main.shape[1]), int(main.shape[0])],
-        "files": files, "original": original, **meta,
+        "files": files, "original": original, **meta, **process.metrics(main),
     }
+
+
+def _measure_old_assets():
+    """Elements from before 0.9.0 have no weight and colour yet: measure them once, in the background."""
+    db = load_db()
+    todo = [a for a in db["assets"] if "wt" not in a]
+    found = {}
+    for a in todo:
+        try:
+            with open(os.path.join(MEDIA, a["files"]["main"]), "rb") as f:
+                found[a["id"]] = process.metrics(process.load_rgba(f.read()))
+        except Exception as e:
+            print("Meten mislukt voor " + a.get("label", a["id"]) + ": " + str(e), flush=True)
+    return found
 
 
 def parse_moment(day, night):
@@ -493,6 +521,11 @@ async def api_edit_asset(request):
                     a["scale"] = max(0.3, min(3.0, float(body["scale"])))
                 if "active" in body:
                     a["active"] = bool(body["active"])
+                for k in ("grass_only", "stack", "carry"):   # only on the grass / can stand on others / can carry others
+                    if k in body:
+                        a[k] = bool(body[k])
+                if body.get("gaze") in ("", "links", "rechts"):   # which way it looks (it then looks toward Kamiel)
+                    a["gaze"] = body["gaze"]
                 save_db(db)
                 return web.json_response(a)
     raise web.HTTPNotFound()
@@ -616,8 +649,24 @@ async def api_settings(request):
             s["spacing"] = max(-150, min(200, int(body["spacing"])))
         if "lane" in body:
             s["lane"] = max(64, min(300, int(body["lane"])))
-        if "mix_layers" in body:
-            s["mix_layers"] = bool(body["mix_layers"])
+        if isinstance(body.get("compose"), dict):
+            c = body["compose"]
+            if isinstance(c.get("styles"), dict):
+                for k in s["compose"]["styles"]:
+                    if k in c["styles"]:
+                        s["compose"]["styles"][k] = bool(c["styles"][k])
+            if "color" in c:
+                s["compose"]["color"] = bool(c["color"])
+        if isinstance(body.get("hills"), dict):
+            if "chance" in body["hills"]:
+                s["hills"]["chance"] = max(0, min(100, int(body["hills"]["chance"])))
+            if "height" in body["hills"]:
+                s["hills"]["height"] = max(4, min(40, int(body["hills"]["height"])))
+        if isinstance(body.get("stack"), dict):
+            if "chance" in body["stack"]:
+                s["stack"]["chance"] = max(0, min(100, int(body["stack"]["chance"])))
+            if "max" in body["stack"]:
+                s["stack"]["max"] = max(2, min(4, int(body["stack"]["max"])))
         if isinstance(body.get("events"), dict):
             e, b = s["events"], body["events"]
             if "on" in b:
@@ -663,8 +712,8 @@ async def api_settings(request):
                              "entity": str(b.get("entity", "")).strip()[:120]} for b in body["buttons"][:9] if isinstance(b, dict)]
         if body.get("outfit_mode") in ("kiezen", "dag", "uit"):
             s["outfit_mode"] = body["outfit_mode"]
-        if isinstance(body.get("outfits_on"), list):
-            s["outfits_on"] = [str(x)[:20] for x in body["outfits_on"]][:40]
+        if isinstance(body.get("outfits_off"), list):
+            s["outfits_off"] = [x for x in body["outfits_off"] if x in OUTFIT_SLOTS]
         if body.get("kamiel_tap") in ("kleerkast", "niets"):
             s["kamiel_tap"] = body["kamiel_tap"]
         if isinstance(body.get("board"), list):
@@ -1219,7 +1268,7 @@ COND_NL = {"sunny": "Zonnig", "clear-night": "Heldere nacht", "partlycloudy": "H
 def current_outfit(db):
     s = db["settings"]
     mode = s.get("outfit_mode", "kiezen")
-    allowed = s.get("outfits_on") or list(OUTFIT_SLOTS)
+    allowed = [o for o in OUTFIT_SLOTS if o not in s.get("outfits_off", [])] or list(OUTFIT_SLOTS)
     if mode == "uit":
         return []
     if mode == "dag" and db.get("outfit_day") == time.strftime("%Y-%m-%d"):
@@ -1584,6 +1633,18 @@ def make_display():
     return app
 
 
+async def measure_old_assets():
+    found = await run_blocking(_measure_old_assets)
+    if found:
+        async with lock:
+            db = load_db()
+            for a in db["assets"]:
+                if a["id"] in found:
+                    a.update(found[a["id"]])
+            save_db(db)
+        print(f"{len(found)} elementen gemeten voor de compositie.", flush=True)
+
+
 async def main():
     first_run()
     runners = []
@@ -1603,6 +1664,7 @@ async def main():
         except Exception as e:
             print("Verbinding met Home Assistant mislukt: " + str(e), flush=True)
     asyncio.ensure_future(tg_loop())
+    asyncio.ensure_future(measure_old_assets())
     await asyncio.Event().wait()
 
 

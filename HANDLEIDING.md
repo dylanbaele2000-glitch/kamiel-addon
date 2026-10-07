@@ -1,6 +1,6 @@
 # Kamiel: technische handleiding
 
-Stand: 6 oktober 2026 (versie 0.8.0)
+Stand: 7 oktober 2026 (versie 0.9.0)
 
 ## Voor wie dit is
 
@@ -65,6 +65,7 @@ Alles staat in één Home Assistant-add-on-repository, ongeveer 4300 regels code
 | `kamiel_studio/Dockerfile` | `apk add python3 py3-aiohttp py3-numpy py3-scipy py3-pillow tzdata`, kopieert `app/` en `run.sh`. |
 | `kamiel_studio/run.sh` | `#!/usr/bin/with-contenv bashio` + `exec python3 /app/server.py` (with-contenv is nodig om de token door te geven). |
 | `app/server.py` | De volledige server (aiohttp): opslag, API, Home Assistant, Telegram, nummerlijst, gebeurtenissen, beeldverwerking aansturen. |
+| `app/static/compose.js` | Hoe een plek opgebouwd wordt: kijkwijzen, kandidaat-opstellingen met score, raakvlakken, heuvels, stapels. Ook geladen door de Studio (lijst kijkwijzen). |
 | `app/static/events.js` | De wereldgebeurtenissen (lijst, planning per dag/week, alle animaties). De lijst bovenaan wordt ook door de server gelezen. |
 | `app/process.py` | Beeldverwerking met numpy/scipy/Pillow: uitknippen, dreamcore-filter, fotovlak in kaders, kleurvarianten van borden, panorama-naden. |
 | `app/static/display.html` | De tablet: één HTML-pagina met canvas-renderer en alle live-functies (±1300 regels). |
@@ -135,7 +136,11 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | `max_objects` | 12 | Maximum objecten per plek (wolken en live-dingen niet meegeteld). |
 | `spacing` | 30 | Pixels tussen objecten (negatief = overlappen). |
 | `lane` | 94 | Vrije ruimte links en rechts van Kamiels midden. |
-| `mix_layers` | true | Grondobjecten mogen vóór horizonobjecten staan. |
+| `mix_layers` | false | Niet meer gebruikt: grond staat nooit vóór horizon. |
+| `compose` | alle kijkwijzen aan, `color` true | Welke kijkwijzen mogen, kleurharmonie aan/uit. |
+| `hills` | `chance` 40, `height` 18 | % plekken met heuvels, hoogte in % van het scherm. |
+| `stack` | `chance` 35, `max` 3 | Kans dat een drager iets draagt, hoogste stapel (2–4). |
+| `outfits_off` | \[\] | Kleren die níet in de kast hangen (vervangt `outfits_on`, zodat nieuwe kleren vanzelf beschikbaar zijn). |
 | `events` | aan, lama 1/dag, vaak 3/dag, soms 4/week, avond aan, `off` [] | Wereldgebeurtenissen. |
 | `sizes` | grond 10–40, horizon 15–42, lucht 12–38, kader 18–42 | Hoogte in % van de schermhoogte. |
 | `giant_chance` | 10 | % kans op een reuzenobject. |
@@ -149,7 +154,7 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | `kamiel_tap` | kleerkast | Tikken op Kamiel opent de kleerkast. |
 | `windows`, `window_titles`, `window_close`, `window_layout` | alles aan, \*.exe, 60 s, verspreid | De oude Windows-vensters. |
 | `buttons` | \[\] | 9 knoppen: `icon`, `label`, `entity`. |
-| `outfit_mode`, `outfits_on` | kiezen, alle | Kleerkast: `kiezen` / `dag` / `uit`, welke kleren beschikbaar. |
+| `outfit_mode` | kiezen | Kleerkast: `kiezen` / `dag` / `uit`. |
 | `media_player` | "" | Speaker voor de muziek-tv. |
 | `board` | \[\] | Vertrekbordrijen: `label`, `entity`, `kind`, `lines`, `dest`, `count`. |
 | `departure_trigger` | "" | Sensor die het vertrekbord automatisch toont. |
@@ -207,12 +212,19 @@ De tablet gebruikt poort 8100, de Studio 8099; de "gedeelde" endpoints bestaan o
 
 **Wereld en plekken:** het panorama is `PW` breed; elke 960 px is een **plek** (`N` plekken, 8 bij de eigenaar). Kamiel staat op `kx` (wereldcoördinaat), de camera centreert hem en de wereld loopt rond. Een plek heeft `items` (de objecten), `night`, `weather` en `seen`.
 
-**Een plek samenstellen (`compose(i)`):**
+**Een plek samenstellen (`compose.js`, opgeroepen door `compose(i)`):**
+
+- Elke plek krijgt één **kijkwijze**: `vrij` (balans, derdelijnen), `held` (één groot hoofdobject op een derde, rest ×0,62), `diepte` (groot object vooraan, deels uit beeld), `leegte` (bijna niets; negeert het minimum), `groepje` (drie grondobjecten dicht bij elkaar), `ritme` (één element drie keer, kleiner naar achter), `verhouding` (veel lucht of veel grond), `lijn` (van groot vooraan naar klein bij Kamiel). Te testen met `?stijl=held`.
+- Er worden 28 opstellingen geprobeerd; de score telt: ontbrekende objecten (−3 elk), **raakvlakken** (−40 elk: twee dingen die net raken of net overlappen, een top op de horizonlijn of een heuveltop, iets dat net de rand of Kamiel raakt), balans als een wip (gewicht × oppervlak × afstand tot het midden), zware dingen op een derde (±160 px), dieptespreiding bij `diepte`, en op ±60 % van de plekken **kleurharmonie** (kleuren 45–150° uit elkaar botsen, max. één felle uitschieter). Gewicht (`wt`), hoofdkleur (`hue`) en kleurrijkheid (`sat`) meet de server per element bij het uploaden (`process.metrics`); oudere elementen worden bij het opstarten één keer gemeten.
+- Grond en horizon delen één rij: **grondobjecten staan nooit vóór horizonobjecten**. Elementen met `gaze` (links/rechts) worden gespiegeld zodat ze naar Kamiel kijken. `grass_only`: kleiner gemaakt en zo diep gezet dat de top onder de horizon blijft.
+- **Heuvels:** per plek met kans `hills.chance` 1 of 2 heuvelruggen (bulten met cosinusprofiel, naar 0 aan de plekranden zodat plekken op elkaar aansluiten). `drawHills()` tekent ze tussen wolken en horizonobjecten, gevuld met de grasstrook van het panorama van die plek plus een blauwige waas (achterste rug meer); de onderkant verdwijnt onder het panorama. Horizonobjecten staan soms (50 %) ×0,6 op de voorste rug (`onHill`, `base`), en worden eerst getekend.
+- **Stapels:** na de opstelling krijgt een drager (`carry`) met kans `stack.chance` iets dat kan stapelen (`stack`) erbovenop: 30–65 % van zijn breedte, nooit hoger dan 85 % van de drager, tot `stack.max` hoog. Een kind heeft `on` (de drager) en `ox`; `itemPos()` zet het op de bovenrand van de drager (`topOf()` meet die per kolom) en het volgt de drager in events. Ook wolken kunnen dragen (`cl.stack`). Niet bovenaan het scherm (drager onder y 110).
+
 
 - Alleen elementen die nu mogen: dag/nacht, periode (seizoen/feestdag, met Pasen berekend), weertype, niet de muziek-tv. Zeldzaamheid weegt mee; periode- en weer-gebonden elementen ×3. De laatste 3 keuzes worden vermeden.
-- Per soort een willekeurig aantal tussen `counts[dag|nacht][soort]` minstens en hoogstens; het maximum wordt afgedwongen. Zijn er minder elementen dan gevraagd, dan mag een grond- of horizon-element twee keer (nooit in de lucht). De laatste 6 keuzes worden vermeden.
+- Per soort een willekeurig aantal tussen `counts[dag|nacht][soort]` minstens en hoogstens (aangepast door de kijkwijze); het maximum wordt afgedwongen. Zijn er minder elementen dan gevraagd, dan mag een grond- of horizon-element twee keer (nooit in de lucht). De laatste 6 keuzes worden vermeden.
 - Grootte: tussen de ingestelde min/max (% van de schermhoogte), grond-objecten vooraan groter (diepte), soms een reus, maal de eigen `scale`. Te brede dingen worden kleiner zodat ze naast Kamiel passen.
-- Plaatsing: grootste eerst, afwisselend naar de leegste kant, `spacing` px tussenruimte, en een **vrije baan rond Kamiel** (`lane`, 94 px aan elke kant). Met `mix_layers` houden grond en horizon elk hun eigen rij bij (voller). Lucht-objecten komen als laatste en mogen niets raken dat staat.
+- Plaatsing: grootste eerst, afwisselend naar de leegste kant, `spacing` px tussenruimte, en een **vrije baan rond Kamiel** (`lane`, 94 px aan elke kant).  Lucht-objecten komen als laatste en mogen niets raken dat staat.
 - Horizon-objecten staan op het **laagste grondpunt onder hun voet** (uit het horizonprofiel) en zakken dan `sink`% in. Grond-objecten staan tussen horizon+14 en `FEET` = 548, op hun echte voet (`footOf()` meet de onderste ondoorzichtige rij, want de dreamcore-gloed maakt de afbeelding groter), met een zachte schaduw eronder.
 - Borden krijgen een willekeurig woord + kleur; kaders een willekeurige foto.
 - Een plek wordt opnieuw samengesteld zodra ze niet zichtbaar is en al gezien werd, of als dag/nacht of het weer veranderde. Komt Kamiel terug, dan staat er dus iets nieuws. **Let op:** `visible()` rekent zonder marge. Tot 0.7.2 stond er 40 px marge, en omdat een plek precies één scherm breed is, telden de buren dan altijd als zichtbaar: A→B→A gaf hetzelfde A (opgelost in 0.8.0, getest).
@@ -244,7 +256,7 @@ Alles hieronder komt binnen via `api/live` (elke 5 s) of wordt door tikken gesta
 
 **Telegram-foto:** komt als `spotlight` binnen. Staat er op een plek al een kader, dan komt de foto **in dat kader** (de oude foto komt terug als de spotlight weg is); anders komt er een kader bij (eigen kader-element of ingebouwd goudkleurig kader). Weg door `/wis`, "Bericht wissen" in de Studio, erop tikken (meldt "Foto gezien"), of als de tijd om is.
 
-**Muziek-tv:** speelt de gekozen speaker, dan krijgt elke plek een tv (`addTV`) op een **vrije** plek, in een van drie vormen: op de grond (klein tot groot), reusachtig op de horizon, of zwevend op een wolk (nooit in de klokhoek). De tv is een kader met `tv: true`, of een ingebouwde retro-tv getekend in code. Het scherm toont de albumhoes (`api/cover`, met filter); bij pauze sneeuw. Stopt de muziek, dan verdwijnt de tv uit plekken die niet in beeld zijn.
+**Muziek (`addMusic`):** speelt de gekozen speaker, dan toont elke plek de albumhoes. Meestal in een **fotokader** (het grootste dat er al staat, `music: true`, anders een toegevoegd kader `musicAdded`); de hoes wordt heel getoond en de rest van het fotovlak gevuld met de meest voorkomende kleur van de hoes (`dominant()`). Soms (±25 %) een tv op een wolk, soms (±20 %) een tv op iets dat kan dragen. De ingebouwde tv staat dus niet meer op de grond. Stopt de muziek, dan krijgen plekken buiten beeld hun eigen foto terug en verdwijnen tv's.
 
 **Meeknikken:** alleen op nummers uit de eigen lijst (`songs`, in de Studio onder Muziek, of via Telegram `/muziek Titel 127`). `song_bpm()` vergelijkt hele woorden, zonder hoofdletters, leestekens en `(feat. …)`; een titel die met de andere begint telt ook als het minstens twee woorden zijn ("Everything Is Romantic" ↔ "Everything is Romantic (reimagined)"). De Deezer-opzoeking is weg (0.8.0). De fase komt uit `media_position` + `media_position_updated_at`.
 
@@ -279,7 +291,7 @@ Kamiel Studio staat in de zijbalk van Home Assistant (ingress). Het is een gewon
 | Tabblad | Wat je er doet |
 | --- | --- |
 | Bericht | Een bericht op het scherm zetten (met voorbeeld, duur, naam eronder), wissen, en **Telegram** instellen en gsm's koppelen. Bewust het eerste tabblad: het is wat je van op afstand het meest gebruikt. |
-| Elementen | Uploaden met soort (grond/horizon/lucht/wolk/kader), dag/nacht, weertype, zeldzaamheid, tekstbord. Bibliotheek met filters; per kaartje alles aanpasbaar: dag/nacht, weer, tekstbord, soort, wanneer (periode), bij tikken, zakdiepte (horizon), grootte, hoe vaak, "tv voor muziek" (kader), verwijderen in twee klikken. Labels "Geen fotovlak gevonden", "Tekstbord", "Tv", periode. |
+| Elementen | Uploaden met soort, dag/nacht, weertype, zeldzaamheid, tekstbord. Bibliotheek als kleine tegels (zoeken, filter per soort met aantallen, icoontjes: ☀️🌙, ★, weer, 🪧, 📺, 🌱, ⬆ stapelt, ⬇ draagt, periode). Tikken opent een paneel (`<dialog>`) met groepen: Wat is het (soort, tekstbord, tv), Wanneer (moment, weer, periode, hoe vaak), Plaatsing (grootte, zakdiepte, enkel gras, kijkt naar), Stapelen (kan stapelen, kan dragen), Tikken; naam en "in de wereld" links; ‹ › om door te bladeren; alles wordt meteen bewaard. |
 | Wereld | Het panorama bekijken en vervangen. |
 | Foto's | Foto's voor de kaders (ook die uit Telegram komen hier terecht). |
 | Bordteksten | De woorden op de tekstborden, één per regel. |
@@ -324,7 +336,7 @@ De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zond
 
 **Gegevens bij updates:** `/data` blijft altijd bewaard; nooit opnieuw uploaden. Alleen verwijderen van de add-on wist alles. Nieuwe instellingen krijgen hun standaardwaarde via `DEFAULT_SETTINGS`; schrijf migraties in `load_db()` als een sleutel van betekenis verandert.
 
-**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
+**Versiegeschiedenis in het kort:** 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
 
 ## Testen en debuggen
 
@@ -375,6 +387,7 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 | "Niet verbonden met Home Assistant" | De Supervisor-token bereikte het proces niet onder s6-overlay. | `run.sh` met `#!/usr/bin/with-contenv bashio` + `read_token()` die ook in `/run/s6/container_environment/` kijkt. |
 | "Maximum request body size 16777216 exceeded" | Home Assistant-ingress weigert verzoeken boven 16 MB. | Uploads één per één, in de browser verkleind (elementen 1400 px PNG, foto's 1600 px JPEG, panorama 600 px hoog). |
 | Tekst op borden afgesneden | `ctx.filter` knipt getekende tekst af. | Nooit `ctx.filter`; donker maken met `source-atop`-lagen; borden en kaders in een eigen canvas per object (gecachet). |
+| Nieuwe kleren niet in de kleerkast | De Studio bewaarde de lijst kleren die AAN stonden; wat later bijkwam, stond er niet in. | `outfits_off` (wat UIT staat), met migratie (0.9.0). |
 | Kleine canvassen (voorbeeldjes) allemaal op dezelfde plek, enorm | De globale CSS-regel `canvas{position:absolute;inset:0}` van de tablet gold voor elk canvas. | Kleine canvassen expliciet `position:static`, eigen maat. |
 | Objecten leken te zweven | De dreamcore-gloed maakt de afbeelding groter dan het object; de schaduw stond onder de gloed. | `footOf()` meet de echte voet uit de alfa; object en schaduw daarop. |
 | Horizon-objecten zakten te diep weg | Hoogte alleen in het midden gemeten, horizon verschilt tot 100 px; vaste zakdiepte 10–20%. | Laagste grondpunt onder de hele voet, zakdiepte instelbaar (standaard 3%, per element aanpasbaar). |
@@ -411,7 +424,6 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 
 - [ ] Pixel-editor in Kamiel Studio om zelf hoeden en kleren te tekenen (raster over Kamiels hoofd, kleuren kiezen, lichaamsdeel en naam); de eigenaar vroeg ernaar, wacht op zijn "ja".
 - [ ] Scherm uit na middernacht tenzij er beweging is (Fully Kiosk PLUS + Home Assistant-integratie).
-- [ ] Compositie-sjablonen voor nog meer "kunstwerk": symmetrie, herhaling, één reus, leegte, horizonlijn.
 - [ ] Diepte door een lichte blauwe waas op horizon-objecten; schaduwen die van de zon weg vallen en langer worden bij lage zon.
 - [ ] Kleurharmonie per scène (hoofdkleur bij upload bepalen) en thema-labels per element.
 - [ ] Boodschappen.txt (HA-boodschappenlijst), Agenda.exe, Kamiel.exe ("over Kamiel"), een zeldzame nep-foutmelding.

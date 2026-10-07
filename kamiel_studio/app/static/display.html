@@ -17,6 +17,7 @@
 <script src="static/reminder.js"></script>
 <script src="static/outfits.js"></script>
 <script src="static/events.js"></script>
+<script src="static/compose.js"></script>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
 .stage{position:fixed;inset:0;overflow:hidden;background:#000}
@@ -299,129 +300,15 @@ let EV = { active: false, check() {}, walkNow() { return false; }, pump() {}, ti
 
 /* ---------- composing each place ---------- */
 const places = [];
-const recent = [];
-function pickFrom(list) {
-  // seasonal and holiday elements show up a lot more during their own period
-  const w = list.map(o => (o.rare === 'zeldzaam' ? 0.25 : o.rare === 'heelzeldzaam' ? 0.06 : 1) * (o.period && o.period !== 'altijd' ? 3 : 1) * (o.weather && o.weather.length ? 3 : 1));
-  let r = rnd() * w.reduce((a, b) => a + b, 0);
-  for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
-  return list[list.length - 1];
-}
+// how a scene is arranged lives in compose.js (styles, scoring, hills, stacks)
+const COMP = KamielCompose.create({ S, OBJ, PLACE, H, FEET, horY, baseY, words: WORDS, photos: PHOTOS });
 function compose(i) {
-  const night = isNightTime(now());
-  const today = now();
-  const wb = WEATHER_BUCKET[weather] || 'zon';
+  const night = isNightTime(now()), today = now(), wb = WEATHER_BUCKET[weather] || 'zon';
   const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv
     && (!o.weather || !o.weather.length || o.weather.includes(wb));
-  const used = new Set();
-  const take = (kinds) => {
-    let pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o) && !recent.includes(o.id));
-    if (!pool.length) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o));
-    // asked for more than there are: a ground or horizon element may come twice (never in the sky: one Jupiter is enough)
-    if (!pool.length && !kinds.includes('lucht')) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o));
-    if (!pool.length) return null;
-    const o = pickFrom(pool); used.add(o); recent.push(o.id); if (recent.length > 6) recent.shift(); return o;
-  };
-  // how many of each kind: a number between "at least" and "at most", by day and by night (set in the Studio)
-  const DEFC = { grond: [2, 4], horizon: [1, 3], lucht: [1, 2], kader: [0, 1] };
-  const cnt = (S.counts && S.counts[night ? 'nacht' : 'dag']) || {};
-  const num = (k) => { const r = cnt[k] || DEFC[k], lo = Math.max(0, +r[0] || 0), hi = Math.max(lo, +r[1] || 0); return lo + Math.floor(rnd() * (hi - lo + 1)); };
-  let nH = num('horizon'), nS = num('lucht'), nG = num('grond'), nF = num('kader');
-  const nT = 0;   // the music tv is added afterwards, in a free spot (see addTV)
-  // never more than the maximum number of objects per place: drop random ones
-  const maxO = Math.max(1, +(S.max_objects || 12));
-  while (nH + nS + nG + nF + nT > maxO && nH + nS + nG + nF > 0) {
-    const opts = [];
-    if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF) opts.push('f');
-    const d = opts[Math.floor(rnd() * opts.length)];
-    if (d === 'h') nH--; else if (d === 's') nS--; else if (d === 'g') nG--; else nF--;
-  }
-  const items = [], taken = [], takenSky = [];
-  // horizon objects stand far behind: with "mix" on, ground objects may stand in front of them
-  const takenH = S.mix_layers === false ? taken : [];
-  // sizes from the Studio: [smallest, largest] in % of the screen height, per kind; each element can have its own factor
-  const DEFSZ = { grond: [10, 40], horizon: [15, 42], lucht: [12, 38], kader: [18, 42] };
-  const SZ = Object.assign({}, DEFSZ, S.sizes || {});
-  const giantP = (S.giant_chance === undefined ? 10 : +S.giant_chance) / 100;
-  const asp = (o) => o.size[0] / o.size[1];
-  const GAP = S.spacing === undefined ? 30 : +S.spacing, HALF = PLACE / 2, EDGE = 24;
-  const LANE = Math.max(64, +(S.lane || 94));   // Kamiel is ~128 px wide; keep a clear lane around him
-  const KTOP = FEET - 225;         // top of Kamiel's ears
-  const sizeFor = (o, t) => {
-    const [lo, hi] = SZ[o.kind] || DEFSZ.grond;
-    let h = (lo + (hi - lo) * t) * H / 100;
-    if (rnd() < giantP) h = hi * H / 100 * (1.4 + rnd() * .4);
-    h *= (o.scale || 1);
-    const maxW = HALF - LANE - EDGE - 10;            // must fit on one side of Kamiel
-    h = Math.min(h, H * .9, maxW / asp(o));
-    return Math.max(12, h);
-  };
-  // balance: the next object goes to the emptier side, at a free spot that leaves Kamiel's lane open
-  const weight = { '-1': 0, '1': 0 };
-  const spot = (w, list, lane) => {
-    const first = weight['-1'] === weight['1'] ? (rnd() < .5 ? -1 : 1) : (weight['-1'] < weight['1'] ? -1 : 1);
-    for (const side of [first, -first]) {
-      const lo = (lane ? LANE : 0) + w / 2, hi = HALF - EDGE - w / 2;
-      if (hi < lo) continue;
-      for (let tries = 0; tries < 30; tries++) {
-        const dx = side * (lo + rnd() * (hi - lo));
-        if (list.every(([l, r]) => dx + w / 2 + GAP < l || dx - w / 2 - GAP > r)) {
-          list.push([dx - w / 2, dx + w / 2]); weight[side] += w; return dx;
-        }
-      }
-    }
-    return null;
-  };
-  // gather everything first, then place the biggest pieces first so they get the good spots
-  const want = [];
-  for (let k = 0; k < nF; k++) { const o = take(['kader']); if (o) want.push({ o, layer: 2 }); }
-  for (let k = 0; k < nG; k++) { const o = take(['grond']); if (o) want.push({ o, layer: 2 }); }
-  for (let k = 0; k < nH; k++) { const o = take(['horizon']); if (o) want.push({ o, layer: 1 }); }
-  for (let k = 0; k < nS; k++) { const o = take(['lucht']); if (o) want.push({ o, layer: 0 }); }
-  for (const c of want) {
-    if (c.layer === 2) { c.depth = rnd(); c.h = sizeFor(c.o, .25 * rnd() + .75 * c.depth); }
-    else if (c.layer === 1) c.h = sizeFor(c.o, rnd());
-    else c.h = sizeFor(c.o, rnd()) * (/oog|eye/i.test(c.o.label || '') ? .6 : 1);
-    c.w = c.h * asp(c.o);
-  }
-  // sky last: it has to stay clear of everything that stands on the ground or the horizon
-  want.sort((p, q) => ((p.layer === 0) - (q.layer === 0)) || (q.w - p.w));
-  const rects = [];   // [x0, y0, x1, y1] of everything standing, in place coordinates
-  const wx0 = i * PLACE + PLACE / 2;
-  for (const c of want) {
-    const o = c.o;
-    if (c.layer === 0) {
-      let done = false;
-      for (let tries = 0; tries < 40 && !done; tries++) {
-        const y = 30 + rnd() * Math.max(10, 320 - c.h);
-        const lane = y + c.h > KTOP - 10;
-        const side = rnd() < .5 ? -1 : 1, lo = (lane ? LANE : 0) + c.w / 2, hi = HALF - EDGE - c.w / 2;
-        if (hi < lo) continue;
-        const dx = side * (lo + rnd() * (hi - lo));
-        const x0 = dx - c.w / 2 - 24, x1 = dx + c.w / 2 + 24;
-        if (rects.some(r => x0 < r[2] && x1 > r[0] && y - 24 < r[3] && y + c.h + 24 > r[1])) continue;
-        if (takenSky.some(([l, r]) => !(dx + c.w / 2 + GAP < l || dx - c.w / 2 - GAP > r))) continue;
-        takenSky.push([dx - c.w / 2, dx + c.w / 2]);
-        items.push({ o, layer: 0, dx, y, h: c.h, flip: rnd() < .5 }); done = true;
-      }
-      continue;
-    }
-    const dx = spot(c.w, c.layer === 1 ? takenH : taken, true); if (dx === null) continue;
-    if (c.layer === 1) {
-      const top = baseY(wx0 + dx, c.w) - c.h;
-      rects.push([dx - c.w / 2, top, dx + c.w / 2, H]);
-      items.push({ o, layer: 1, dx, h: c.h, flip: rnd() < .35 }); continue;
-    }
-    { const hy = horY(wx0 + dx); rects.push([dx - c.w / 2, hy + 14 + c.depth * Math.max(20, FEET - 8 - hy - 14) - c.h, dx + c.w / 2, H]); }
-    const it = { o, layer: 2, dx, depth: c.depth, h: c.h, flip: rnd() < .5 && o.kind === 'grond' && !o.sign };
-    if (o.sign) { it.color = (o.colors || ['paars'])[Math.floor(rnd() * (o.colors || ['paars']).length)]; it.word = WORDS[Math.floor(rnd() * WORDS.length)]; }
-    if (o.kind === 'kader') it.photo = PHOTOS[Math.floor(rnd() * PHOTOS.length)];
-    if (c.tv) { it.tv = true; it.born = performance.now(); }
-    items.push(it);
-  }
-  items.sort((p, q) => (p.layer - q.layer) || ((p.depth || 0) - (q.depth || 0)));
-  places[i] = { items, night, weather };
-  if (musicOn) addTV(i);
+  const r = COMP.compose(i, { night, ok, style: params.get('stijl') });
+  places[i] = { items: r.items, night, weather, hills: r.hills, style: r.style };
+  if (musicOn) addMusic(i);
   if (spotlight && spotlight.until * 1000 > Date.now()) addSpot(i);
 }
 for (let i = 0; i < N; i++) compose(i);
@@ -440,7 +327,19 @@ function makeClouds() {
     prev = c;
     const isBig = rnd() < (weather === 'helder' || weather === 'licht' ? .25 : .5);
     const w = isBig ? 380 + rnd() * 320 : 140 + rnd() * 160;
-    clouds.push({ c, x: (k + rnd() * .8) / n * PW, y: 40 + rnd() * (isBig ? 150 : 230), w, flip: rnd() < .5, sq: 0.8 + rnd() * .35 });
+    const cl = { c, x: (k + rnd() * .8) / n * PW, y: 40 + rnd() * (isBig ? 150 : 230), w, flip: rnd() < .5, sq: 0.8 + rnd() * .35 };
+    // a cloud that can carry sometimes has something standing on it (and that sometimes carries something too)
+    const ST = S.stack || {};
+    if (c.carry && cl.y > 110 && rnd() * 100 < (ST.chance === undefined ? 35 : +ST.chance)) {
+      const night = isNightTime(now()), pool = OBJ.filter(o => o.stack && !o.tv && o.kind !== 'wolk' && (o.moment === 'altijd' || (o.moment === 'nacht') === night));
+      cl.stack = []; let pw = w * .9;
+      for (let lv = 1; lv < Math.max(2, Math.min(4, +ST.max || 3)) && pool.length; lv++) {
+        const o = COMP.pickFrom(pool), sw = pw * (.25 + rnd() * .3);
+        cl.stack.push({ o, h: Math.min(sw * o.size[1] / o.size[0], 120), ox: (rnd() - .5) * .25, flip: rnd() < .5 });
+        pw = sw; if (!o.carry || rnd() < .4) break;
+      }
+    }
+    clouds.push(cl);
   }
 }
 makeClouds();
@@ -502,22 +401,44 @@ function setMessage(m) {
   message = m;
   if (m) msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign: m.sign });
 }
-// the music tv: sometimes small, sometimes huge on the horizon, sometimes floating on a cloud;
-// it only takes a free spot and never pushes other things away
-function addTV(i) {
-  const p = places[i]; if (!p || p.items.some(x => x.tv)) return;
-  const o = TV(), asp0 = o.size[0] / o.size[1];
-  const looks = [['grond', .45], ['wolk', .3], ['horizon', .25]].map(([k, w]) => [k, rnd() * w]).sort((a, b) => b[1] - a[1]).map(a => a[0]);
-  for (const look of looks) {
-    if (look === 'grond') { const h = H * (.15 + rnd() * .2); if (tryTV(p, o, h, h * asp0, { tv: true }, 2)) return; }
-    if (look === 'horizon') { const h = H * (.3 + rnd() * .22); if (tryTV(p, o, h, h * asp0, { tv: true }, 1)) return; }
-    if (look === 'wolk') { const h = H * (.13 + rnd() * .08); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return; }
+// music: on the ground the album cover shows in a frame (one that's already there, or an added one);
+// sometimes instead a tv floats on a cloud or stands on something that can carry it
+function addMusic(i) {
+  const p = places[i]; if (!p || p.items.some(x => x.music || x.tv)) return;
+  const r = rnd(), o = TV(), asp0 = o.size[0] / o.size[1];
+  if (r < .25) { const h = H * (.13 + rnd() * .08); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return; }
+  if (r < .45) {
+    const carriers = p.items.filter(x => x.o.carry && x.layer > 0 && !isHidden(x) && !p.items.some(c => c.on === x));
+    if (carriers.length) {
+      const c = carriers[Math.floor(rnd() * carriers.length)], cw = c.h * c.o.size[0] / c.o.size[1];
+      const h = Math.min(c.h * .8, cw * (.45 + rnd() * .2) / asp0);
+      p.items.push({ o, layer: c.layer, on: c, ox: 0, h, flip: false, tv: true, born: performance.now(), depth: (c.depth || 0) + .0005, dx: c.dx, onHill: c.onHill });
+      sortItems(p); return;
+    }
   }
-  // the sky always has room for a floating tv
-  const h = H * .13, w = h * asp0, side = rnd() < .5 ? -1 : 1;
-  p.items.push({ o, layer: 0, dx: side * (120 + rnd() * (PLACE / 2 - 160 - w / 2)), y: side < 0 ? 160 : 40 + rnd() * 80, h, flip: false, born: performance.now(), tv: true,
-    cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null });
-  p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
+  const fr = p.items.filter(x => x.o.kind === 'kader' && !x.tv && !x.spot && x.photo !== undefined && !isHidden(x)).sort((a, b) => b.h - a.h)[0];
+  if (fr) { fr.music = true; fr.cache = null; return; }
+  addThing(i, FRAME(), { photo: PHOTOS[Math.floor(rnd() * PHOTOS.length)], music: true, musicAdded: true, depth: .85 }, (x) => x.music, .3);
+}
+const sortItems = (p) => p.items.sort((a, b) => (a.layer - b.layer) || ((a.onHill ? -1 : 0) - (b.onHill ? -1 : 0)) || ((a.depth || 0) - (b.depth || 0)));
+const isHidden = (it) => { for (let x = it; x; x = x.on) if (x.hiddenBy) return true; return false; };
+const below = (it, root) => { for (let x = it.on; x; x = x.on) if (x === root) return true; return false; };
+function dropMusic(p) {
+  const gone = p.items.filter(x => x.tv || x.musicAdded);
+  p.items = p.items.filter(x => !gone.includes(x) && !gone.some(g => below(x, g)));
+  for (const x of p.items) if (x.music) { x.music = false; x.cache = null; }
+}
+// the cover's most common colour fills the frame where a square cover doesn't reach
+let coverFill = null, coverFillKey = '';
+function dominant(img) {
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 24; const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, 24, 24); const d = g.getImageData(0, 0, 24, 24).data, cnt = {};
+    let bestK = null;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 128) continue; const k = (d[i] >> 4) + ',' + (d[i + 1] >> 4) + ',' + (d[i + 2] >> 4); cnt[k] = (cnt[k] || 0) + 1; if (!bestK || cnt[k] > cnt[bestK]) bestK = k; }
+    if (!bestK) return '#222';
+    const [r, gg, b] = bestK.split(',').map(v => v * 16 + 8); return `rgb(${r},${gg},${b})`;
+  } catch (e) { return '#222'; }
 }
 // a photo sent via Telegram: a frame that already stands here gets it; only without one a frame is added
 function addSpot(i) {
@@ -550,25 +471,25 @@ function addThing(i, o, extra, has, size) {
     const h = H * (size ? (round < 3 ? size : size * .8) : (round < 3 ? .24 + rnd() * .1 : .2)), w = h * asp0;
     if (tryTV(p, o, h, w, extra)) return;
     if (round >= 2) {
-      const standing = p.items.filter(x => x.layer === 2 && !x.tv && !x.spot && !x.board && !x.timer);   // live things never make way
+      const standing = p.items.filter(x => x.layer === 2 && !x.on && !x.tv && !x.spot && !x.music && !x.board && !x.timer);   // live things never make way
       if (!standing.length) continue;
       standing.sort((a, b) => a.h * a.o.size[0] / a.o.size[1] - b.h * b.o.size[0] / b.o.size[1]);
-      p.items.splice(p.items.indexOf(standing[0]), 1);
+      const gone = standing[0];
+      p.items = p.items.filter(x => x !== gone && !below(x, gone));   // what stood on it goes too
     }
   }
 }
 function tryTV(p, o, h, w, extra, layer = 2) {
   const sky = layer === 0;
   // only things on the same layer count: a new thing on the ground may stand in front of the horizon
-  const used = p.items.filter(x => x.layer === layer && !x.hiddenBy).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
+  const used = p.items.filter(x => x.layer === layer && !x.on && !x.hiddenBy).map(x => { const ww = x.h * x.o.size[0] / x.o.size[1]; return [x.dx - ww / 2, x.dx + ww / 2]; });
   for (let tries = 0; tries < 30; tries++) {
     const side = rnd() < .5 ? -1 : 1, lo = (sky ? 0 : 94) + w / 2, hi = PLACE / 2 - 24 - w / 2; if (hi < lo) return false;
     const dx = side * (lo + rnd() * (hi - lo));
     if (used.every(([l, r]) => dx + w / 2 + 20 < l || dx - w / 2 - 20 > r)) {
       const it = Object.assign({ o, layer, dx, depth: .55 + rnd() * .35, h, flip: false, born: performance.now() }, extra);
       if (sky && W / 2 + dx - w / 2 < 330) it.y = Math.max(it.y || 0, 160);   // keep the clock corner free
-      p.items.push(it);
-      p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
+      p.items.push(it); sortItems(p);
       return true;
     }
   }
@@ -583,11 +504,10 @@ async function pollLive() {
   if (playing && m.art && m.art !== coverKey) { coverKey = m.art; coverImg = load('api/cover?v=' + m.art); }
   if (playing !== musicOn) {
     musicOn = playing;
-    for (let i = 0; i < N; i++) {
-      if (musicOn) addTV(i);
-      else if (!visible(i)) places[i].items = places[i].items.filter(x => !x.tv);
-    }
+    for (let i = 0; i < N; i++) { if (musicOn) addMusic(i); else if (!visible(i)) dropMusic(places[i]); }
   }
+  // music stopped: places out of sight lose the tv and get their own photo back (what you see stays until you walk on)
+  if (!musicOn) for (let i = 0; i < N; i++) if (!visible(i) && places[i].items.some(x => x.tv || x.music)) dropMusic(places[i]);
   // a photo from Telegram: show it in a frame right here, and in the places ahead
   if (j.spotlight && (!spotlight || spotlight.id !== j.spotlight.id)) {
     spotlight = j.spotlight;
@@ -680,12 +600,12 @@ function placeSign(key, obj, size) {
   const side = other ? -Math.sign(other.dx) : (weight(-1) <= weight(1) ? -1 : 1);
   const dx = side * Math.min(94 + w / 2 + 8, PLACE / 2 - 24 - w / 2);
   for (const x of p.items) {
-    if (x.layer !== 2 || x.board || x.timer || x.hiddenBy) continue;   // horizon and sky stay: the sign stands in front
+    if (x.layer !== 2 || x.on || x.board || x.timer || x.hiddenBy) continue;   // horizon and sky stay: the sign stands in front
     const xw = x.h * x.o.size[0] / x.o.size[1];
     if (x.dx + xw / 2 > dx - w / 2 - 20 && x.dx - xw / 2 < dx + w / 2 + 20) x.hiddenBy = key;
   }
   p.items.push({ o: obj, layer: 2, dx, depth: .97, h, flip: false, born: performance.now(), [key]: true });
-  p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0)));
+  sortItems(p);
 }
 function dropSign(key) {
   for (const p of places) if (p) {
@@ -823,11 +743,11 @@ const STATIC = [0, 1, 2].map(() => {
 function itemCanvas(it, w, h) {
   const o = it.o, base = o.sign ? (o.vimg[it.color] || o.img) : o.img;
   if (!ready(base)) return null;
-  let photo = o.kind === 'kader' ? photoImg(it.photo) : null, key = 'p';
+  let photo = o.kind === 'kader' ? photoImg(it.photo) : null, key = 'p' + it.photo, contain = false;
   if (it.tv) {
-    if (musicOn && ready(coverImg)) { photo = coverImg; key = 'c' + coverKey; }
+    if (musicOn && ready(coverImg)) { photo = coverImg; key = 'c' + coverKey; contain = true; }
     else { const f = Math.floor(t * 12) % STATIC.length; photo = STATIC[f]; key = 's' + f; }
-  }
+  } else if (it.music && !it.spot && ready(coverImg)) { photo = coverImg; key = 'c' + coverKey; contain = true; }
   if (o.kind === 'kader' && (!ready(photo) || !ready(o.maskImg) || !o.hole)) return base;
   const W2 = Math.ceil(w), H2 = Math.ceil(h);
   if (it.cache && it.cache.width === W2 && it.cache.height === H2 && it.cacheKey === key) return it.cache;
@@ -835,7 +755,12 @@ function itemCanvas(it, w, h) {
   const c = document.createElement('canvas'); c.width = W2; c.height = H2; const g = c.getContext('2d');
   if (o.kind === 'kader') {
     const [hx0, hy0, hx1, hy1] = o.hole, bx = hx0 * w, by = hy0 * h, bw = (hx1 - hx0) * w, bh = (hy1 - hy0) * h;
-    const s = Math.max(bw / photo.width, bh / photo.height);
+    // photos fill the frame; an album cover is shown whole, with its own main colour around it
+    const s = contain ? Math.min(bw / photo.width, bh / photo.height) : Math.max(bw / photo.width, bh / photo.height);
+    if (contain) {
+      if (coverFillKey !== coverKey) { coverFill = dominant(photo); coverFillKey = coverKey; }
+      g.fillStyle = coverFill; g.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+    }
     g.drawImage(photo, bx + (bw - photo.width * s) / 2, by + (bh - photo.height * s) / 2, photo.width * s, photo.height * s);
     g.globalCompositeOperation = 'destination-in'; g.drawImage(o.maskImg, 0, 0, w, h);
     g.globalCompositeOperation = 'destination-over'; g.drawImage(base, 0, 0, w, h);
@@ -921,6 +846,19 @@ function drawClouds(sun) {
     if (x > W + 50) continue;
     ctx.globalAlpha = weather === 'mist' ? .55 : .95;
     drawImg(img, x, y, w, h, cl.flip);
+    if (cl.stack) {   // what stands on the cloud rides along with it
+      let px = x, py = y, pw = w, ph = h, pim = img, pflip = cl.flip;
+      ctx.globalAlpha = 1;
+      for (const s2 of cl.stack) {
+        const im = s2.o.img; if (!ready(im) || !ready(pim)) break;
+        const sh = s2.h, sw = sh * s2.o.size[0] / s2.o.size[1], top = topOf(pim), f = footOf(im);
+        let cxF = .5 + s2.ox, c0 = Math.floor((pflip ? 1 - cxF : cxF) * 47);
+        const tf = Math.min(top[Math.max(0, c0 - 2)], top[c0], top[Math.min(47, c0 + 2)]);
+        const sx = px + pw * cxF - sw / 2, sy = py + ph * (tf < 1 ? tf : .3) - sh * f.y + sh * .04;
+        drawImg(im, sx, sy, sw, sh, s2.flip);
+        px = sx; py = sy; pw = sw; ph = sh; pim = im; pflip = s2.flip;
+      }
+    }
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-atop';
@@ -948,39 +886,70 @@ function footOf(img) {
 }
 let sunXY = null, moonXY = null, lastSun = null, lastMoon = null, outfit = [];
 let hits = [];   // where everything was drawn in the last frame, for tapping
+// the top edge of an image, column by column (0 = top of the picture, 1 = empty column): what stands on it rests there
+const topCv = document.createElement('canvas');
+function topOf(img) {
+  if (img._top) return img._top;
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, sc = Math.min(1, 160 / Math.max(iw, ih));
+  const w = topCv.width = Math.max(1, Math.round(iw * sc)), h = topCv.height = Math.max(1, Math.round(ih * sc));
+  const g = topCv.getContext('2d', { willReadFrequently: true }); g.clearRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+  let d; try { d = g.getImageData(0, 0, w, h).data; } catch (e) { return (img._top = Array(48).fill(.1)); }
+  const cols = [];
+  for (let c = 0; c < 48; c++) {
+    const x0 = Math.floor(c / 48 * w), x1 = Math.max(x0 + 1, Math.floor((c + 1) / 48 * w)); let top = 1;
+    for (let y = 0; y < h && top === 1; y++) for (let x = x0; x < x1; x++) if (d[(y * w + x) * 4 + 3] > 140) { top = y / h; break; }
+    cols.push(top);
+  }
+  return (img._top = cols);
+}
+let frameNo = 0;
+// where an item is drawn this frame (copy k = -1, 0, 1 for the wrap-around); stacked things sit on their carrier
+function itemPos(it, i, k) {
+  const o = it.o; if (!ready(o.img)) return null;
+  const h = it.h, w = h * o.size[0] / o.size[1];
+  const f = it.layer === 0 && !it.on ? null : footOf(o.img);
+  if (it.on) {
+    const pp = itemPos(it.on, i, k); if (!pp || !ready(it.on.o.img)) return null;
+    const top = topOf(it.on.o.img), cx = .5 + (it.ox || 0), fw = Math.max(.05, w * (f.x1 - f.x0) / pp.w);
+    let a = cx - fw / 2, b = cx + fw / 2; if (it.on.flip) { const t0 = 1 - b; b = 1 - a; a = t0; }
+    let tf = 1; for (let c = Math.max(0, Math.floor(a * 48)); c <= Math.min(47, Math.floor(b * 48)); c++) tf = Math.min(tf, top[c]);
+    if (tf >= 1) tf = Math.min.apply(null, top);
+    return { sx: pp.sx + pp.w * cx - w / 2, y: pp.y + pp.h * tf - h * f.y + h * .03, w, h, f, rot: pp.rot, rc: pp.rc };
+  }
+  const wx = i * PLACE + PLACE / 2 + it.dx + k * PW;
+  let sx = wx - (kx - W / 2) - w / 2, y;
+  if (it.layer === 0) y = it.y;
+  else if (it.layer === 1) {
+    if (it.base === undefined) {
+      const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
+      const fw = Math.max(8, w * (fx1 - fx0)), fc = wx - w / 2 + w * (fx0 + fx1) / 2;
+      it.base = baseY(fc - k * PW, fw);
+    }
+    y = it.base + h * (o.sink !== null && o.sink !== undefined ? o.sink / 100 : SINK) - h * f.y;
+  } else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
+  const fk = frameNo * 4 + k + 1;
+  if (it._fk !== fk) { it._fk = fk; it._off = EV.itemOff(it, it.layer, sx, y, w, h); }
+  const off = it._off;
+  if (off) { sx += off.x || 0; y += off.y || 0; }
+  return { sx, y, w, h, f, rot: off && off.r ? off.r : 0, rc: { x: sx + w / 2, y: y + h / 2 } };
+}
 function placeItems(layer) {
-  const cam = kx - W / 2;
-  for (let i = 0; i < N; i++) for (const it of places[i].items) {
-    if (it.layer !== layer || it.hiddenBy) continue;
-    const o = it.o; if (!ready(o.img)) continue;
-    const h = it.h, w = h * o.size[0] / o.size[1];
+  // one order for all places: further back first, so something big up front is never covered by the next place
+  const list = [];
+  for (let i = 0; i < N; i++) for (const it of places[i].items) if (it.layer === layer && !isHidden(it)) list.push([i, it]);
+  list.sort((a, b) => ((a[1].onHill ? -1 : 0) - (b[1].onHill ? -1 : 0)) || ((a[1].depth || 0) - (b[1].depth || 0)));
+  for (const [i, it] of list) {
+    const o = it.o;
     for (let k = -1; k <= 1; k++) {
-      const wx = i * PLACE + PLACE / 2 + it.dx + k * PW, sx = wx - cam - w / 2;
+      const p = itemPos(it, i, k); if (!p) continue;
+      const { sx, y, w, h, f } = p;
       if (sx > W || sx + w < 0) continue;
-      const f = layer === 0 ? null : footOf(o.img);
-      let y;
-      if (layer === 0) y = it.y;
-      else if (layer === 1) {
-        if (it.base === undefined) {
-          const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
-          const fw = Math.max(8, w * (fx1 - fx0)), fc = wx - w / 2 + w * (fx0 + fx1) / 2;
-          it.base = baseY(fc - k * PW, fw);
-        }
-        y = it.base + h * (o.sink !== null && o.sink !== undefined ? o.sink / 100 : SINK) - h * f.y;
-      }
-      else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
       ctx.save();
-      const off = EV.itemOff(it, layer, sx, y, w, h);
-      let sx2 = sx;
-      if (off) {
-        sx2 += off.x || 0; y += off.y || 0;
-        if (off.r) { ctx.translate(sx2 + w / 2, y + h / 2); ctx.rotate(off.r); ctx.translate(-(sx2 + w / 2), -(y + h / 2)); }
-      }
-      if (layer === 1) ctx.globalAlpha = .93;
+      if (p.rot) { ctx.translate(p.rc.x, p.rc.y); ctx.rotate(p.rot); ctx.translate(-p.rc.x, -p.rc.y); }
+      if (layer === 1) ctx.globalAlpha = it.onHill ? .88 : .93;
       if (it.born) ctx.globalAlpha = Math.min(1, (performance.now() - it.born) / 1500);
-      hits.push({ it, x: sx2, y, w, h, i, layer, foot: y + h * (f ? f.y : 1) });
-      { const sx = sx2;
-      if (layer === 2) {
+      hits.push({ it, x: sx, y, w, h, i, layer, foot: y + h * (f ? f.y : 1) });
+      if (layer === 2 && !it.on) {
         // soft contact shadow right under the part that touches the ground
         const fx0 = it.flip ? 1 - f.x1 : f.x0, fx1 = it.flip ? 1 - f.x0 : f.x1;
         const cx = sx + w * (fx0 + fx1) / 2, cy = y + h * f.y - 1;
@@ -996,8 +965,32 @@ function placeItems(layer) {
         const cw = w * 2.3, ch = cw * it.cloud.img.height / it.cloud.img.width;
         drawImg(it.cloud.img, sx + w / 2 - cw / 2, y + h * .62, cw, Math.min(ch, h * 1.1), false);
       }
-      }
       ctx.restore();
+    }
+  }
+}
+// hills far away: soft shapes behind the horizon, made from the panorama's own grass, a little hazy
+function drawHills() {
+  const cam = kx - W / 2;
+  for (let i = 0; i < N; i++) {
+    const hl = places[i].hills; if (!hl) continue;
+    for (let k = -1; k <= 1; k++) {
+      const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0) continue;
+      for (const rg of hl.ranges) {
+        let minY = 1e9, maxY = 0;
+        ctx.save(); ctx.beginPath();
+        for (let dx = -PLACE / 2; dx <= PLACE / 2; dx += 6) {
+          const wx = i * PLACE + PLACE / 2 + dx, y = horY(wx) - COMP.hillH(rg, dx) + 1;
+          minY = Math.min(minY, y); maxY = Math.max(maxY, horY(wx));
+          dx === -PLACE / 2 ? ctx.moveTo(x0, y) : ctx.lineTo(x0 + PLACE / 2 + dx, y);
+        }
+        ctx.lineTo(x0 + PLACE, maxY + 30); ctx.lineTo(x0, maxY + 30); ctx.closePath();
+        ctx.clip();
+        if (ready(pano)) ctx.drawImage(pano, i * PLACE, Math.min(H - 140, HOR0 + 12), PLACE, 128, x0, minY - 2, PLACE, maxY + 32 - minY);
+        else { ctx.fillStyle = '#3d8a2e'; ctx.fillRect(x0, minY, PLACE, maxY + 30 - minY); }
+        ctx.fillStyle = `rgba(172,186,236,${rg.haze})`; ctx.fillRect(x0, minY - 2, PLACE, maxY + 34 - minY);
+        ctx.restore();
+      }
     }
   }
 }
@@ -1211,7 +1204,8 @@ function frame() {
   if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else drawSky(sun, moon);
   EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
-  if (!hide) { placeItems(0); drawClouds(sun); }
+  frameNo++;
+  if (!hide) { placeItems(0); drawClouds(sun); drawHills(); }
   if (kam.layer === 'far') drawKamiel();
   if (!hide) { placeItems(1); drawGround(); }
   EV.draw('ground', ctx);
@@ -1393,7 +1387,7 @@ function fillKnoppen() {
 }
 function fillKast() {
   const b = bodyOf('kleerkast'); if (!b) return;
-  const allowed = (S.outfits_on && S.outfits_on.length) ? S.outfits_on : KamielOutfits.OUTFITS.map(o => o.id);
+  const off = S.outfits_off || [], allowed = KamielOutfits.OUTFITS.map(o => o.id).filter(id => !off.includes(id));
   const items = KamielOutfits.OUTFITS.filter(o => allowed.includes(o.id));
   b.innerHTML = `<div class="wardrobe">${KamielOutfits.SLOTS.map(([slot, name]) => {
       const its = items.filter(o => o.slot === slot); if (!its.length) return '';
