@@ -170,6 +170,26 @@ label.sw span{font-size:12.5px;color:var(--muted)}
 .rsum{margin:0;font-size:14px;color:var(--muted);font-style:italic}
 #ruleExamples button{min-height:36px;padding:6px 12px;font-weight:500}
 @media (max-width:600px){.rpart{grid-template-columns:1fr}.tag{margin-top:0;width:52px}}
+/* the action editor and the buttons */
+.call{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;width:100%}
+.call label.f{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:13px;min-width:120px}
+.call label.f.grow{flex:1;min-width:200px}
+.call .now{font-size:13px;color:var(--muted);padding-bottom:10px}
+.call .cdesc{flex-basis:100%;margin:0;font-size:13px;color:var(--muted)}
+.call .cadv{flex-basis:100%;font-size:13px}
+.call .cadv summary{cursor:pointer;color:var(--muted)}
+.call textarea{min-height:44px;text-transform:none;font-size:13px;margin:6px 0}
+.call textarea.bad{border-color:var(--danger)}
+.call input[type=color]{height:40px;padding:2px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
+.btn{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--bg);display:flex;flex-direction:column;gap:10px}
+.btn .bnum{font:600 13px var(--f-osd);color:var(--muted);min-width:1.6em}
+.btn .bIcon{width:3.4em;text-align:center}
+.btn .bLab{flex:1;min-width:140px;font-weight:600}
+.btn .rhead button{min-height:38px;padding:6px 11px}
+.quick{display:flex;flex-direction:column;gap:8px}
+.qlist{display:flex;flex-wrap:wrap;gap:6px;max-height:190px;overflow-y:auto}
+.qadd{min-height:34px;padding:5px 10px;font-weight:500;font-size:13px}
+.qadd span{color:var(--muted);font-size:12px}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
@@ -451,12 +471,25 @@ label.sw span{font-size:12.5px;color:var(--muted)}
       <div class="row"><button type="button" class="primary" id="mSave">Opslaan</button><span class="status" id="mStatus" role="status"></span></div>
     </div>
 
-    <div class="card" id="cardLamps">
-      <h2>💡 Lampen en stopcontacten</h2>
-      <p class="hint">Kies de lampen en stopcontacten die je op de tablet wil kunnen aan- en uitzetten. Ze verschijnen als knoppen in het venster <b>Lampen</b> (tik op een lege plek in de scène). Alleen wat je hier aanvinkt kan de tablet bedienen.</p>
-      <input type="search" id="lampSearch" placeholder="Zoeken, bv. keuken" aria-label="Lampen zoeken" style="max-width:320px">
-      <div id="lampList" class="choices"></div>
-      <div class="row"><button type="button" class="primary" id="lampSave">Opslaan</button><span class="status" id="lampStatus" role="status"></span></div>
+    <div class="card" id="cardBtns">
+      <h2>🎛️ Knoppen</h2>
+      <p class="hint">De knoppen in het venster <b>Knoppen.exe</b> op de tablet (tik op een lege plek in de scène). Een knop kan alles wat Home Assistant kan: een lamp of stopcontact aan/uit, een keuzelijst naar de volgende optie of een bepaalde optie, een script of scène starten, het rolluik openen, de speaker luider… Tot 30 knoppen. Alleen wat hier staat kan de tablet bedienen.</p>
+      <details class="guide">
+        <summary>Hoe maak ik een knop?</summary>
+        <ol class="steps">
+          <li><b>Snel:</b> zoek hieronder bij "Snel toevoegen" een lamp, stopcontact, keuzelijst… en klik erop. Hij doet dan het gewone: aan/uit, starten, of naar de volgende optie.</li>
+          <li><b>Iets anders laten doen?</b> Kies bij <b>Doet</b> een andere actie. Bovenaan staan de acties voor dat soort ding (bv. bij een keuzelijst: <i>Volgende optie</i>, <i>Vorige optie</i>, <i>Een bepaalde optie kiezen</i>), daaronder <b>alles</b> wat Home Assistant kan.</li>
+          <li>Heeft de actie instellingen (een optie, een helderheid, een temperatuur…), dan verschijnen die eronder. Velden met een * zijn verplicht.</li>
+          <li>Geef de knop eventueel een eigen <b>naam</b> en een <b>emoji</b> als icoon. Leeg = de naam uit Home Assistant en een passend icoon.</li>
+          <li>Probeer met <b>▶ Testen</b>, zet de volgorde juist met ↑ ↓ en klik op <b>Opslaan</b>.</li>
+        </ol>
+        <p class="hint">Een actie zonder "wat" kan ook: kies dan alleen bij <b>Doet</b> een actie (bijvoorbeeld een melding sturen).</p>
+      </details>
+      <div class="quick"><label class="f" for="quickSearch" style="font-weight:600">Snel toevoegen</label>
+        <input type="search" id="quickSearch" placeholder="Zoeken, bv. keuken, radio, rolluik" style="max-width:340px">
+        <div id="quickList" class="qlist"></div></div>
+      <div id="btns" class="rems"></div>
+      <div class="row"><button type="button" id="btnAdd">+ Lege knop</button><button type="button" class="primary" id="btnSave">Opslaan</button><span class="hint" id="btnCount"></span><span class="status" id="btnStatus" role="status"></span></div>
     </div>
   </section>
 
@@ -589,12 +622,11 @@ label.sw span{font-size:12.5px;color:var(--muted)}
         <tbody>
           <tr><td><input type="checkbox" class="wOn" data-k="weer" aria-label="Weer aan"></td><td>Weer</td><td><input type="text" class="wTitle" data-k="weer" maxlength="24" placeholder="Weer.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="vertrek" aria-label="Bus en tram aan"></td><td>Bus en tram</td><td><input type="text" class="wTitle" data-k="vertrek" maxlength="24" placeholder="Vertrek.exe"></td></tr>
-          <tr><td><input type="checkbox" class="wOn" data-k="knoppen" aria-label="9 knoppen aan"></td><td>9 knoppen</td><td><input type="text" class="wTitle" data-k="knoppen" maxlength="24" placeholder="Knoppen.exe"></td></tr>
+          <tr><td><input type="checkbox" class="wOn" data-k="knoppen" aria-label="Knoppen aan"></td><td>Knoppen (lampen, stopcontacten, alles uit Home Assistant)</td><td><input type="text" class="wTitle" data-k="knoppen" maxlength="24" placeholder="Knoppen.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="kleerkast" aria-label="Kleerkast aan"></td><td>Kleerkast</td><td><input type="text" class="wTitle" data-k="kleerkast" maxlength="24" placeholder="Kleerkast.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="muziek" aria-label="Muziek (als er een speaker gekozen is) aan"></td><td>Muziek (als er een speaker gekozen is)</td><td><input type="text" class="wTitle" data-k="muziek" maxlength="24" placeholder="Muziek.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="wandel" aria-label="Wandelen aan"></td><td>Wandelen: aftellen tot de volgende plek, met pijltjes om Kamiel zelf te sturen</td><td><input type="text" class="wTitle" data-k="wandel" maxlength="24" placeholder="Wandel.exe"></td></tr>
           <tr><td><input type="checkbox" class="wOn" data-k="roepen" aria-label="Roepen aan"></td><td>Roepen: een huisdier of Heidi naar de scène roepen</td><td><input type="text" class="wTitle" data-k="roepen" maxlength="24" placeholder="Roepen.exe"></td></tr>
-          <tr><td><input type="checkbox" class="wOn" data-k="lampen" aria-label="Lampen aan"></td><td>Lampen: lampen en stopcontacten aan- en uitzetten (kies ze in het tabblad Huis)</td><td><input type="text" class="wTitle" data-k="lampen" maxlength="24" placeholder="Lampen.exe"></td></tr>
         </tbody>
       </table>
       <div class="settings" style="margin-top:14px">
@@ -604,22 +636,7 @@ label.sw span{font-size:12.5px;color:var(--muted)}
           <select id="sWinLayout"><option value="verspreid">Verspreid, een beetje rommelig</option><option value="netjes">Netjes naast elkaar</option></select></label>
       </div>
 
-      <h2 style="margin-top:18px">Knoppen</h2>
-      <p class="hint">De 9 knoppen in het venster Knoppen. Lampen, stopcontacten en schakelaars gaan aan of uit (met een groen lampje als ze aan staan); scripts, scènes en automatiseringen worden gestart. Als icoon kun je een emoji gebruiken.</p>
-      <div style="overflow-x:auto"><table class="chances" id="btnTable">
-        <thead><tr><th scope="col">#</th><th scope="col">Icoon</th><th scope="col">Naam</th><th scope="col">Wat doet hij</th></tr></thead>
-        <tbody>
-          <tr><td>1</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>2</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>3</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>4</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>5</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>6</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>7</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>8</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-          <tr><td>9</td><td><input type="text" class="kIcon" maxlength="4" size="3" placeholder="💡"></td><td><input type="text" class="kLab" maxlength="16" placeholder="Naam"></td><td><select class="kEnt"></select></td></tr>
-        </tbody>
-      </table></div>
+      <p class="hint" style="margin-top:14px">De knoppen voor Knoppen.exe stel je nu in bij het tabblad <b>Huis</b>.</p>
 
       <h2 style="margin-top:18px">Kleerkast</h2>
       <p class="hint">Pixel-art kleren voor Kamiel. Op de tablet tik je op Kamiel (of open je het venster Kleerkast) om hem aan te kleden.</p>
@@ -1110,9 +1127,6 @@ async function renderSettings() {
   document.querySelectorAll('.wOn').forEach(el => { el.checked = W0[el.dataset.k] !== false; });
   document.querySelectorAll('.wTitle').forEach(el => { el.value = T0[el.dataset.k] || ''; });
   $('sWinClose').value = String(s.window_close || 60); $('sWinLayout').value = s.window_layout || 'verspreid';
-  const BT = s.buttons || [];
-  document.querySelectorAll('#btnTable tbody tr').forEach((tr, i) => { tr.querySelector('.kIcon').value = (BT[i] || {}).icon || ''; tr.querySelector('.kLab').value = (BT[i] || {}).label || ''; });
-  fill('light,switch,input_boolean,fan,cover,script,scene,automation,button,input_button,media_player,climate,lock', [...document.querySelectorAll('.kEnt')], [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => (BT[i] || {}).entity), 'Niets');
   $('sOutMode').value = s.outfit_mode || 'kiezen'; $('sKTap').checked = s.kamiel_tap !== 'niets';
   const offList = s.outfits_off || [], on = KamielOutfits.OUTFITS.map(o => o.id).filter(id => !offList.includes(id));
   const box = $('oTiles'); box.innerHTML = '';
@@ -1151,7 +1165,6 @@ $('setForm').addEventListener('submit', async (e) => {
     windows: Object.fromEntries([...document.querySelectorAll('.wOn')].map(el => [el.dataset.k, el.checked])),
     window_titles: Object.fromEntries([...document.querySelectorAll('.wTitle')].map(el => [el.dataset.k, el.value])),
     window_close: +$('sWinClose').value, window_layout: $('sWinLayout').value,
-    buttons: [...document.querySelectorAll('#btnTable tbody tr')].map(tr => ({ icon: tr.querySelector('.kIcon').value, label: tr.querySelector('.kLab').value, entity: tr.querySelector('.kEnt').value })),
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
     outfits_off: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => !e.checked).map(e => e.dataset.o) : undefined,
     osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
@@ -1160,19 +1173,18 @@ $('setForm').addEventListener('submit', async (e) => {
 });
 
 
-/* ---------- Huis: doorbell, if-this-then-that, the tablet's camera, lamps ---------- */
+/* ---------- Huis: doorbell, if-this-then-that, the tablet camera, buttons ---------- */
 let ENTS = [], ENTMAP = {}, RULES = [], huisDone = false;
 const BEWEGING = { id: 'kamiel.beweging', name: 'Beweging voor de tablet', state: '' };
 const COND_NL = [['aan', 'gaat aan / open'], ['uit', 'gaat uit / dicht'], ['verandert', 'verandert'], ['is', 'wordt precies'], ['boven', 'gaat boven'], ['onder', 'zakt onder']];
 const WHEN_NL = [['altijd', 'Altijd'], ['dag', 'Enkel overdag'], ['nacht', "Enkel 's nachts"]];
 const ACT_NL = [['event', '🎬 Een event of huisdier'], ['bericht', '💬 Een bericht op het scherm'], ['camera', '📷 Een camerafoto in een kader'], ['kleren', '🎩 Andere kleren aan'],
-  ['rust', '😴 Rustig (geen events, ogen dicht)'], ['vertrek', '🚌 Het vertrekbord tonen'], ['ha', '🏠 Iets in Home Assistant starten'], ['telegram', '✉️ Een Telegram-bericht sturen']];
+  ['rust', '😴 Rustig (geen events, ogen dicht)'], ['vertrek', '🚌 Het vertrekbord tonen'], ['ha', '🏠 Iets in Home Assistant doen'], ['telegram', '✉️ Een Telegram-bericht sturen']];
 const HA_DOMS = ['script', 'scene', 'automation', 'light', 'switch', 'input_boolean', 'fan', 'cover'];
-const LAMP_DOMS = ['light', 'switch', 'input_boolean', 'fan'];
 const entName = (id) => id === BEWEGING.id ? BEWEGING.name : (ENTMAP[id] || {}).name || id;
 const entOpts = (doms, v, none) => `<option value="">${none}</option>` + ENTS.filter(e => doms.includes(e.id.split('.')[0])).map(e => `<option value="${e.id}" ${e.id === v ? 'selected' : ''}>${esc(e.name)} (${e.id})</option>`).join('')
   + (v && !ENTMAP[v] ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : '');
-const newAct = (type) => ({ type: type || 'event', id: '', text: '', entity: '', minutes: 10, ids: [], photo: false, keep: false, on: true });
+const newAct = (type) => ({ type: type || 'event', id: '', text: '', entity: '', minutes: 10, ids: [], photo: false, keep: false, on: true, service: '', data: {} });
 const EXAMPLES = [
   ['🚪 Voordeur gaat open', { name: 'Voordeur gaat open', entity: '', cond: 'aan', cooldown: 2, actions: [newAct('event')].map(a => Object.assign(a, { id: 'schrikken' })) }],
   ['🧺 De was is klaar', { name: 'De was is klaar', entity: '', cond: 'onder', value: '5', cooldown: 30, actions: [Object.assign(newAct('bericht'), { text: 'DE WAS IS KLAAR', minutes: 30 })] }],
@@ -1197,7 +1209,7 @@ function actFields(a) {
       <span class="hint">Tot vijf stuks. Daarna draagt hij weer zijn eigen kleren.</span></div>${min('Hoe lang (min.)')}`;
     case 'rust': return `<label class="f">Rustmodus<select class="aOnSel"><option value="1" ${a.on !== false ? 'selected' : ''}>Aan: Kamiel wordt rustig</option><option value="0" ${a.on === false ? 'selected' : ''}>Uit: weer gewoon</option></select></label>${a.on !== false ? min('Hoe lang (min.)') : ''}`;
     case 'vertrek': return `<span class="hint">Het bord met bus en tram verschijnt naast Kamiel.</span>`;
-    case 'ha': return `<label class="f grow">Wat<select class="aEnt">${entOpts(HA_DOMS, a.entity, 'Kies een script, scène of lamp')}</select></label><span class="hint">Scripts en scènes worden gestart; lampen en schakelaars gaan aan of uit.</span>`;
+    case 'ha': return `<div class="full">${callFields(a)}</div>`;
     case 'telegram': return `<label class="f grow">Tekst<input type="text" class="aText" maxlength="200" value="${esc(a.text)}" placeholder="bv. De voordeur ging open"></label>
       <div class="full">${chk('aPhoto', a.photo, 'Met een foto van een camera')}</div>${a.photo ? `<label class="f grow">Camera<select class="aEnt">${entOpts(['camera'], a.entity, 'Kies een camera')}</select></label>` : ''}`;
   }
@@ -1216,7 +1228,7 @@ function ruleSentence(r) {
     if (a.type === 'kleren') return 'andere kleren' + (a.ids.length ? ' (' + a.ids.map(id => (KamielOutfits.OUTFITS.find(o => o.id === id) || {}).name || id).join(', ') + ')' : '');
     if (a.type === 'rust') return a.on !== false ? 'rust' : 'geen rust meer';
     if (a.type === 'vertrek') return 'het vertrekbord';
-    if (a.type === 'ha') return a.entity ? entName(a.entity) : 'iets in Home Assistant';
+    if (a.type === 'ha') return (a.service ? ((SVCMAP[a.service] || {}).name || a.service).toLowerCase() + ': ' : '') + (a.entity ? entName(a.entity) : a.service ? '' : 'iets in Home Assistant');
     if (a.type === 'telegram') return 'een Telegram-bericht';
     return '';
   }).filter(Boolean);
@@ -1257,6 +1269,7 @@ function readRule(card) {
   card.querySelectorAll('.act').forEach(el => {
     const a = r.actions[+el.dataset.j], f = (c) => el.querySelector(c);
     const type = f('.aType').value; if (type !== a.type) { r.actions[+el.dataset.j] = newAct(type); return; }
+    if (type === 'ha') { readCall(el, a); return; }
     if (f('.aId')) a.id = f('.aId').value;
     if (f('.aText')) a.text = f('.aText').value;
     if (f('.aMin')) a.minutes = +f('.aMin').value || 10;
@@ -1273,7 +1286,7 @@ $('rules').addEventListener('change', (e) => {
   const card = e.target.closest('.rule'); if (!card) return;
   readRule(card);
   // things that change which fields show: draw the card again (keeps the others as they are)
-  if (e.target.matches('.aType, .rCond, .rEnt, .aOnSel, .aPhoto, .rOn')) { renderRules(); return; }
+  if (e.target.matches('.aType, .rCond, .rEnt, .aOnSel, .aPhoto, .rOn, .cEnt, .cSvc')) { renderRules(); return; }
   card.querySelector('.rsum').textContent = ruleSentence(RULES[+card.dataset.i]);
 });
 $('rules').addEventListener('input', (e) => { const card = e.target.closest('.rule'); if (card && e.target.matches('.rName, .aText, .rVal')) { readRule(card); card.querySelector('.rsum').textContent = ruleSentence(RULES[+card.dataset.i]); } });
@@ -1297,19 +1310,137 @@ $('ruleSave').addEventListener('click', async () => {
   if (r.ok) { const w = await (await fetch('api/world', { cache: 'no-store' })).json(); RULES = JSON.parse(JSON.stringify(w.settings.rules || [])); renderRules(); }
 });
 
-function renderLamps() {
-  const q = $('lampSearch').value.trim().toLowerCase(), chosen = new Set(LAMPS);
-  const list = ENTS.filter(e => LAMP_DOMS.includes(e.id.split('.')[0]) && (!q || (e.name + ' ' + e.id).toLowerCase().includes(q)));
-  $('lampList').innerHTML = list.length ? list.map(e => `<label class="choice"><input type="checkbox" class="lampOn" value="${e.id}" ${chosen.has(e.id) ? 'checked' : ''}>
-    <span><b>${{ light: '💡', switch: '🔌', input_boolean: '🔘', fan: '🌀' }[e.id.split('.')[0]] || ''} ${esc(e.name)}</b><span>${e.id} · nu ${esc(e.state)}</span></span></label>`).join('')
-    : `<div class="empty">${ENTS.length ? 'Niets gevonden.' : 'Niet verbonden met Home Assistant.'}</div>`;
+/* ---------- one editor for "do something in Home Assistant": used by the buttons and by the rules ---------- */
+let SVCS = [], SVCMAP = {};
+const AUTO_NL = { light: 'aan/uit', switch: 'aan/uit', input_boolean: 'aan/uit', fan: 'aan/uit', cover: 'open/dicht', climate: 'aan/uit', humidifier: 'aan/uit', siren: 'aan/uit', lock: 'slot open/dicht',
+  script: 'starten', scene: 'activeren', automation: 'uitvoeren', button: 'indrukken', input_button: 'indrukken', media_player: 'afspelen/pauze', input_select: 'volgende optie', select: 'volgende optie', vacuum: 'starten' };
+const DOM_NL = { homeassistant: 'Algemeen', light: 'Lampen', switch: 'Schakelaars', input_boolean: 'Aan/uit-helpers', input_select: 'Keuzelijst-helpers', select: 'Keuzelijsten', input_number: 'Getal-helpers',
+  number: 'Getallen', input_text: 'Tekst-helpers', input_button: 'Knop-helpers', button: 'Knoppen', script: 'Scripts', scene: 'Scènes', automation: 'Automatiseringen', cover: 'Rolluiken en poorten',
+  lock: 'Sloten', fan: 'Ventilatoren', climate: 'Verwarming en airco', media_player: 'Speakers en tv', vacuum: 'Stofzuigers', timer: 'Timers', counter: 'Tellers', notify: 'Meldingen', tts: 'Spraak' };
+const domOf = (id) => String(id || '').split('.')[0];
+const FIELD_NL = { brightness_pct: 'Helderheid (%)', brightness_step_pct: 'Helderheid erbij of eraf (%)', rgb_color: 'Kleur', color_temp_kelvin: 'Kleurtemperatuur (K)', transition: 'Overgang (seconden)',
+  effect: 'Effect', flash: 'Knipperen', option: 'Optie', cycle: 'Na de laatste weer de eerste', value: 'Waarde', temperature: 'Temperatuur', target_temp_high: 'Hoogste temperatuur',
+  target_temp_low: 'Laagste temperatuur', hvac_mode: 'Stand', preset_mode: 'Voorinstelling', fan_mode: 'Ventilatorstand', volume_level: 'Volume (0 tot 1)', is_volume_muted: 'Gedempt',
+  message: 'Bericht', title: 'Titel', position: 'Positie (%)', percentage: 'Snelheid (%)', oscillating: 'Draaien', media_content_id: 'Wat afspelen (adres of ID)',
+  media_content_type: 'Soort (bv. music)', source: 'Bron', duration: 'Duur', code: 'Code', datetime: 'Datum en tijd', date: 'Datum', time: 'Tijd', humidity: 'Vochtigheid (%)',
+  shuffle: 'Shuffle', repeat: 'Herhalen', cache: 'Bewaren', language: 'Taal', media_player_entity_id: 'Op welke speaker' };
+const STATE_NL = { on: 'aan', off: 'uit', open: 'open', closed: 'dicht', home: 'thuis', not_home: 'weg', playing: 'speelt', paused: 'gepauzeerd', idle: 'stil', unavailable: 'niet bereikbaar', locked: 'op slot', unlocked: 'open' };
+async function loadServices() {
+  try { const j = await (await fetch('api/services')).json(); SVCS = j.domains || []; } catch { SVCS = []; }
+  SVCMAP = {}; for (const d of SVCS) for (const v of d.services) SVCMAP[v.id] = v;
 }
-let LAMPS = [];
-$('lampSearch').addEventListener('input', renderLamps);
-$('lampList').addEventListener('change', (e) => { const c = e.target.closest('.lampOn'); if (!c) return; LAMPS = LAMPS.filter(x => x !== c.value); if (c.checked) LAMPS.push(c.value); });
-$('lampSave').addEventListener('click', async () => {
-  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lamps: LAMPS }) });
-  status($('lampStatus'), r.ok ? `Bewaard: ${LAMPS.length} lamp(en). Op de tablet staan ze in het venster Lampen.` : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+function svcOptions(m) {
+  const d = domOf(m.entity), opt = (v) => `<option value="${v.id}" ${v.id === m.service ? 'selected' : ''}>${esc(v.name)}</option>`;
+  let h = `<option value="" ${!m.service ? 'selected' : ''}>${m.entity ? 'Gewoon ' + (AUTO_NL[d] || 'standaard') : 'Kies een actie'}</option>`;
+  const own = (SVCS.find(x => x.domain === d) || {}).services || [];
+  if (own.length) h += `<optgroup label="${esc(DOM_NL[d] || d)}">${own.map(opt).join('')}</optgroup>`;
+  if (m.entity && d !== 'homeassistant') h += `<optgroup label="Algemeen">${['homeassistant.toggle', 'homeassistant.turn_on', 'homeassistant.turn_off'].filter(id => SVCMAP[id]).map(id => opt(SVCMAP[id])).join('')}</optgroup>`;
+  h += SVCS.filter(x => x.domain !== d && x.domain !== 'homeassistant').map(x => `<optgroup label="Alles: ${esc(DOM_NL[x.domain] || x.domain)}">${x.services.map(opt).join('')}</optgroup>`).join('');
+  if (m.service && !SVCMAP[m.service]) h += `<option value="${esc(m.service)}" selected>${esc(m.service)}</option>`;
+  return h;
+}
+function fieldInput(f, v, m) {
+  const sel = f.selector || {}, t = Object.keys(sel)[0] || 'text', c = sel[t] || {}, key = esc(f.key);
+  const ent = ENTMAP[m.entity] || {};
+  // a select helper: its own options
+  if (f.key === 'option' && ent.options) return `<select class="cF" data-k="${key}" data-t="text"><option value="">—</option>${ent.options.map(o => `<option ${String(o) === String(v) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  if (t === 'select' && Array.isArray(c.options)) return `<select class="cF" data-k="${key}" data-t="text"><option value="">—</option>${c.options.map(o => { const val = typeof o === 'object' ? o.value : o, lab = typeof o === 'object' ? o.label : o;
+    return `<option value="${esc(val)}" ${String(val) === String(v) ? 'selected' : ''}>${esc(lab)}</option>`; }).join('')}</select>`;
+  if (t === 'boolean') return `<select class="cF" data-k="${key}" data-t="bool"><option value="">—</option><option value="1" ${v === true ? 'selected' : ''}>Ja</option><option value="0" ${v === false ? 'selected' : ''}>Nee</option></select>`;
+  if (t === 'number') return `<input type="number" class="cF" data-k="${key}" data-t="num" ${c.min !== undefined ? `min="${c.min}"` : ''} ${c.max !== undefined ? `max="${c.max}"` : ''} step="${c.step && c.step !== 'any' ? c.step : 'any'}" value="${v === undefined ? '' : esc(v)}" placeholder="${c.unit_of_measurement ? esc(c.unit_of_measurement) : ''}">`;
+  if (t === 'color_rgb') { const hex = Array.isArray(v) ? '#' + v.map(n => ('0' + (+n).toString(16)).slice(-2)).join('') : '#ffffff';
+    return `<input type="color" class="cF" data-k="${key}" data-t="rgb" value="${hex}" ${v === undefined ? 'data-empty="1"' : ''}>`; }
+  return `<input type="text" class="cF" data-k="${key}" data-t="any" value="${v === undefined ? '' : esc(typeof v === 'object' ? JSON.stringify(v) : v)}" placeholder="${f.example !== undefined && f.example !== null ? esc(String(f.example)) : ''}">`;
+}
+// the whole editor: what (entity), which action, and the action's own settings
+function callFields(m, opts) {
+  opts = opts || {}; m.data = m.data || {};
+  const s = SVCMAP[m.service], known = s ? new Set(s.fields.map(f => f.key)) : new Set();
+  const extra = Object.fromEntries(Object.entries(m.data).filter(([k]) => !known.has(k)));
+  const ent = ENTMAP[m.entity];
+  return `<div class="call">
+    <label class="f grow">${opts.entLabel || 'Wat'}<input type="text" class="cEnt" list="entList" value="${esc(m.entity || '')}" placeholder="Typ om te zoeken: keuken, radio, rolluik…" autocomplete="off"></label>
+    <label class="f grow">Doet<select class="cSvc">${svcOptions(m)}</select></label>
+    ${ent && ent.state ? `<span class="now">Nu: <b>${esc(STATE_NL[ent.state] || ent.state)}</b></span>` : ''}
+    ${s && s.desc ? `<p class="cdesc">${esc(s.desc)}</p>` : ''}
+    ${s ? s.fields.map(f => `<label class="f" ${f.desc ? `title="${esc(f.desc)}"` : ''}>${esc(FIELD_NL[f.key] || f.name)}${f.required ? ' *' : ''}${fieldInput(f, m.data[f.key], m)}</label>`).join('') : ''}
+    ${m.service ? `<details class="cadv" ${Object.keys(extra).length ? 'open' : ''}><summary>Gevorderd: eigen gegevens</summary>
+      <textarea class="cJson" rows="2" placeholder='bv. {"brightness_pct": 40}'>${Object.keys(extra).length ? esc(JSON.stringify(extra)) : ''}</textarea>
+      <span class="hint">Voor alles wat hierboven niet staat. Schrijf het zoals in Home Assistant (JSON).</span></details>` : ''}
+  </div>`;
+}
+function readCall(el, m) {
+  const q = (c) => el.querySelector(c);
+  const ent = q('.cEnt').value.trim(), svc = q('.cSvc').value;
+  const changed = ent !== (m.entity || '') || svc !== (m.service || '');
+  if (ent !== (m.entity || '') && domOf(ent) !== domOf(m.entity) && m.service && domOf(m.service) === domOf(m.entity)) m.service = '';   // another kind of thing: start over
+  else m.service = svc;
+  m.entity = ent;
+  if (changed) { const s = SVCMAP[m.service], keep = s ? new Set(s.fields.map(f => f.key)) : new Set(); m.data = Object.fromEntries(Object.entries(m.data || {}).filter(([k]) => keep.has(k))); return true; }
+  const data = {};
+  el.querySelectorAll('.cF').forEach(f => {
+    const k = f.dataset.k, t = f.dataset.t, v = f.value;
+    if (t === 'rgb') { if (!f.dataset.empty) data[k] = [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16)); return; }
+    if (v === '') return;
+    if (t === 'num') data[k] = +v;
+    else if (t === 'bool') data[k] = v === '1';
+    else if (t === 'any' && /^[\[{]/.test(v)) { try { data[k] = JSON.parse(v); } catch { data[k] = v; } }
+    else data[k] = v;
+  });
+  const j = q('.cJson'); let bad = false;
+  if (j && j.value.trim()) { try { Object.assign(data, JSON.parse(j.value)); } catch { bad = true; } }
+  j && j.classList.toggle('bad', bad);
+  m.data = data; return false;
+}
+document.addEventListener('input', (e) => { if (e.target.matches('.cF[type=color]')) delete e.target.dataset.empty; });
+
+/* ---------- the buttons of Knoppen.exe ---------- */
+let BTNS = [];
+function renderBtns() {
+  $('btns').innerHTML = BTNS.length ? BTNS.map((b, i) => `<div class="btn" data-i="${i}">
+    <div class="rhead"><span class="bnum">${i + 1}</span>
+      <input type="text" class="bIcon" maxlength="4" value="${esc(b.icon || '')}" placeholder="💡" aria-label="Icoon (emoji)">
+      <input type="text" class="bLab" maxlength="16" value="${esc(b.label || '')}" placeholder="${esc((ENTMAP[b.entity] || {}).name || 'Naam op de knop')}" aria-label="Naam op de knop">
+      <button type="button" class="bUp" aria-label="Naar voren" ${i ? '' : 'disabled'}>↑</button><button type="button" class="bDown" aria-label="Naar achter" ${i < BTNS.length - 1 ? '' : 'disabled'}>↓</button>
+      <button type="button" class="bTest">▶ Testen</button><button type="button" class="bDel danger">Wissen</button></div>
+    ${callFields(b)}
+  </div>`).join('') : '<div class="empty">Nog geen knoppen. Voeg er hieronder toe.</div>';
+  $('btnCount').textContent = `${BTNS.length} van de 30`;
+}
+function readBtn(card) { const b = BTNS[+card.dataset.i]; b.icon = card.querySelector('.bIcon').value; b.label = card.querySelector('.bLab').value; return readCall(card, b); }
+$('btns').addEventListener('change', (e) => { const card = e.target.closest('.btn'); if (!card) return; if (readBtn(card) || e.target.matches('.cEnt, .cSvc')) renderBtns(); });
+$('btns').addEventListener('click', async (e) => {
+  const card = e.target.closest('.btn'); if (!card) return;
+  const i = +card.dataset.i; readBtn(card);
+  if (e.target.closest('.bDel')) { BTNS.splice(i, 1); renderBtns(); }
+  else if (e.target.closest('.bUp') && i > 0) { BTNS.splice(i - 1, 0, BTNS.splice(i, 1)[0]); renderBtns(); }
+  else if (e.target.closest('.bDown') && i < BTNS.length - 1) { BTNS.splice(i + 1, 0, BTNS.splice(i, 1)[0]); renderBtns(); }
+  else if (e.target.closest('.bTest')) {
+    const b = BTNS[i], r = await fetch('api/call-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    const j = await r.json().catch(() => ({}));
+    status($('btnStatus'), j.ok ? `"${b.label || entName(b.entity) || 'Knop'}" uitgevoerd.` : 'Dat lukte niet. Kijk of de actie bij dit ding past en of alle velden met * ingevuld zijn.', j.ok ? 'ok' : 'err');
+  }
+});
+$('btnAdd').addEventListener('click', () => { if (BTNS.length >= 30) return; BTNS.push({ icon: '', label: '', entity: '', service: '', data: {} }); renderBtns(); $('btns').lastElementChild.querySelector('.cEnt').focus(); });
+function renderQuick() {
+  const q = $('quickSearch').value.trim().toLowerCase(), have = new Set(BTNS.map(b => b.entity));
+  const doms = ['light', 'switch', 'input_boolean', 'fan', 'cover', 'input_select', 'select', 'script', 'scene', 'media_player', 'lock', 'climate', 'vacuum', 'button', 'input_button'];
+  const list = ENTS.filter(e => doms.includes(domOf(e.id)) && !have.has(e.id) && (!q || (e.name + ' ' + e.id).toLowerCase().includes(q))).slice(0, 40);
+  $('quickList').innerHTML = list.length ? list.map(e => `<button type="button" class="qadd" data-e="${e.id}">+ ${esc(e.name)} <span>${esc(DOM_NL[domOf(e.id)] || domOf(e.id))}</span></button>`).join('')
+    : `<span class="hint">${ENTS.length ? 'Niets (meer) gevonden.' : 'Niet verbonden met Home Assistant.'}</span>`;
+}
+$('quickSearch').addEventListener('input', renderQuick);
+$('quickList').addEventListener('click', (e) => {
+  const b = e.target.closest('.qadd'); if (!b || BTNS.length >= 30) return;
+  document.querySelectorAll('#btns .btn').forEach(readBtn);
+  BTNS.push({ icon: '', label: '', entity: b.dataset.e, service: '', data: {} }); renderBtns(); renderQuick();
+  status($('btnStatus'), 'Toegevoegd. Niet vergeten: Opslaan.');
+});
+$('btnSave').addEventListener('click', async () => {
+  document.querySelectorAll('#btns .btn').forEach(readBtn);
+  const list = BTNS.filter(b => b.entity || b.service);
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ buttons: list }) });
+  status($('btnStatus'), r.ok ? `Bewaard: ${list.length} knop(pen). Op de tablet staan ze in Knoppen.exe.` : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
 
 const dbBody = () => ({ doorbell: { on: $('dbOn').checked, trigger: $('dbTrigger').value.trim(), mode: $('dbMode').value, camera: $('dbCam').value,
@@ -1334,6 +1465,7 @@ $('mSave').addEventListener('click', async () => {
 async function renderHuis() {
   const s = world.settings, D = s.doorbell || {}, M = s.motion || {};
   try { const j = await (await fetch('api/entities?domain=*')).json(); ENTS = j.connected ? j.entities : []; } catch { ENTS = []; }
+  await loadServices();
   ENTMAP = Object.fromEntries(ENTS.map(e => [e.id, e]));
   $('entList').innerHTML = [BEWEGING].concat(ENTS).map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
   $('dbOn').checked = !!D.on; $('dbTrigger').value = D.trigger || ''; $('dbMode').value = D.mode || 'auto';
@@ -1344,7 +1476,7 @@ async function renderHuis() {
   RULES = JSON.parse(JSON.stringify(s.rules || []));
   $('ruleExamples').innerHTML = '<span class="hint" style="flex-basis:100%;max-width:none">Voorbeelden (klik om toe te voegen):</span>' + EXAMPLES.map(([n], k) => `<button type="button" class="ex" data-k="${k}">${esc(n)}</button>`).join('');
   renderRules();
-  LAMPS = (s.lamps || []).slice(); renderLamps();
+  BTNS = JSON.parse(JSON.stringify(s.buttons || [])); renderBtns(); renderQuick();
 }
 $('ruleExamples').addEventListener('click', (e) => {
   const b = e.target.closest('.ex'); if (!b) return;

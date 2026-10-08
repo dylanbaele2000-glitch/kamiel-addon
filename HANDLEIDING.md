@@ -1,6 +1,6 @@
 # Kamiel: technische handleiding
 
-Stand: 7 oktober 2026 (versie 0.11.0)
+Stand: 8 oktober 2026 (versie 0.12.0)
 
 ## Voor wie dit is
 
@@ -154,7 +154,7 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | `sun_script` / `moon_script` | "" | Wat tikken op zon/maan start. |
 | `kamiel_tap` | kleerkast | Tikken op Kamiel opent de kleerkast. |
 | `windows`, `window_titles`, `window_close`, `window_layout` | alles aan, \*.exe, 60 s, verspreid | De oude Windows-vensters. |
-| `buttons` | \[\] | 9 knoppen: `icon`, `label`, `entity`. |
+| `buttons` | \[\] | Knoppen voor Knoppen.exe (max 30): `icon`, `label`, `entity`, `service` (`domein.actie`, leeg = automatisch: aan/uit, starten, volgende optie…), `data` (de velden van die actie). Lege knoppen worden bij het laden weggefilterd. |
 | `outfit_mode` | kiezen | Kleerkast: `kiezen` / `dag` / `uit`. |
 | `media_player` | "" | Speaker voor de muziek-tv. |
 | `board` | \[\] | Vertrekbordrijen: `label`, `entity`, `kind`, `lines`, `dest`, `count`. |
@@ -162,9 +162,9 @@ Alles leeft in één JSON-bestand, `/data/kamiel.json`. `load_db()` vult ontbrek
 | `timer_entities` | \[\] | Google Home `_timers`-sensoren. |
 | `message_entity`, `message_minutes` | "", 60 | Tekst-helper voor berichten uit automatiseringen. |
 | `doorbell` | uit, `mode` auto, 10 min, telegram en honden aan | Deurbel: `on`, `trigger` (event./binary_sensor./knop), `mode` (`auto`/`aan`/`verandert`; auto = verandert voor `event.`/knoppen, anders aan), `camera`, `minutes`, `keep` (in het album), `telegram`, `pets`. |
-| `rules` | \[\] | "Als dit, dan dat" (max 40): `id`, `name`, `on`, `entity` (of `kamiel.beweging`), `cond` (`aan`/`uit`/`verandert`/`is`/`boven`/`onder`), `value`, `from`/`to` (HH:MM), `when` (`altijd`/`dag`/`nacht`), `cooldown` (min.), `actions` (max 6): `type` (`event`/`bericht`/`camera`/`kleren`/`rust`/`vertrek`/`ha`/`telegram`) met `id`, `text`, `entity`, `minutes`, `ids`, `photo`, `keep`, `on`. Bij `camera` betekent `on` "Kamiel gaat kijken" en `id: "pets"` "de honden blaffen". |
+| `rules` | \[\] | "Als dit, dan dat" (max 40): `id`, `name`, `on`, `entity` (of `kamiel.beweging`), `cond` (`aan`/`uit`/`verandert`/`is`/`boven`/`onder`), `value`, `from`/`to` (HH:MM), `when` (`altijd`/`dag`/`nacht`), `cooldown` (min.), `actions` (max 6): `type` (`event`/`bericht`/`camera`/`kleren`/`rust`/`vertrek`/`ha`/`telegram`) met `id`, `text`, `entity`, `minutes`, `ids`, `photo`, `keep`, `on`, en voor `ha` ook `service` + `data` (zelfde als bij de knoppen). Bij `camera` betekent `on` "Kamiel gaat kijken" en `id: "pets"` "de honden blaffen". |
 | `motion` | uit, kijken en scherm aan, scherm-uit `nooit` na 10 min | Camera van de tablet (Fully PLUS) of een `binary_sensor`: `on`, `look`, `wake`, `screen_off` (`nooit`/`nacht`/`altijd`), `off_after`, `entity`. |
-| `lamps` | \[\] | Lampen/stopcontacten voor Lampen.exe (alleen light, switch, input_boolean, fan; max 60). |
+| `lamps` | \[\] | Niet meer gebruikt (0.11.0): bij het laden worden ze gewone knoppen. |
 
 Buiten `settings` staan ook `actions` (de laatste 20 opdrachten voor de tablet uit regels en de deurbel: `type` `event`/`frame`/`kleren`/`rust`/`vertrek`/`beweging`, `n`, `at`; de tablet kijkt alleen naar die van de laatste 2 minuten en nooit opnieuw na herladen), `camera_stills` (de laatste 10 camerabeelden, oudere bestanden worden gewist), `songs` (de nummerlijst: `id`, `title`, `bpm`; vooraf gevuld met 13 nummers) en `event_req` (`n`, `id`, `at`: het laatst gevraagde event).
 
@@ -185,16 +185,17 @@ De tablet gebruikt poort 8100, de Studio 8099; de "gedeelde" endpoints bestaan o
 | `GET /api/cover` | beide | Albumhoes van de speaker, door de dreamcore-filter, in cache. |
 | `GET /media/{naam}` | beide | Verwerkte afbeeldingen (lang te cachen, de namen veranderen bij elke verwerking). |
 | `POST /api/tap/{sun\|moon\|el-<id>}` | beide | Start het script dat in de Studio gekozen is (alleen script/scene/automation/(input\_)button). |
-| `POST /api/button/{0–8}` | beide | Een van de 9 knoppen: lampen/schakelaars toggelen, scripts/scènes starten. |
+| `POST /api/button/{i}` | beide | Een knop uitvoeren (`do_call`): de gekozen actie met haar gegevens, of automatisch. Alleen wat in de Studio werd ingesteld. |
 | `POST /api/media/{playpause\|next\|prev\|volup\|voldown}` | beide | Muziek bedienen. |
 | `POST /api/outfit` | beide | Kleren kiezen (één per lichaamsdeel). |
 | `POST /api/seen/{id}`, `/api/photo-seen/{id}` | beide | Iemand tikte een bericht/foto weg → Telegram meldt "gezien". |
 | `POST /api/reminder-dismiss/{id}` | beide | Herinnering weg tot de volgende keer. |
 | `POST /api/motion` | beide | De tablet zag beweging (Fully). Zet `kamiel.beweging` 60 s op aan. |
-| `GET /api/lamps`, `POST /api/lamp/{entity}` | beide | Lampen.exe: status van de gekozen lampen, één toggelen. Alleen entiteiten uit `settings.lamps` (anders 403). |
+| `GET /api/services` | 8099 | Alles wat Home Assistant kan (`/services`): per domein de acties met hun velden en selectors; Nederlandse namen voor de bekendste (`SVC_NL`). |
+| `POST /api/call-test` | 8099 | Een knop of actie meteen uitproberen (`{entity, service, data}`). |
 | `POST /api/rule-test` | 8099 | De DAN-acties van een regel meteen uitvoeren (`{actions}`), of de deurbel testen (`{"doorbell": true}`). |
 | `POST /api/snapshot/{id}` | beide | De tablet levert een JPEG voor /kijk; alleen geldig als er een verzoek openstaat. |
-| `GET /api/entities?domain=a,b` | 8099 | Lijst van Home Assistant-entiteiten (`id`, `name`, `state`) voor de keuzelijsten; `domain=*` geeft alles. |
+| `GET /api/entities?domain=a,b` | 8099 | Lijst van Home Assistant-entiteiten (`id`, `name`, `state`) voor de keuzelijsten; `domain=*` geeft alles; keuzelijsten krijgen ook hun `options`. |
 | `POST/PATCH/DELETE /api/assets[/id]` | 8099 | Elementen uploaden (multipart: `kind`, `dag`, `nacht`, `rare`, `sign`, `weer`, `files`), aanpassen, verwijderen. |
 | `POST /api/photos`, `DELETE /api/photos/{id}` | 8099 | Foto's. |
 | `POST /api/panorama` | 8099 | Panorama vervangen (alle delen in één verzoek, in de browser verkleind tot 600 px hoog). |
@@ -306,7 +307,7 @@ Kamiel Studio staat in de zijbalk van Home Assistant (ingress). Het is een gewon
 | Foto's | Foto's voor de kaders (ook die uit Telegram komen hier terecht). |
 | Bordteksten | De woorden op de tekstborden, één per regel. |
 | Herinneringen | Herinneringen met live voorbeeld en "volgende keer: …". |
-| Huis | **Deurbel** (met stappenplan: merk kiezen, integratie toevoegen, de bel-entiteit en de camera vinden, testen), **Als dit, dan dat** (regelkaarten ALS / MAG / DAN met zoeklijst van alle entiteiten, huidige waarde ernaast, zin die de regel uitlegt, voorbeelden, ▶ Testen), **Camera van de tablet** (stappenplan Fully PLUS), **Lampen en stopcontacten** (zoekbare vinkjeslijst). Elk blok heeft een eigen Opslaan-knop. |
+| Huis | **Deurbel** (met stappenplan: merk kiezen, integratie toevoegen, de bel-entiteit en de camera vinden, testen), **Als dit, dan dat** (regelkaarten ALS / MAG / DAN met zoeklijst van alle entiteiten, huidige waarde ernaast, zin die de regel uitlegt, voorbeelden, ▶ Testen), **Camera van de tablet** (stappenplan Fully PLUS), **Knoppen** (snel toevoegen via zoeken, per knop: icoon, naam, wat, "doet" met alle acties uit Home Assistant en hun velden, ↑↓, ▶ Testen; de rules-actie "Iets in Home Assistant doen" gebruikt dezelfde editor). Elk blok heeft een eigen Opslaan-knop. |
 | Instellingen | Weer, wandeltijd, hoeveel objecten per soort (minstens–hoogstens, dag/nacht), ruimte tussen objecten, vrije ruimte rond Kamiel, hoe groot, reuzen, zakdiepte, maximum, sensoren onder de datum, tikken (zon, maan, elders, adres), vensters, 9 knoppen, kleerkast, muziek (speaker, nummerlijst om mee te knikken), gebeurtenissen (hoe vaak, aan/uit per event, ▶ om te testen), vertrekbord (met stappenplan voor De Lijn), Google Home-timers (met stappenplan), berichten via een tekst-helper, seizoenskleuren. |
 
 **Regels-motor (`watch_loop`)**: elke 2 s haalt de server de status op van alle entiteiten die in actieve regels, de deurbel of `motion.entity` staan, vergelijkt met de vorige waarde (`_matches`), houdt rekening met tijdvenster, dag/nacht en "niet vaker dan", en voert dan `run_actions` uit. De eerste meting na een herstart vuurt nooit. Camerabeelden komen via `/camera_proxy/<camera>`, gaan door `_photo` (dreamcore-filter) en worden als `frame`-actie naar de tablet gestuurd; die hangt het beeld in een kader naast Kamiel (`placeDoor`, tikken = weg) en start het interne event `deurbel`. Interne events (`cat: 'intern'`: `deurbel`, `kijken`) worden nooit willekeurig gekozen en staan niet in de gebeurtenissenlijst.
@@ -350,7 +351,7 @@ De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zond
 
 **Gegevens bij updates:** `/data` blijft altijd bewaard; nooit opnieuw uploaden. Alleen verwijderen van de add-on wist alles. Nieuwe instellingen krijgen hun standaardwaarde via `DEFAULT_SETTINGS`; schrijf migraties in `load_db()` als een sleutel van betekenis verandert.
 
-**Versiegeschiedenis in het kort:** 0.11.0 toekomstbestendig: deurbel met camerafoto in een kader (Kamiel gaat kijken, Wifi en Snoet blaffen, Telegram met foto), "Als dit, dan dat"-regels, camera van de tablet via Fully (Kamiel komt kijken, scherm aan/uit), Lampen.exe, nieuw tabblad Huis; 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.10.1 huisdieren getekend naar echte foto's (pluizige oren en staart, Snoets crème masker, Pippa smoking met witte buik en poten, Pebbels met M-streep en witte pootjes, Dobby als compact dwergkonijn met witte bef en vlekje op de neus); 0.10.0 huisdieren (Wifi, Snoet, Pippa, Pebbels, Dobby) + Roepen.exe; 0.9.1 Heidi met eigen uiterlijk en karakter, geen tekstballonnen, persoonlijke info uit de handleiding, locatie uit Home Assistant; 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
+**Versiegeschiedenis in het kort:** 0.12.0 objecten op heuvels alleen waar de heuvel vlak genoeg is en een beetje erachter (geen zwevende objecten meer), stapelen alleen op een vlak stuk en net achter de rand van de drager, Lampen.exe opgegaan in Knoppen.exe (tot 30 knoppen), knoppen en regels kunnen elke actie van Home Assistant (ook keuzelijsten: volgende, vorige, een optie kiezen); 0.11.0 toekomstbestendig: deurbel met camerafoto in een kader (Kamiel gaat kijken, Wifi en Snoet blaffen, Telegram met foto), "Als dit, dan dat"-regels, camera van de tablet via Fully (Kamiel komt kijken, scherm aan/uit), Lampen.exe, nieuw tabblad Huis; 0.1.x basis (Studio, tablet, panorama, borden, kaders, weer, HA-token), 0.1.7–0.1.10 percentages, grootte, plaatsing, horizon, 0.2.0 herinneringen, 0.3.0 berichten, muziek-tv, tikken, seizoenen, maan, 0.4.x Telegram, 0.5.0 vertrekbord, timers, zakdiepte per element, weer- en maanfixes, 0.6.0 Windows-vensters en kleerkast, 0.7.0 meeknikken, herinneringen wegtikken, tv-vormen, weer per element, 0.7.1 geen zwart scherm meer bij fouten, 0.7.2 scripts altijd vers, 0.10.1 huisdieren getekend naar echte foto's (pluizige oren en staart, Snoets crème masker, Pippa smoking met witte buik en poten, Pebbels met M-streep en witte pootjes, Dobby als compact dwergkonijn met witte bef en vlekje op de neus); 0.10.0 huisdieren (Wifi, Snoet, Pippa, Pebbels, Dobby) + Roepen.exe; 0.9.1 Heidi met eigen uiterlijk en karakter, geen tekstballonnen, persoonlijke info uit de handleiding, locatie uit Home Assistant; 0.9.0 compositie als een fotograaf (kijkwijzen + score, geen raakvlakken, grond nooit vóór horizon), heuvels, stapelen, enkel gras, kijkrichting, albumhoes in fotokaders, nieuwe bibliotheek in de Studio, kleerkast-bug (`outfits_off`); 0.8.0 wereldgebeurtenissen, scènes vernieuwen echt (visible-bug), ook 's nachts wandelen, maanboog, Wandel.exe, 13 nieuwe kleren, aantallen per soort, nieuwe plaatsingsregels, Telegram-foto in bestaand kader, eigen nummerlijst voor meeknikken.
 
 ## Testen en debuggen
 
@@ -413,6 +414,8 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 | Home Assistant start in herstelmodus | Een losse `'` in `configuration.yaml` (bij het toevoegen van De Lijn). | Fout lezen in het HA-logboek: regel en kolom staan erbij. |
 | Terugkomende scène bleef hetzelfde | `visible()` had 40 px marge; met plekken van één schermbreedte bleven de buren altijd "zichtbaar". | Marge weg (0.8.0). |
 | Meeknikken deed niets | Deezer gaf geen tempo (of niet bereikbaar). | Eigen nummerlijst (0.8.0). |
+| Objecten op heuvels zweefden half | De voet werd alleen in het midden op de heuvel gezet; een breed object boven een helling hing in de lucht. | Op een heuvel alleen als de kam onder de hele voet hoogstens 16% van de objecthoogte verschilt; de voet staat op het laagste punt en het object staat net áchter de voorste heuvel (eerst achterste heuvels, dan heuvel-objecten, dan de voorste heuvel, dan de rest) (0.12.0). |
+| Gestapelde dingen zweefden of zakten scheef | Ze werden op het hoogste punt van een willekeurige plek van de drager gezet. | `fitOn`/`flatSpot`: zoek een stuk bovenkant dat vlak genoeg is voor de voet (ruwheid ≤ 7% van de hoogte), anders kleiner proberen, anders niet plaatsen. Het ding staat net achter de voorrand (wordt vóór de drager getekend) en zakt een paar procent weg; op een wolk zit het een stukje ín de wolk (0.12.0). |
 | Lokale testservers vielen weg | Achtergrondprocessen stierven tussen shell-aanroepen. | Starten met `setsid nohup … < /dev/null &`. |
 
 **Verder goed om te weten:**

@@ -45,7 +45,7 @@ HA_ROOT = HA_URL[:-4] if HA_URL.endswith("/api") else HA_URL
 KINDS = ["grond", "horizon", "lucht", "wolk", "kader"]
 RARITY = ["gewoon", "zeldzaam", "heelzeldzaam"]
 WEATHER_BUCKETS = ("zon", "bewolkt", "regen", "sneeuw", "mist")
-WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel", "roepen", "lampen")
+WINDOWS = ("weer", "vertrek", "knoppen", "kleerkast", "muziek", "wandel", "roepen")
 def _read_static(name, pattern):
     """The tablet's own lists (clothes, events) are the single source: read the ids from its scripts."""
     try:
@@ -112,9 +112,9 @@ DEFAULT_SETTINGS = {
     "media_player": "",
     "departures": [],
     "board": [],
-    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True, "roepen": True, "lampen": True},
+    "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True, "roepen": True},
     "window_titles": {"weer": "Weer.exe", "vertrek": "Vertrek.exe", "knoppen": "Knoppen.exe", "kleerkast": "Kleerkast.exe", "muziek": "Muziek.exe",
-                      "wandel": "Wandel.exe", "roepen": "Roepen.exe", "lampen": "Lampen.exe"},
+                      "wandel": "Wandel.exe", "roepen": "Roepen.exe"},
     "window_close": 60,
     "window_layout": "verspreid",
     "buttons": [],
@@ -178,7 +178,7 @@ def load_db():
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); s["compose"] = cp
     for k in ("windows", "window_titles"):
-        merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
+        merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); merged.pop("lampen", None); s[k] = merged
     if "songs" not in db:
         db["songs"] = [{"id": uuid.uuid4().hex[:8], "title": t, "bpm": b} for t, b in SONGS]
     if "chances" not in stored:
@@ -186,6 +186,12 @@ def load_db():
         r = int(stored.get("frame_ratio", 2))
         for part in ("dag", "nacht"):
             s["chances"][part]["kader"] = round(100 / r) if r > 0 else 0
+    s["buttons"] = [b for b in (s.get("buttons") or []) if isinstance(b, dict) and (b.get("entity") or b.get("service"))]   # empty slots of the old 9-button grid
+    if s.get("lamps"):   # 0.11.0 had a separate Lampen window; since 0.12.0 they are ordinary buttons
+        have = {b.get("entity") for b in s.get("buttons", [])}
+        s["buttons"] = (s.get("buttons") or []) + [{"label": "", "icon": "", "entity": e, "service": "", "data": {}} for e in s["lamps"] if e not in have]
+        s["buttons"] = s["buttons"][:MAX_BUTTONS]
+        s["lamps"] = []
     db["settings"] = s
     return db
 
@@ -282,7 +288,8 @@ async def api_state(request):
 async def api_entities(request):
     states = await ha_get("/states") or []
     doms = tuple(d.strip() + "." for d in request.query.get("domain", "weather").split(",") if d.strip())
-    ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]), "state": s.get("state", "")}
+    ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]), "state": s.get("state", ""),
+             **({"options": s["attributes"]["options"][:60]} if isinstance(s.get("attributes", {}).get("options"), list) else {})}
             for s in states if request.query.get("domain") == "*" or s["entity_id"].startswith(doms)]
     ents.sort(key=lambda e: e["name"].lower())
     return web.json_response({"connected": bool(TOKEN), "entities": ents})
@@ -694,8 +701,6 @@ async def api_settings(request):
                 m["entity"] = str(b["entity"]).strip()[:120]
         if isinstance(body.get("rules"), list):
             s["rules"] = [r for r in (_clean_rule(x) for x in body["rules"][:40]) if r]
-        if isinstance(body.get("lamps"), list):
-            s["lamps"] = [str(e).strip()[:120] for e in body["lamps"] if str(e).split(".")[0] in TOGGLE][:60]
         if isinstance(body.get("hills"), dict):
             if "chance" in body["hills"]:
                 s["hills"]["chance"] = max(0, min(100, int(body["hills"]["chance"])))
@@ -751,8 +756,9 @@ async def api_settings(request):
         if body.get("window_layout") in ("verspreid", "netjes"):
             s["window_layout"] = body["window_layout"]
         if isinstance(body.get("buttons"), list):
-            s["buttons"] = [{"label": str(b.get("label", "")).strip()[:16], "icon": str(b.get("icon", "")).strip()[:4],
-                             "entity": str(b.get("entity", "")).strip()[:120]} for b in body["buttons"][:9] if isinstance(b, dict)]
+            s["buttons"] = [dict({"label": str(b.get("label", "")).strip()[:16], "icon": str(b.get("icon", "")).strip()[:4],
+                                  "entity": str(b.get("entity", "")).strip()[:120]}, **clean_call(b))
+                            for b in body["buttons"][:MAX_BUTTONS] if isinstance(b, dict)]
         if body.get("outfit_mode") in ("kiezen", "dag", "uit"):
             s["outfit_mode"] = body["outfit_mode"]
         if isinstance(body.get("outfits_off"), list):
@@ -1367,9 +1373,15 @@ async def api_desk(request):
                                   "name": a.get("friendly_name", "")}
         for i, b in enumerate(s.get("buttons", [])):
             st = await ha_get("/states/" + b["entity"]) if b.get("entity") else None
-            out["buttons"].append({"i": i, "label": b.get("label") or ((st or {}).get("attributes", {}).get("friendly_name", "")),
-                                   "icon": b.get("icon", ""), "on": (st or {}).get("state") in ("on", "open", "playing", "home", "unlocked"),
-                                   "ok": bool(st)})
+            dom = (b.get("entity") or b.get("service") or ".").split(".")[0]
+            state = (st or {}).get("state", "")
+            # a small line under the name for things that have a value (an input_select's option, a temperature…)
+            show = state if dom in ("input_select", "select", "input_number", "number", "sensor", "climate", "input_text", "counter", "timer", "cover", "vacuum") else ""
+            unit = (st or {}).get("attributes", {}).get("unit_of_measurement", "")
+            out["buttons"].append({"i": i, "label": b.get("label") or ((st or {}).get("attributes", {}).get("friendly_name", "")) or SVC_NL.get(b.get("service", ""), ""),
+                                   "icon": b.get("icon", ""), "kind": dom, "on": state in ("on", "open", "playing", "home", "unlocked", "heat", "cool", "cleaning"),
+                                   "led": dom in TOGGLE or dom in ("media_player", "input_boolean"), "state": (show + (" " + unit if show and unit else ""))[:20],
+                                   "ok": bool(st) or not b.get("entity")})
         if s.get("media_player"):
             st = await ha_get("/states/" + s["media_player"])
             if st:
@@ -1384,29 +1396,127 @@ async def api_desk(request):
 
 
 TOGGLE = ("light", "switch", "input_boolean", "fan", "cover", "climate", "humidifier", "siren", "lock")
+MAX_BUTTONS = 30
+SERVICE_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+
+
+def clean_call(b):
+    """A Home Assistant action as stored for a button or a rule: a service ("domain.service", empty = automatic) and its data."""
+    svc = str(b.get("service", "") or "").strip()
+    data = b.get("data") if isinstance(b.get("data"), dict) else {}
+    try:
+        if len(json.dumps(data)) > 3000:
+            data = {}
+    except (TypeError, ValueError):
+        data = {}
+    data = {str(k)[:60]: v for k, v in data.items() if k not in ("entity_id", "target")}
+    return {"service": svc if SERVICE_RE.match(svc) else "", "data": data}
+
+
+async def do_call(entity, service="", data=None):
+    """Run what a button or a rule asks: the chosen service, or the sensible default for that kind of entity."""
+    data = dict(data or {})
+    if service:
+        dom, svc = service.split(".", 1)
+        if entity:
+            data["entity_id"] = entity
+        return await ha_service(dom, svc, data)
+    if not entity:
+        return False
+    dom = entity.split(".")[0]
+    if dom in TOGGLE:
+        return await ha_service("homeassistant", "toggle", {"entity_id": entity})
+    if dom in ("script", "scene"):
+        return await ha_service(dom, "turn_on", {"entity_id": entity})
+    if dom == "automation":
+        return await ha_service("automation", "trigger", {"entity_id": entity})
+    if dom in ("button", "input_button"):
+        return await ha_service(dom, "press", {"entity_id": entity})
+    if dom == "media_player":
+        return await ha_service("media_player", "media_play_pause", {"entity_id": entity})
+    if dom in ("input_select", "select"):
+        return await ha_service(dom, "select_next", {"entity_id": entity, "cycle": True})
+    if dom == "vacuum":
+        return await ha_service("vacuum", "start", {"entity_id": entity})
+    return False
 
 
 async def api_button(request):
     """One of the 9 buttons. Only does what was set up in the Studio for that button."""
     i = int(request.match_info["i"])
     btns = load_db()["settings"].get("buttons", [])
-    if i >= len(btns) or not btns[i].get("entity"):
+    if i >= len(btns) or not (btns[i].get("entity") or btns[i].get("service")):
         return web.json_response({"ok": False})
-    ent = btns[i]["entity"]
-    dom = ent.split(".")[0]
-    if dom in TOGGLE:
-        ok = await ha_service("homeassistant", "toggle", {"entity_id": ent})
-    elif dom in ("script", "scene"):
-        ok = await ha_service(dom, "turn_on", {"entity_id": ent})
-    elif dom == "automation":
-        ok = await ha_service("automation", "trigger", {"entity_id": ent})
-    elif dom in ("button", "input_button"):
-        ok = await ha_service(dom, "press", {"entity_id": ent})
-    elif dom == "media_player":
-        ok = await ha_service("media_player", "media_play_pause", {"entity_id": ent})
-    else:
-        ok = False
-    return web.json_response({"ok": ok})
+    b = btns[i]
+    return web.json_response({"ok": await do_call(b.get("entity", ""), b.get("service", ""), b.get("data"))})
+
+
+async def api_call_test(request):
+    """Studio: try a button or an action right now."""
+    b = await request.json()
+    c = clean_call(b)
+    return web.json_response({"ok": await do_call(str(b.get("entity", "")).strip(), c["service"], c["data"])})
+
+
+# Dutch names for the actions people use most; everything else Home Assistant can do is listed too, with its own name
+SVC_NL = {
+    "homeassistant.toggle": "Aan/uit wisselen", "homeassistant.turn_on": "Aanzetten", "homeassistant.turn_off": "Uitzetten",
+    "light.toggle": "Aan/uit wisselen", "light.turn_on": "Aanzetten (helderheid, kleur…)", "light.turn_off": "Uitzetten",
+    "switch.toggle": "Aan/uit wisselen", "switch.turn_on": "Aanzetten", "switch.turn_off": "Uitzetten",
+    "input_boolean.toggle": "Aan/uit wisselen", "input_boolean.turn_on": "Aanzetten", "input_boolean.turn_off": "Uitzetten",
+    "input_select.select_next": "Volgende optie", "input_select.select_previous": "Vorige optie", "input_select.select_option": "Een bepaalde optie kiezen",
+    "input_select.select_first": "Eerste optie", "input_select.select_last": "Laatste optie",
+    "select.select_next": "Volgende optie", "select.select_previous": "Vorige optie", "select.select_option": "Een bepaalde optie kiezen",
+    "select.select_first": "Eerste optie", "select.select_last": "Laatste optie",
+    "input_number.set_value": "Waarde instellen", "input_number.increment": "Eén hoger", "input_number.decrement": "Eén lager",
+    "number.set_value": "Waarde instellen", "input_text.set_value": "Tekst instellen", "input_datetime.set_datetime": "Datum/tijd instellen",
+    "input_button.press": "Indrukken", "button.press": "Indrukken",
+    "script.turn_on": "Starten", "script.toggle": "Starten/stoppen", "script.turn_off": "Stoppen", "scene.turn_on": "Activeren",
+    "automation.trigger": "Nu uitvoeren", "automation.turn_on": "Inschakelen", "automation.turn_off": "Uitschakelen", "automation.toggle": "In/uitschakelen",
+    "cover.open_cover": "Openen", "cover.close_cover": "Sluiten", "cover.stop_cover": "Stoppen", "cover.toggle": "Open/dicht wisselen", "cover.set_cover_position": "Op een positie zetten",
+    "lock.lock": "Op slot", "lock.unlock": "Van slot", "lock.open": "Openen",
+    "fan.toggle": "Aan/uit wisselen", "fan.turn_on": "Aanzetten", "fan.turn_off": "Uitzetten", "fan.set_percentage": "Snelheid instellen", "fan.oscillate": "Draaien aan/uit",
+    "climate.set_temperature": "Temperatuur instellen", "climate.set_hvac_mode": "Stand kiezen (verwarmen, koelen…)", "climate.set_preset_mode": "Voorinstelling kiezen",
+    "climate.turn_on": "Aanzetten", "climate.turn_off": "Uitzetten", "water_heater.set_temperature": "Temperatuur instellen",
+    "media_player.media_play_pause": "Afspelen/pauze", "media_player.media_play": "Afspelen", "media_player.media_pause": "Pauze", "media_player.media_stop": "Stoppen",
+    "media_player.media_next_track": "Volgend nummer", "media_player.media_previous_track": "Vorig nummer", "media_player.volume_up": "Luider", "media_player.volume_down": "Stiller",
+    "media_player.volume_set": "Volume instellen", "media_player.volume_mute": "Dempen", "media_player.play_media": "Iets afspelen", "media_player.turn_on": "Aanzetten",
+    "media_player.turn_off": "Uitzetten", "media_player.select_source": "Bron kiezen", "media_player.shuffle_set": "Shuffle", "media_player.repeat_set": "Herhalen",
+    "vacuum.start": "Starten", "vacuum.pause": "Pauze", "vacuum.stop": "Stoppen", "vacuum.return_to_base": "Terug naar de basis", "vacuum.locate": "Zoeken (piept)",
+    "timer.start": "Starten", "timer.pause": "Pauzeren", "timer.cancel": "Annuleren", "timer.finish": "Afronden", "counter.increment": "Eén erbij", "counter.decrement": "Eén eraf", "counter.reset": "Op nul",
+    "siren.turn_on": "Aanzetten", "siren.turn_off": "Uitzetten", "humidifier.toggle": "Aan/uit wisselen", "humidifier.set_humidity": "Vochtigheid instellen",
+    "tts.speak": "Laten uitspreken", "notify.persistent_notification": "Melding in Home Assistant", "persistent_notification.create": "Melding in Home Assistant",
+    "valve.open_valve": "Openen", "valve.close_valve": "Sluiten", "lawn_mower.start_mowing": "Beginnen maaien", "lawn_mower.dock": "Terug naar het dok",
+}
+
+
+async def api_services(request):
+    """Studio: everything Home Assistant can do (its services), with their fields, for the action pickers."""
+    raw = await ha_get("/services") or []
+    out = []
+    for d in raw:
+        dom = d.get("domain", "")
+        svcs = []
+        for sid, info in sorted((d.get("services") or {}).items()):
+            info = info or {}
+            fields = []
+            def walk(fs):
+                for k, f in (fs or {}).items():
+                    f = f or {}
+                    if "fields" in f and isinstance(f["fields"], dict) and not f.get("selector"):   # a collapsed section
+                        walk(f["fields"]); continue
+                    if k in ("entity_id", "device_id", "area_id"):
+                        continue
+                    fields.append({"key": k, "name": f.get("name") or k.replace("_", " "), "desc": f.get("description", ""),
+                                   "required": bool(f.get("required")), "selector": f.get("selector") or {}, "example": f.get("example")})
+            walk(info.get("fields"))
+            full = dom + "." + sid
+            svcs.append({"id": full, "name": SVC_NL.get(full) or info.get("name") or sid.replace("_", " "), "desc": info.get("description", ""),
+                         "target": bool(info.get("target")) or any(k == "entity_id" for k in (info.get("fields") or {})), "fields": fields[:30]})
+        if svcs:
+            out.append({"domain": dom, "services": svcs})
+    out.sort(key=lambda x: x["domain"])
+    return web.json_response({"connected": bool(TOKEN), "domains": out})
 
 
 MEDIA_CMDS = {"playpause": "media_play_pause", "next": "media_next_track", "prev": "media_previous_track",
@@ -1642,7 +1752,7 @@ def _clean_rule(r):
         out["actions"].append({"type": a["type"], "id": str(a.get("id", ""))[:40], "text": str(a.get("text", ""))[:200],
                                "entity": str(a.get("entity", "")).strip()[:120], "minutes": max(1, min(240, int(a.get("minutes", 10) or 10))),
                                "ids": [x for x in (a.get("ids") or []) if x in OUTFIT_SLOTS][:5], "photo": bool(a.get("photo", False)),
-                               "keep": bool(a.get("keep", False)), "on": bool(a.get("on", True))})
+                               "keep": bool(a.get("keep", False)), "on": bool(a.get("on", True)), **clean_call(a)})
     return out if out["entity"] else None
 
 
@@ -1748,14 +1858,8 @@ async def run_actions(rule_name, actions):
                         remove_files([o["file"] for o in old] + [o.get("original") for o in old if o.get("original")])
                     push_action(db, {"type": "frame", "file": p["file"], "minutes": a["minutes"], "door": bool(a.get("on", True)), "pets": a.get("id") == "pets"})
                     save_db(db, bump=False)
-            elif t == "ha" and a.get("entity"):
-                dom = a["entity"].split(".")[0]
-                if dom in ("script", "scene"):
-                    await ha_service(dom, "turn_on", {"entity_id": a["entity"]})
-                elif dom == "automation":
-                    await ha_service("automation", "trigger", {"entity_id": a["entity"]})
-                elif dom in TOGGLE:
-                    await ha_service("homeassistant", "toggle", {"entity_id": a["entity"]})
+            elif t == "ha" and (a.get("entity") or a.get("service")):
+                await do_call(a.get("entity", ""), a.get("service", ""), a.get("data"))
             elif t == "telegram":
                 photo = await camera_still(a.get("entity")) if a.get("photo") and a.get("entity") else None
                 await tg_broadcast(a.get("text") or rule_name or "Kamiel", photo)
@@ -1854,25 +1958,6 @@ async def api_rule_test(request):
     return web.json_response({"ok": True})
 
 
-async def api_lamps(request):
-    """The lights and sockets for the Lampen window, with their state."""
-    out = []
-    for ent in load_db()["settings"].get("lamps", []):
-        st = await ha_get("/states/" + ent)
-        a = (st or {}).get("attributes", {})
-        out.append({"entity": ent, "name": a.get("friendly_name", ent), "on": (st or {}).get("state") == "on", "ok": bool(st),
-                    "kind": ent.split(".")[0], "brightness": a.get("brightness")})
-    return web.json_response(out)
-
-
-async def api_lamp(request):
-    """Switch one of the lamps chosen in the Studio (nothing else)."""
-    ent = request.match_info["entity"]
-    if ent not in load_db()["settings"].get("lamps", []):
-        return web.json_response({"ok": False}, status=403)
-    return web.json_response({"ok": await ha_service("homeassistant", "toggle", {"entity_id": ent})})
-
-
 # ----------------------------------------------------------------- apps
 def common_routes(app):
     app.router.add_get("/display", page("display.html"))
@@ -1893,8 +1978,6 @@ def common_routes(app):
     app.router.add_post("/api/photo-seen/{id}", api_photo_seen)
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
     app.router.add_post("/api/motion", api_motion)
-    app.router.add_get("/api/lamps", api_lamps)
-    app.router.add_post("/api/lamp/{entity}", api_lamp)
 
 
 def make_studio():
@@ -1924,6 +2007,8 @@ def make_studio():
     app.router.add_delete("/api/songs/{id}", api_delete_song)
     app.router.add_post("/api/event", api_event)
     app.router.add_post("/api/rule-test", api_rule_test)
+    app.router.add_get("/api/services", api_services)
+    app.router.add_post("/api/call-test", api_call_test)
     return app
 
 

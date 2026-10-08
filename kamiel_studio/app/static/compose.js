@@ -195,8 +195,13 @@
         if (c.layer === 1) {
           const it = { o, layer: 1, dx, h: c.h, flip: rnd() < .35 };
           // sometimes far away, smaller, on the hills
+          // it stands a little behind the front hill: its foot rests on the lowest point of the crest under it,
+          // the higher parts of the hill hide the rest of its foot. Only where the hill is flat enough for that.
           if (hills && !c.hero && rnd() < .5 && frontH(hills, dx) > 30) {
-            const hh = frontH(hills, dx); it.onHill = true; it.h = c.h * .6; it.base = hy(dx) - hh + 2;
+            const h2 = c.h * .6, half = h2 * asp(o) * .36;
+            let lo = -1e9, hi = 1e9, low = 1e9;
+            for (let x = dx - half; x <= dx + half + .1; x += Math.max(2, half / 8)) { const y = hy(x) - frontH(hills, x); lo = Math.max(lo, y); hi = Math.min(hi, y); low = Math.min(low, frontH(hills, x)); }
+            if (low > 18 && lo - hi <= h2 * .16) { it.onHill = true; it.h = h2; it.base = lo + 1; }
           }
           const w = it.h * asp(o), base = it.onHill ? it.base : A.baseY(curWx0 + dx, w);
           rects.push({ x0: dx - w / 2, x1: dx + w / 2, y0: base - it.h * .95, y1: base, layer: 1, wt: o.wt === undefined ? .5 : o.wt, it, onHill: it.onHill });
@@ -328,7 +333,7 @@
           let w = pw * (.3 + rnd() * .35), h = w / asp(o);
           if (h > parent.h * .85) { h = parent.h * .85; w = h * asp(o); }
           if (h < 10) break;
-          const child = { o, layer: parent.layer, on: parent, ox: (rnd() - .5) * .3, h, flip: rnd() < .5 && !o.sign, depth: (parent.depth || 0) + .0005, dx: parent.dx, y: parent.y, onHill: parent.onHill };
+          const child = { o, layer: parent.layer, on: parent, ox: (rnd() - .5) * .3, h, flip: rnd() < .5 && !o.sign, depth: (parent.depth || 0) - .0005, dx: parent.dx, y: parent.y, onHill: parent.onHill };
           items.push(child); parent = child;
           if (!o.carry || rnd() < .4) break;
         }

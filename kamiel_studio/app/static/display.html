@@ -47,6 +47,8 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 .wico{font-size:2.6em;line-height:1}
 .wtemp{font-size:2em;font-weight:700}
 .kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:.4em}
+.kgrid.k4{grid-template-columns:repeat(4,1fr);max-height:52vh;overflow-y:auto}
+.kbtn .ks{font-size:.72em;color:#1d3fae;max-width:8em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.15em;min-height:4.4em;padding:.3em}
 .kbtn .ki{font-size:1.6em;line-height:1}
 .kbtn .kl{font-size:.85em;max-width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -416,7 +418,7 @@ function addMusic(i) {
     if (carriers.length) {
       const c = carriers[Math.floor(rnd() * carriers.length)], cw = c.h * c.o.size[0] / c.o.size[1];
       const h = Math.min(c.h * .8, cw * (.45 + rnd() * .2) / asp0);
-      p.items.push({ o, layer: c.layer, on: c, ox: 0, h, flip: false, tv: true, born: performance.now(), depth: (c.depth || 0) + .0005, dx: c.dx, onHill: c.onHill });
+      p.items.push({ o, layer: c.layer, on: c, ox: 0, h, flip: false, tv: true, born: performance.now(), depth: (c.depth || 0) - .0005, dx: c.dx, onHill: c.onHill });
       sortItems(p); return;
     }
   }
@@ -889,21 +891,23 @@ function drawClouds(sun) {
     const off = EV.cloudOff(cl, x, y, w, h); if (off) { x += off.x || 0; y += off.y || 0; }
     cl.sx = x; cl.sy = y; cl.sw = w; cl.sh = h;
     if (x > W + 50) continue;
-    ctx.globalAlpha = weather === 'mist' ? .55 : .95;
-    drawImg(img, x, y, w, h, cl.flip);
-    if (cl.stack) {   // what stands on the cloud rides along with it
-      let px = x, py = y, pw = w, ph = h, pim = img, pflip = cl.flip;
-      ctx.globalAlpha = 1;
+    if (cl.stack) {   // what stands on the cloud rides along with it; it sits a little in the cloud (drawn behind it)
+      let px = x, py = y, pw = w, ph = h, pim = img, pflip = cl.flip, first = true;
+      const todo = [];
       for (const s2 of cl.stack) {
         const im = s2.o.img; if (!ready(im) || !ready(pim)) break;
-        const sh = s2.h, sw = sh * s2.o.size[0] / s2.o.size[1], top = topOf(pim), f = footOf(im);
-        let cxF = .5 + s2.ox, c0 = Math.floor((pflip ? 1 - cxF : cxF) * 47);
-        const tf = Math.min(top[Math.max(0, c0 - 2)], top[c0], top[Math.min(47, c0 + 2)]);
-        const sx = px + pw * cxF - sw / 2, sy = py + ph * (tf < 1 ? tf : .3) - sh * f.y + sh * .04;
-        drawImg(im, sx, sy, sw, sh, s2.flip);
-        px = sx; py = sy; pw = sw; ph = sh; pim = im; pflip = s2.flip;
+        if (s2.fit === undefined) fitOn(s2, pim, pflip, pw, ph, first ? .2 : .07);
+        if (!s2.fit) break;
+        const sh = s2.h, sw = sh * s2.o.size[0] / s2.o.size[1], f = footOf(im);
+        const sx = px + pw * s2.fit.cx - sw / 2, sy = py + ph * s2.fit.top - sh * f.y + s2.fit.sink;
+        todo.push([im, sx, sy, sw, sh, s2.flip]);
+        px = sx; py = sy; pw = sw; ph = sh; pim = im; pflip = s2.flip; first = false;
       }
+      ctx.globalAlpha = 1;
+      for (let t = todo.length - 1; t >= 0; t--) drawImg.apply(null, todo[t]);
     }
+    ctx.globalAlpha = weather === 'mist' ? .55 : .95;
+    drawImg(img, x, y, w, h, cl.flip);
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-atop';
@@ -947,6 +951,33 @@ function topOf(img) {
   }
   return (img._top = cols);
 }
+// something standing on something else only stands on a flat part of its top. It stands a little behind the front edge
+// (it is drawn just before what carries it), so its foot sinks a few percent behind that edge: no gaps, no floating.
+// Not flat enough anywhere? Try it a bit smaller; still nothing: it isn't placed.
+function flatSpot(top, pw, ph, footW, tolPx, want) {
+  const n = top.length, cols = Math.max(1, Math.ceil(footW / pw * n));
+  if (cols > n) return null;
+  let best = null;
+  for (let c0 = 0; c0 + cols <= n; c0++) {
+    let lo = 0, hi = 1, empty = false;
+    for (let c = c0; c < c0 + cols; c++) { if (top[c] >= 1) { empty = true; break; } lo = Math.max(lo, top[c]); hi = Math.min(hi, top[c]); }
+    if (empty || (lo - hi) * ph > tolPx) continue;
+    const cx = (c0 + cols / 2) / n, score = (lo - hi) * ph + Math.abs(cx - want) * 40 + hi * ph * .05;
+    if (!best || score < best.score) best = { cx, top: hi, score, rough: (lo - hi) * ph };
+  }
+  return best;
+}
+function fitOn(it, pimg, pflip, pw, ph, sinkFrac) {
+  if (!ready(it.o.img)) return;
+  const top0 = topOf(pimg), top = pflip ? top0.slice().reverse() : top0, f = footOf(it.o.img), asp0 = it.o.size[0] / it.o.size[1];
+  for (const sc of [1, .8, .62, .48]) {
+    const h = it.h0 === undefined ? it.h * sc : it.h0 * sc, fw = h * asp0 * (f.x1 - f.x0);
+    if (h < 10) break;
+    const sink = Math.max(2, h * sinkFrac), spot = flatSpot(top, pw, ph, fw, sink, .5 + (it.ox || 0));
+    if (spot) { if (it.h0 === undefined) it.h0 = it.h; it.h = h; it.fit = { cx: spot.cx, top: spot.top, sink: spot.rough + Math.max(2, h * sinkFrac * .6) }; return; }
+  }
+  it.fit = null;
+}
 let frameNo = 0;
 // where an item is drawn this frame (copy k = -1, 0, 1 for the wrap-around); stacked things sit on their carrier
 function itemPos(it, i, k) {
@@ -955,11 +986,10 @@ function itemPos(it, i, k) {
   const f = it.layer === 0 && !it.on ? null : footOf(o.img);
   if (it.on) {
     const pp = itemPos(it.on, i, k); if (!pp || !ready(it.on.o.img)) return null;
-    const top = topOf(it.on.o.img), cx = .5 + (it.ox || 0), fw = Math.max(.05, w * (f.x1 - f.x0) / pp.w);
-    let a = cx - fw / 2, b = cx + fw / 2; if (it.on.flip) { const t0 = 1 - b; b = 1 - a; a = t0; }
-    let tf = 1; for (let c = Math.max(0, Math.floor(a * 48)); c <= Math.min(47, Math.floor(b * 48)); c++) tf = Math.min(tf, top[c]);
-    if (tf >= 1) tf = Math.min.apply(null, top);
-    return { sx: pp.sx + pp.w * cx - w / 2, y: pp.y + pp.h * tf - h * f.y + h * .03, w, h, f, rot: pp.rot, rc: pp.rc };
+    if (it.fit === undefined) fitOn(it, it.on.o.img, it.on.flip, pp.w, pp.h, .07);
+    if (!it.fit) return null;   // nowhere flat enough to stand: it simply isn't there
+    const hh = it.h, ww = hh * o.size[0] / o.size[1];
+    return { sx: pp.sx + pp.w * it.fit.cx - ww / 2, y: pp.y + pp.h * it.fit.top - hh * f.y + it.fit.sink, w: ww, h: hh, f, rot: pp.rot, rc: pp.rc };
   }
   const wx = i * PLACE + PLACE / 2 + it.dx + k * PW;
   let sx = wx - (kx - W / 2) - w / 2, y;
@@ -978,10 +1008,10 @@ function itemPos(it, i, k) {
   if (off) { sx += off.x || 0; y += off.y || 0; }
   return { sx, y, w, h, f, rot: off && off.r ? off.r : 0, rc: { x: sx + w / 2, y: y + h / 2 } };
 }
-function placeItems(layer) {
+function placeItems(layer, hill) {
   // one order for all places: further back first, so something big up front is never covered by the next place
   const list = [];
-  for (let i = 0; i < N; i++) for (const it of places[i].items) if (it.layer === layer && !isHidden(it)) list.push([i, it]);
+  for (let i = 0; i < N; i++) for (const it of places[i].items) if (it.layer === layer && !isHidden(it) && (hill === undefined || !!it.onHill === hill)) list.push([i, it]);
   list.sort((a, b) => ((a[1].onHill ? -1 : 0) - (b[1].onHill ? -1 : 0)) || ((a[1].depth || 0) - (b[1].depth || 0)));
   for (const [i, it] of list) {
     const o = it.o;
@@ -1015,13 +1045,14 @@ function placeItems(layer) {
   }
 }
 // hills far away: soft shapes behind the horizon, made from the panorama's own grass, a little hazy
-function drawHills() {
+function drawHills(front) {
   const cam = kx - W / 2;
   for (let i = 0; i < N; i++) {
     const hl = places[i].hills; if (!hl) continue;
     for (let k = -1; k <= 1; k++) {
       const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0) continue;
       for (const rg of hl.ranges) {
+        if ((rg === hl.ranges[hl.ranges.length - 1]) !== front) continue;   // first the hills behind, later the front one
         let minY = 1e9, maxY = 0;
         ctx.save(); ctx.beginPath();
         for (let dx = -PLACE / 2; dx <= PLACE / 2; dx += 6) {
@@ -1289,9 +1320,9 @@ function frame() {
   EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
   frameNo++;
-  if (!hide) { placeItems(0); drawClouds(sun); drawHills(); }
+  if (!hide) { placeItems(0); drawClouds(sun); drawHills(false); placeItems(1, true); drawHills(true); }
   if (kam.layer === 'far') drawKamiel();
-  if (!hide) { placeItems(1); drawGround(); }
+  if (!hide) { placeItems(1, false); drawGround(); }
   EV.draw('ground', ctx);
   if (kam.layer === 'mid') drawKamiel();
   if (!hide) placeItems(2);
@@ -1343,9 +1374,9 @@ setInterval(schedule, 15000);
 
 /* ---------- old-school windows: tap an empty spot ---------- */
 const deskEl = document.getElementById('desk');
-const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true, roepen: true, lampen: true }, S.windows || {});
-const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe', lampen: 'Lampen.exe' }, S.window_titles || {});
-const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾', lampen: '💡' };
+const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true, roepen: true }, S.windows || {});
+const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe' }, S.window_titles || {});
+const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾' };
 const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
   'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
 const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
@@ -1357,13 +1388,13 @@ async function loadDesk() { try { deskData = await (await fetch('api/desk', { ca
 async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { deskRows = []; } }
 function spots(keys) {
   const layout = S.window_layout || 'verspreid';
-  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6], roepen: [30, 52], lampen: [62, 20] };
+  const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6], roepen: [30, 52] };
   return keys.map((k, n) => layout === 'netjes'
     ? [3 + (n % 3) * 32.5, 4 + Math.floor(n / 3) * 46]
     : [base[k][0] + (rnd() * 6 - 3), base[k][1] + (rnd() * 6 - 3)]);
 }
 async function openDesk(only) {
-  const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player) && (k !== 'lampen' || (S.lamps || []).length));
+  const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player));
   if (!keys.length) return;
   closeDesk(true);
   deskOpen = true; touchDesk();
@@ -1379,7 +1410,6 @@ async function openDesk(only) {
     if (Date.now() - lastTouch > (S.window_close || 60) * 1000) { closeDesk(); return; }
     if (wins.vertrek) fillVertrek();
     if (wins.knoppen || wins.muziek) { await loadDesk(); if (wins.knoppen) fillKnoppen(); if (wins.muziek) fillMuziek(); }
-    if (wins.lampen) fillLampen();
   }, 5000);
 }
 function closeDesk(quiet) {
@@ -1391,7 +1421,7 @@ function front(el) { el.style.zIndex = ++zTop; deskEl.querySelectorAll('.win').f
 function makeWin(k, [lx, ty]) {
   const el = document.createElement('div'); el.className = 'win'; el.dataset.k = k;
   el.style.left = lx + '%'; el.style.top = ty + '%';
-  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%', roepen: '40%', lampen: '34%' }[k];
+  el.style.width = { weer: '30%', vertrek: '38%', knoppen: '31%', kleerkast: '46%', muziek: '33%', wandel: '26%', roepen: '40%' }[k] || (k === 'knoppen' && (S.buttons || []).length > 9 ? '40%' : undefined);
   el.innerHTML = `<div class="tb"><span>${ICON[k]}</span><span class="tt">${escH(TITLES[k])}</span>
     <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div><div class="bd"></div>`;
   deskEl.appendChild(el); wins[k] = el; front(el);
@@ -1399,7 +1429,7 @@ function makeWin(k, [lx, ty]) {
   el.querySelector('[data-a=close]').addEventListener('click', () => closeWin(k));
   el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
   drag(el);
-  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel, roepen: fillRoepen, lampen: fillLampen })[k]();
+  ({ weer: fillWeer, vertrek: fillVertrek, knoppen: fillKnoppen, kleerkast: fillKast, muziek: fillMuziek, wandel: fillWandel, roepen: fillRoepen })[k]();
   // keep it on screen
   const r = el.getBoundingClientRect(), dr = deskEl.getBoundingClientRect();
   if (r.right > dr.right - 4) el.style.left = Math.max(0, dr.width - r.width - 8) + 'px';
@@ -1459,11 +1489,13 @@ function fillVertrek() {
 function fillKnoppen() {
   const b = bodyOf('knoppen'); if (!b) return;
   const btns = (deskData && deskData.buttons) || [];
-  if (!btns.some(x => x.label || x.icon)) { b.innerHTML = '<p class="muted">Nog geen knoppen. Stel ze in via Kamiel Studio → Instellingen → Knoppen.</p>'; return; }
-  const cells = Array.from({ length: 9 }, (_, i) => btns[i] || null);
-  b.innerHTML = `<div class="kgrid">${cells.map((x, i) => x && (x.label || x.icon)
-    ? `<button class="b95 kbtn ${x.on ? 'on' : ''}" data-i="${i}"><span class="ki">${escH(x.icon || '◻')}</span><span class="kl">${escH(x.label)}</span><span class="led"></span></button>`
-    : `<button class="b95 kbtn" disabled style="opacity:.45"><span class="ki">·</span></button>`).join('')}</div>`;
+  if (!btns.length) { b.innerHTML = '<p class="muted">Nog geen knoppen. Stel ze in via Kamiel Studio → Huis → Knoppen.</p>'; return; }
+  const ICONS = { light: '💡', switch: '🔌', input_boolean: '🔘', fan: '🌀', cover: '🪟', lock: '🔒', climate: '🌡️', script: '▶️', scene: '🎬', automation: '⚙️',
+    media_player: '🎵', input_select: '🔀', select: '🔀', input_number: '🔢', number: '🔢', button: '🔘', input_button: '🔘', vacuum: '🧹', sensor: '📟' };
+  const cells = btns.length <= 9 ? Array.from({ length: Math.ceil(btns.length / 3) * 3 }, (_, i) => btns[i] || null) : btns;
+  b.innerHTML = `<div class="kgrid${btns.length > 9 ? ' k4' : ''}">${cells.map((x, i) => x
+    ? `<button class="b95 kbtn ${x.on ? 'on' : ''}" data-i="${i}" ${x.ok ? '' : 'style="opacity:.55"'}><span class="ki">${escH(x.icon || ICONS[x.kind] || '◻')}</span><span class="kl">${escH(x.label || '…')}</span>${x.state ? `<span class="ks">${escH(x.state)}</span>` : ''}${x.led ? '<span class="led"></span>' : ''}</button>`
+    : `<button class="b95 kbtn" disabled style="opacity:.35"><span class="ki">·</span></button>`).join('')}</div>`;
   b.querySelectorAll('[data-i]').forEach(el => el.addEventListener('click', async () => {
     el.classList.toggle('on'); touchDesk();
     await post('api/button/' + el.dataset.i);
@@ -1534,21 +1566,6 @@ function tickWandel() {
   const left = Math.max(0, msToWalk()) / 1000, m = Math.floor(left / 60), sec = Math.floor(left % 60);
   c.textContent = walking ? 'ONDERWEG' : String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
   n.textContent = EV.active ? 'Er gebeurt iets…' : walking ? 'Kamiel wandelt nu' : (EV.walkPending() ? 'Er staat iets speciaals te gebeuren' : '\u00a0');
-}
-
-// the lights and sockets chosen in the Studio: tap to switch
-async function fillLampen() {
-  const b = bodyOf('lampen'); if (!b) return;
-  let list = []; try { list = await (await fetch('api/lamps', { cache: 'no-store' })).json(); } catch (e) { }
-  if (!wins.lampen) return;
-  if (!list.length) { b.innerHTML = '<p class="muted">Nog geen lampen gekozen. Dat doe je in Kamiel Studio → Instellingen → Lampen.</p>'; return; }
-  b.innerHTML = `<div class="kgrid">${list.map(l => `<button class="b95 kbtn ${l.on ? 'on' : ''}" data-l="${escH(l.entity)}" ${l.ok ? '' : 'disabled style="opacity:.45"'}>
-      <span class="ki">${l.kind === 'light' ? (l.on ? '💡' : '🔅') : '🔌'}</span><span class="kl">${escH(l.name)}</span><span class="led"></span></button>`).join('')}</div>`;
-  b.querySelectorAll('[data-l]').forEach(el => el.addEventListener('click', async () => {
-    touchDesk(); el.classList.toggle('on');
-    await post('api/lamp/' + encodeURIComponent(el.dataset.l));
-    setTimeout(fillLampen, 900);
-  }));
 }
 
 // call one of the housemates (or Heidi) to the scene
