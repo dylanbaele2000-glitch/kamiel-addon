@@ -213,6 +213,371 @@ function inPeriod(name, d, from, to) {
 }
 const seasonOf = (d) => ['lente', 'zomer', 'herfst', 'winter'].find(n => inPeriod(n, d));
 
+/* ==================== feast days, halls and air quality: extra layers over Kamiel's world ==================== */
+
+/* ---------- festivals: the days themselves (the periods around them only change clothes and snow) ---------- */
+const FEST_DATES = { halloween: ['10-31', '10-31'], kerst: ['12-24', '12-26'], nieuwjaar: ['12-31', '01-01'], valentijn: ['02-14', '02-14'], sinterklaas: ['12-05', '12-06'] };
+const FEST_NL = { verjaardag: 'Verjaardag', halloween: 'Halloween', kerst: 'Kerstmis', nieuwjaar: 'Nieuwjaar', pasen: 'Pasen', valentijn: 'Valentijn', sinterklaas: 'Sinterklaas' };
+let festCache = { key: '', v: null };
+function festival(d) {
+  d = d || now();
+  const key = md(d) + (params.get('feest') || '');
+  if (festCache.key === key) return festCache.v;
+  let v = null;
+  const F = S.feest || {};
+  if (params.get('feest')) v = { kind: params.get('feest'), name: FEST_NL[params.get('feest')] || params.get('feest') };
+  else if (F.on !== false) {
+    const x = md(d);
+    for (const b of F.days || []) if (b.date === x) { v = { kind: 'verjaardag', name: b.name || 'Verjaardag' }; break; }
+    if (!v) for (const k of ['nieuwjaar', 'halloween', 'kerst', 'valentijn', 'sinterklaas']) {
+      if ((F.holidays || {})[k] === false) continue;
+      const r = FEST_DATES[k]; if (between(x, r[0], r[1])) { v = { kind: k, name: FEST_NL[k] }; break; }
+    }
+    if (!v && (F.holidays || {}).pasen !== false) {
+      const e = easter(d.getFullYear()), m = new Date(e); m.setDate(e.getDate() + 1);
+      if ((d.getMonth() === e.getMonth() && d.getDate() === e.getDate()) || (d.getMonth() === m.getMonth() && d.getDate() === m.getDate())) v = { kind: 'pasen', name: 'Pasen' };
+    }
+  }
+  festCache = { key, v };
+  return v;
+}
+// Kamiel dresses for the occasion (one piece, on top of his own clothes)
+const FEST_HAT = { verjaardag: 'feesthoed', nieuwjaar: 'feesthoed', halloween: 'heksenhoed', kerst: 'kerstmuts', pasen: 'paasoren', valentijn: 'hartjesbril' };
+function festOutfit(list) {
+  const f = festival(); if (!f || !FEST_HAT[f.kind] || S.outfit_mode === 'uit') return list;
+  const id = FEST_HAT[f.kind], O = KamielOutfits.OUTFITS, slot = (O.find(o => o.id === id) || {}).slot;
+  if (!slot) return list;
+  return (list || []).filter(x => (O.find(o => o.id === x) || {}).slot !== slot).concat([id]);
+}
+// a party hat on every housemate
+function petHat(g, o) {
+  const f = festival(); if (!f || (f.kind !== 'verjaardag' && f.kind !== 'nieuwjaar') || !o.pet || o.alpha === 0) return;
+  const p = petPoint(o, 'head'), u = PET_U * (o.s || 1);
+  g.save(); g.translate(p.x, p.y - u); g.rotate((o.r || 0) + (o.face > 0 ? .25 : -.25));
+  g.fillStyle = ['#ff3d8b', '#3db8ff', '#ffd23f'][o.pet.length % 3];
+  g.beginPath(); g.moveTo(-3.2 * u, 0); g.lineTo(3.2 * u, 0); g.lineTo(0, -8 * u); g.closePath(); g.fill();
+  g.fillStyle = '#fff'; g.fillRect(-2 * u, -3.5 * u, 4 * u, u); g.beginPath(); g.arc(0, -8 * u, 1.3 * u, 0, 7); g.fill();
+  g.restore();
+}
+// decorations in the sky and on the screen
+const festBalloons = [];
+function drawFestScreen() {
+  const f = festival(); if (!f) return;
+  const party = f.kind === 'verjaardag' || f.kind === 'nieuwjaar';
+  if (party || f.kind === 'pasen') {   // bunting, swaying a little
+    const cols = f.kind === 'pasen' ? ['#f7c6d9', '#c6e8f7', '#f7f0b0', '#c9f2c4'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff'];
+    for (let row = 0; row < 2; row++) {
+      const y0 = 18 + row * 46, sag = 34 + row * 10;
+      for (let k = 0; k < 22; k++) {
+        const x = -20 + k * 48 - mod(kx * (.3 + row * .15), 48), u = k / 21, y = y0 + Math.sin(u * Math.PI) * sag + Math.sin(t * 1.3 + k) * 2;
+        ctx.fillStyle = cols[(k + row) % cols.length];
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 30, y + 2); ctx.lineTo(x + 15, y + 28); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (let x = -20; x <= W + 20; x += 12) { const u = (x + 20) / (W + 40); ctx.lineTo(x, y0 + Math.sin(u * Math.PI) * sag); } ctx.stroke();
+    }
+  }
+  if (party) {   // balloons drifting up now and then
+    if (festBalloons.length < 6 && rnd() < .006) festBalloons.push({ x: 60 + rnd() * (W - 120), y: H + 40, c: ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0'][Math.floor(rnd() * 4)], s: .7 + rnd() * .5 });
+    for (let i = festBalloons.length - 1; i >= 0; i--) {
+      const b = festBalloons[i]; b.y -= 22 * b.s / 60; const x = b.x + Math.sin(t * .9 + i) * 14;
+      if (b.y < -80) { festBalloons.splice(i, 1); continue; }
+      ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, b.y + 24 * b.s); ctx.quadraticCurveTo(x + 6, b.y + 50 * b.s, x - 2, b.y + 70 * b.s); ctx.stroke();
+      ctx.fillStyle = b.c; ctx.beginPath(); ctx.ellipse(x, b.y, 16 * b.s, 21 * b.s, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(x - 5 * b.s, b.y - 7 * b.s, 4 * b.s, 6 * b.s, -.4, 0, 7); ctx.fill();
+    }
+  }
+  if (f.kind === 'halloween') {   // bats
+    for (let k = 0; k < 7; k++) {
+      const x = mod(k * 173 + t * (30 + k * 7) - kx * .2, W + 100) - 50, y = 60 + k * 23 + Math.sin(t * 2 + k) * 18, fl = Math.sin(t * 14 + k) > 0;
+      ctx.fillStyle = '#1a0f22';
+      ctx.beginPath(); ctx.ellipse(x, y, 5, 4, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x - 3, y); ctx.lineTo(x - 16, y + (fl ? -9 : 5)); ctx.lineTo(x - 8, y + 2); ctx.lineTo(x, y + 1);
+      ctx.lineTo(x + 8, y + 2); ctx.lineTo(x + 16, y + (fl ? -9 : 5)); ctx.lineTo(x + 3, y); ctx.fill();
+    }
+  }
+  if (f.kind === 'valentijn') {   // hearts floating up
+    for (let k = 0; k < 12; k++) {
+      const y = H - mod(t * (18 + k * 3) + k * 97, H + 60), x = mod(k * 151 - kx * .1, W) + Math.sin(t + k) * 12, s = 1 + (k % 3) * .4;
+      ctx.fillStyle = `rgba(255,${80 + k * 8},${140 + k * 6},.55)`;
+      ctx.beginPath(); ctx.moveTo(x, y + 6 * s); ctx.bezierCurveTo(x - 10 * s, y - 2 * s, x - 6 * s, y - 10 * s, x, y - 4 * s); ctx.bezierCurveTo(x + 6 * s, y - 10 * s, x + 10 * s, y - 2 * s, x, y + 6 * s); ctx.fill();
+    }
+  }
+  if (f.kind === 'sinterklaas') {   // pepernoten from the sky, now and then
+    for (let k = 0; k < 18; k++) { const y = mod(t * 120 + k * 67, H * 3) - H; if (y < 0 || y > H) continue;
+      const x = mod(k * 89 - kx * .3, W); ctx.fillStyle = '#9a5a2a'; ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); }
+  }
+}
+// on the ground: pumpkins, fairy lights, easter eggs
+const eggsFound = new Set();
+let festHits = [];
+const sr = (i, k) => { const v = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return v - Math.floor(v); };   // a fixed random number per place
+function drawFestGround() {
+  festHits = [];
+  const f = festival(); if (!f) return;
+  const cam = kx - W / 2, night = isNightTime(now());
+  for (let i = 0; i < N; i++) for (let k = -1; k <= 1; k++) {
+    const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0 || (places[i] && places[i].hall)) continue;
+    if (f.kind === 'halloween') for (let n = 0; n < 2; n++) {
+      const x = x0 + PLACE * (.18 + .64 * n) + (sr(i, n) - .5) * 120, y = FEET + 8 + sr(i, n + 5) * 30, s = 1 + sr(i, n + 9) * .5;
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y + 2, 26 * s, 5 * s, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#e8741c'; for (let r = -1; r <= 1; r++) { ctx.beginPath(); ctx.ellipse(x + r * 10 * s, y - 16 * s, 14 * s, 17 * s, 0, 0, 7); ctx.fill(); }
+      ctx.fillStyle = '#b8520e'; ctx.fillRect(x - 1.5 * s, y - 33 * s, 3 * s, 4 * s); ctx.fillStyle = '#3c6b1e'; ctx.fillRect(x - 2 * s, y - 38 * s, 4 * s, 6 * s);
+      ctx.fillStyle = night ? '#ffe36a' : '#3a1a06';
+      ctx.beginPath(); ctx.moveTo(x - 12 * s, y - 22 * s); ctx.lineTo(x - 5 * s, y - 22 * s); ctx.lineTo(x - 8.5 * s, y - 28 * s); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 5 * s, y - 22 * s); ctx.lineTo(x + 12 * s, y - 22 * s); ctx.lineTo(x + 8.5 * s, y - 28 * s); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x - 12 * s, y - 13 * s); ctx.lineTo(x + 12 * s, y - 13 * s); ctx.lineTo(x + 6 * s, y - 7 * s); ctx.lineTo(x, y - 10 * s); ctx.lineTo(x - 6 * s, y - 7 * s); ctx.fill();
+    }
+    if (f.kind === 'kerst') {   // a string of lights along the horizon
+      for (let n = 0; n < 40; n++) {
+        const x = x0 + n * PLACE / 40 + 12, y = horY(i * PLACE + k * PW + n * PLACE / 40 + 12) - 6 + Math.sin(n * .9) * 4;
+        const on = Math.sin(t * 2 + n * 1.7) > -.3;
+        ctx.fillStyle = on ? ['#ff4a4a', '#ffd23f', '#4aff8a', '#4ab8ff'][n % 4] : 'rgba(40,40,40,.6)';
+        if (on && night) { ctx.globalAlpha = .35; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+        ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill();
+      }
+    }
+    if (f.kind === 'pasen') for (let n = 0; n < 3; n++) {   // eggs in the grass: tap to find them
+      const id = md(now()) + ':' + i + ':' + n; if (eggsFound.has(id)) continue;
+      const x = x0 + 80 + sr(i, n + 20) * (PLACE - 160), y = FEET + 4 + sr(i, n + 30) * 38;
+      if (Math.abs(x - W / 2) < 70) continue;
+      const c = ['#ff8ac1', '#8ad0ff', '#ffe066', '#9be38a', '#c49bff'][Math.floor(sr(i, n + 40) * 5)];
+      ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(x, y + 1, 9, 3, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y - 9, 8, 11, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(x - 7, y - 11, 14, 2.5); ctx.fillRect(x - 6, y - 5, 12, 2);
+      festHits.push({ x, y: y - 9, id });
+    }
+  }
+}
+const eggPops = [];
+function festTap(x, y) {
+  for (const e of festHits) if (Math.hypot(x - e.x, y - e.y) < 26) {
+    eggsFound.add(e.id); eggPops.push({ x: e.x, y: e.y, t0: t });
+    const left = festHits.length - 1;
+    if (left === 0 || rnd() < .3) EV.request(left === 0 ? 'dobby' : 'springen');
+    tlog('event', 'Een paasei gevonden!');
+    return true;
+  }
+  return false;
+}
+function drawEggPops() {
+  for (let i = eggPops.length - 1; i >= 0; i--) {
+    const p = eggPops[i], a = t - p.t0; if (a > 1.2) { eggPops.splice(i, 1); continue; }
+    for (let k = 0; k < 10; k++) { const an = k / 10 * Math.PI * 2, r = 10 + a * 70;
+      ctx.fillStyle = `hsla(${k * 36},90%,70%,${1 - a / 1.2})`; ctx.fillRect(p.x + Math.cos(an) * r - 2, p.y + Math.sin(an) * r - 2 - a * 20, 4, 4); }
+  }
+}
+
+/* ---------- halls: now and then a place is a room instead of the outdoors ---------- */
+const HALLS = [
+  { id: 'museum', name: 'Museum' }, { id: 'disco', name: 'Disco' }, { id: 'sterren', name: 'Sterrenwacht' },
+];
+const hallImgs = {};
+function hallOptions() {
+  const H0 = S.halls || {}, off = H0.off || [];
+  const list = HALLS.filter(h => !off.includes(h.id)).map(h => ({ id: h.id, kind: h.id }));
+  for (const c of H0.custom || []) if (c.on !== false && c.file) { if (!hallImgs[c.id]) hallImgs[c.id] = load('media/' + c.file); list.push({ id: c.id, kind: 'eigen', elements: !!c.elements }); }
+  return list;
+}
+function pickHall(force) {
+  const list = hallOptions(); if (!list.length) return null;
+  if (force) return list.find(h => h.id === force) || null;
+  const pc = (S.halls || {}).chance === undefined ? 12 : +(S.halls || {}).chance;
+  if (params.get('stijl') || rnd() * 100 >= pc) return null;
+  const h = list[Math.floor(rnd() * list.length)];
+  return h;
+}
+function hallData(h) {   // what is in it: frames with photos, the seed for stars and tiles
+  const pool = PHOTOS.slice(), photos = [];
+  for (let k = 0; k < 3; k++) { if (!pool.length) pool.push(...PHOTOS); photos.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]); }
+  return { id: h.id, kind: h.kind, elements: !!h.elements, photos, seed: Math.floor(rnd() * 1e6) };
+}
+const hallPhotoImgs = {};
+const hallPhoto = (u) => hallPhotoImgs[u] || (hallPhotoImgs[u] = load(u));
+let hallHits = [], hallZoom = null, hallFx = [], discoSpin = 1;
+function coverDraw(g, img, x, y, w, h) {
+  const r = Math.max(w / img.width, h / img.height), sw = w / r, sh = h / r;
+  g.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+}
+function drawHalls() {
+  hallHits = [];
+  const cam = kx - W / 2, FL = HOR0 - 6;
+  for (let i = 0; i < N; i++) {
+    const hl = places[i] && places[i].hall; if (!hl) continue;
+    for (let k = -1; k <= 1; k++) {
+      const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0) continue;
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, 0, PLACE, H); ctx.clip();
+      if (hl.kind === 'museum') drawMuseum(hl, x0, FL);
+      else if (hl.kind === 'disco') drawDisco(hl, x0, FL);
+      else if (hl.kind === 'sterren') drawStars(hl, x0, FL);
+      else drawOwnHall(hl, x0);
+      // the walls at both ends: you walk in through a doorway
+      for (const side of [0, 1]) {
+        const wx = side ? x0 + PLACE - 34 : x0;
+        const g = ctx.createLinearGradient(wx, 0, wx + 34, 0);
+        const c = hl.kind === 'disco' ? ['#0a0414', '#2a1648'] : hl.kind === 'sterren' ? ['#05061a', '#1a1b3c'] : ['#5a3a32', '#a87a68'];
+        g.addColorStop(side ? 1 : 0, c[0]); g.addColorStop(side ? 0 : 1, c[1]);
+        ctx.fillStyle = g; ctx.fillRect(wx, 0, 34, H);
+      }
+      ctx.restore();
+    }
+  }
+}
+function drawMuseum(hl, x0, FL) {
+  // the wall: dusty pink with a darker band below and a golden line; the floor: parquet in perspective
+  ctx.fillStyle = '#c99096'; ctx.fillRect(x0, 0, PLACE, FL);
+  ctx.fillStyle = 'rgba(255,255,255,.05)'; for (let y = 0; y < FL; y += 22) for (let x = 0; x < PLACE; x += 22) if ((x + y) % 44 === 0) ctx.fillRect(x0 + x + 8, y + 8, 6, 6);
+  ctx.fillStyle = '#8c5a62'; ctx.fillRect(x0, FL - 90, PLACE, 90); ctx.fillStyle = '#e8c46a'; ctx.fillRect(x0, FL - 92, PLACE, 4);
+  ctx.fillStyle = '#7a4c34'; ctx.fillRect(x0, FL, PLACE, H - FL);
+  ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1.5; const vx = x0 + PLACE / 2;
+  for (let n = -12; n <= 12; n++) { ctx.beginPath(); ctx.moveTo(vx + n * 40, FL); ctx.lineTo(vx + n * 140, H); ctx.stroke(); }
+  for (let y = FL + 8, s = 8; y < H; y += s, s *= 1.35) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + PLACE, y); ctx.stroke(); }
+  // three paintings: your own photos, each with a little lamp and a label
+  hl.photos.forEach((u, n) => {
+    const cx = x0 + PLACE * [.2, .5, .8][n], w = n === 1 ? 210 : 170, h = n === 1 ? 150 : 128, y = n === 1 ? 96 : 120;
+    const sp = ctx.createRadialGradient(cx, y + h / 2, 10, cx, y + h / 2, w);
+    sp.addColorStop(0, 'rgba(255,240,200,.35)'); sp.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = sp; ctx.fillRect(cx - w, y - 40, w * 2, h + 100);
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(cx - w / 2 - 10, y - 6, w + 26, h + 26);
+    ctx.fillStyle = '#c9a03a'; ctx.fillRect(cx - w / 2 - 14, y - 14, w + 28, h + 28); ctx.fillStyle = '#8e6a1c'; ctx.fillRect(cx - w / 2 - 6, y - 6, w + 12, h + 12);
+    const img = hallPhoto(u);
+    if (ready(img)) coverDraw(ctx, img, cx - w / 2, y, w, h); else { ctx.fillStyle = '#ddd'; ctx.fillRect(cx - w / 2, y, w, h); }
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(cx - 22, y - 34, 44, 6); ctx.fillRect(cx - 2, y - 30, 4, 14);
+    ctx.fillStyle = '#efe6d2'; ctx.fillRect(cx - 26, y + h + 26, 52, 22); ctx.fillStyle = '#9a8f80'; ctx.fillRect(cx - 20, y + h + 31, 40, 2); ctx.fillRect(cx - 20, y + h + 37, 28, 2);
+    hallHits.push({ x: cx - w / 2 - 14, y: y - 14, w: w + 28, h: h + 28, act: () => { hallZoom = { img, t0: t }; EV.request('kijken'); } });
+  });
+  // velvet ropes
+  for (const px of [x0 + 90, x0 + PLACE - 90]) {
+    ctx.fillStyle = '#c9a03a'; ctx.fillRect(px - 4, FL + 40, 8, 70); ctx.beginPath(); ctx.arc(px, FL + 38, 7, 0, 7); ctx.fill();
+  }
+  ctx.strokeStyle = '#a0182a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x0 + 90, FL + 48); ctx.quadraticCurveTo(x0 + 150, FL + 80, x0 + 210, FL + 48); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x0 + PLACE - 90, FL + 48); ctx.quadraticCurveTo(x0 + PLACE - 150, FL + 80, x0 + PLACE - 210, FL + 48); ctx.stroke();
+}
+function drawDisco(hl, x0, FL) {
+  const b = beatNow(), beat = b ? b.pos : t * 2;
+  ctx.fillStyle = '#160a2c'; ctx.fillRect(x0, 0, PLACE, FL);
+  for (let n = 0; n < 6; n++) {   // neon tubes on the wall
+    const x = x0 + 80 + n * (PLACE - 160) / 5, c = ['255,60,180', '60,220,255', '255,230,80'][n % 3], on = .6 + .4 * Math.sin(beat * Math.PI + n);
+    ctx.fillStyle = `rgba(${c},${.18 * on})`; ctx.fillRect(x - 10, 40, 20, FL - 80); ctx.fillStyle = `rgba(${c},${.9 * on})`; ctx.fillRect(x - 2, 40, 4, FL - 80);
+  }
+  // the dance floor: tiles in perspective that light up with the beat
+  ctx.fillStyle = '#1a0c30'; ctx.fillRect(x0, FL, PLACE, H - FL);
+  const rows = 6, vx = x0 + PLACE / 2;
+  for (let r = 0; r < rows; r++) {
+    const ya = FL + (H - FL) * Math.pow(r / rows, 1.4), yb = FL + (H - FL) * Math.pow((r + 1) / rows, 1.4);
+    for (let c = -8; c < 8; c++) {
+      const fa = .35 + .65 * (ya - FL) / (H - FL), fb = .35 + .65 * (yb - FL) / (H - FL);
+      const xa0 = vx + c * 70 * fa, xa1 = vx + (c + 1) * 70 * fa, xb0 = vx + c * 70 * fb, xb1 = vx + (c + 1) * 70 * fb;
+      const lit = ((c + r * 3 + Math.floor(beat)) % 4 + 4) % 4 === 0, flash = hallFx.find(f => f.r === r && f.c === c && t - f.t0 < .8);
+      ctx.fillStyle = flash ? '#ffffff' : lit ? ['#ff3db4', '#3dd8ff', '#ffe14d', '#8a5cff'][((c + r) % 4 + 4) % 4] : '#24123e';
+      ctx.beginPath(); ctx.moveTo(xa0, ya); ctx.lineTo(xa1, ya); ctx.lineTo(xb1, yb); ctx.lineTo(xb0, yb); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1; ctx.stroke();
+      hallHits.push({ poly: [xa0, ya, xa1, ya, xb1, yb, xb0, yb], act: () => { hallFx.push({ r, c, t0: t }); if (rnd() < .4) EV.request('springen'); } });
+    }
+  }
+  // the mirror ball, and its little lights flying over the walls
+  const bx = x0 + PLACE / 2, by = 70; discoSpin = Math.max(1, discoSpin * .995);
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, by - 26); ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.arc(bx, by, 28, 0, 7); ctx.clip();
+  for (let yy = -28; yy < 28; yy += 7) for (let xx = -28; xx < 28; xx += 7) { const v = Math.sin((xx + t * 40 * discoSpin) * .2 + yy * .3); ctx.fillStyle = `rgb(${170 + v * 70},${170 + v * 70},${190 + v * 60})`; ctx.fillRect(bx + xx, by + yy, 6, 6); }
+  ctx.restore();
+  for (let n = 0; n < 40; n++) { const a = n * 2.4 + t * .6 * discoSpin, x = bx + Math.cos(a) * (120 + (n % 5) * 80), y = by + 60 + Math.abs(Math.sin(a * 1.3 + n)) * (FL - 60);
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(x, y, 3, 3); }
+  hallHits.push({ x: bx - 32, y: by - 32, w: 64, h: 64, act: () => { discoSpin = 6; for (let n = 0; n < 16; n++) hallFx.push({ sp: true, x: bx, y: by, a: n / 16 * 7, t0: t }); } });
+  for (const f of hallFx) if (f.sp) { const a = t - f.t0; if (a < 1.2) { ctx.fillStyle = `rgba(255,255,255,${1 - a / 1.2})`; ctx.fillRect(f.x + Math.cos(f.a) * a * 260, f.y + Math.sin(f.a) * a * 200, 4, 4); } }
+  hallFx = hallFx.filter(f => t - f.t0 < 1.5);
+}
+function drawStars(hl, x0, FL) {
+  const g = ctx.createLinearGradient(0, 0, 0, FL); g.addColorStop(0, '#05061e'); g.addColorStop(1, '#2a1f5c');
+  ctx.fillStyle = g; ctx.fillRect(x0, 0, PLACE, FL);
+  for (let n = 0; n < 140; n++) {
+    const x = x0 + sr(hl.seed, n) * PLACE, y = sr(hl.seed, n + 500) * (FL - 30), tw = .5 + .5 * Math.sin(t * 2 + n);
+    ctx.fillStyle = `rgba(255,255,240,${.35 + .65 * tw})`; ctx.fillRect(x, y, n % 7 ? 2 : 3, n % 7 ? 2 : 3);
+  }
+  // a ringed planet and the dome's ribs
+  const px = x0 + PLACE * .22, py = 120;
+  ctx.fillStyle = '#e8a86a'; ctx.beginPath(); ctx.arc(px, py, 44, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(160,80,40,.4)'; ctx.fillRect(px - 44, py - 6, 88, 10);
+  ctx.strokeStyle = 'rgba(255,230,190,.8)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(px, py, 80, 16, -.3, 0, 7); ctx.stroke();
+  ctx.strokeStyle = 'rgba(160,150,220,.12)'; ctx.lineWidth = 2;
+  for (let n = 1; n < 6; n++) { ctx.beginPath(); ctx.ellipse(x0 + PLACE / 2, FL, PLACE / 2, FL * n / 5.5, 0, Math.PI, 0); ctx.stroke(); }
+  ctx.fillStyle = '#3a2a24'; ctx.fillRect(x0, FL, PLACE, H - FL); ctx.fillStyle = 'rgba(255,255,255,.05)'; for (let x = 0; x < PLACE; x += 30) ctx.fillRect(x0 + x, FL, 2, H - FL);
+  // the telescope
+  const tx = x0 + PLACE * .8, ty = FL + 30;
+  ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(tx, ty - 60); ctx.lineTo(tx - 40, ty + 40); ctx.moveTo(tx, ty - 60); ctx.lineTo(tx + 40, ty + 40); ctx.moveTo(tx, ty - 60); ctx.lineTo(tx, ty + 45); ctx.stroke();
+  ctx.save(); ctx.translate(tx, ty - 64); ctx.rotate(-.6); ctx.fillStyle = '#c9a03a'; ctx.fillRect(-20, -14, 130, 28); ctx.fillStyle = '#8e6a1c'; ctx.fillRect(100, -18, 18, 36); ctx.fillRect(-30, -9, 12, 18); ctx.restore();
+  hallHits.push({ x: tx - 60, y: ty - 150, w: 160, h: 200, act: () => { hallZoom = { scope: true, t0: t, seed: hl.seed }; } });
+  hallHits.push({ x: x0, y: 0, w: PLACE, h: FL - 10, act: (x, y) => { hallFx.push({ star: true, x, y, t0: t }); if (rnd() < .5) EV.request('lucht'); } });
+  for (const f of hallFx) if (f.star) { const a = t - f.t0; if (a < 1.4) {
+    ctx.strokeStyle = `rgba(255,255,255,${1 - a / 1.4})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(f.x + a * 300, f.y + a * 120); ctx.lineTo(f.x + a * 300 - 60, f.y + a * 120 - 24); ctx.stroke(); } }
+  hallFx = hallFx.filter(f => t - f.t0 < 1.5);
+}
+function drawOwnHall(hl, x0) {
+  const img = hallImgs[hl.id];
+  if (ready(img)) coverDraw(ctx, img, x0, 0, PLACE, H); else { ctx.fillStyle = '#2a2a3a'; ctx.fillRect(x0, 0, PLACE, H); }
+  hallHits.push({ x: x0, y: 0, w: PLACE, h: H, act: (x, y) => { for (let n = 0; n < 24; n++) hallFx.push({ conf: true, x, y, vx: (rnd() - .5) * 300, vy: -100 - rnd() * 260, c: Math.floor(rnd() * 360), t0: t }); } });
+  for (const f of hallFx) if (f.conf) { const a = t - f.t0; ctx.fillStyle = `hsla(${f.c},90%,65%,${Math.max(0, 1 - a / 1.6)})`; ctx.fillRect(f.x + f.vx * a, f.y + f.vy * a + 260 * a * a, 5, 3); }
+  hallFx = hallFx.filter(f => t - f.t0 < 1.6);
+}
+// on top of everything: a painting up close, or the view through the telescope
+function drawHallZoom() {
+  if (!hallZoom) return;
+  const a = t - hallZoom.t0; if (a > 7) { hallZoom = null; return; }
+  const al = Math.min(1, a * 3, (7 - a) * 2);
+  ctx.save(); ctx.globalAlpha = al;
+  ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, 0, W, H);
+  if (hallZoom.scope) {
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, 230, 0, 7); ctx.clip(); ctx.fillStyle = '#04051a'; ctx.fillRect(0, 0, W, H);
+    for (let n = 0; n < 160; n++) { ctx.fillStyle = `rgba(255,255,240,${.4 + .6 * sr(hallZoom.seed, n + 900)})`; ctx.fillRect(W / 2 - 230 + sr(hallZoom.seed, n) * 460, H / 2 - 230 + sr(hallZoom.seed, n + 77) * 460, 2, 2); }
+    const g = ctx.createRadialGradient(W / 2 - 40, H / 2 - 40, 10, W / 2, H / 2, 120); g.addColorStop(0, '#f4f1e0'); g.addColorStop(1, '#9a9688');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(W / 2 + Math.sin(a * .3) * 20, H / 2, 110, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(90,85,75,.35)'; [[-30, -20, 18], [25, 30, 26], [40, -40, 12], [-45, 40, 14]].forEach(([dx, dy, r]) => { ctx.beginPath(); ctx.arc(W / 2 + dx + Math.sin(a * .3) * 20, H / 2 + dy, r, 0, 7); ctx.fill(); });
+  } else if (ready(hallZoom.img)) {
+    const w = 560, h = 400; ctx.fillStyle = '#c9a03a'; ctx.fillRect(W / 2 - w / 2 - 18, H / 2 - h / 2 - 18, w + 36, h + 36);
+    coverDraw(ctx, hallZoom.img, W / 2 - w / 2, H / 2 - h / 2, w, h);
+  }
+  ctx.restore();
+}
+function hallTap(x, y) {
+  if (hallZoom) { hallZoom = null; return true; }
+  if (festTap(x, y)) return true;
+  for (let k = hallHits.length - 1; k >= 0; k--) {
+    const h = hallHits[k];
+    const inside = h.poly ? pointInPoly(x, y, h.poly) : (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+    if (inside) { h.act(x, y); return true; }
+  }
+  return false;
+}
+function pointInPoly(x, y, p) {
+  let ins = false;
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+    if ((p[i + 1] > y) !== (p[j + 1] > y) && x < (p[j] - p[i]) * (y - p[i + 1]) / (p[j + 1] - p[i + 1]) + p[i]) ins = !ins;
+  }
+  return ins;
+}
+
+/* ---------- air quality: with stale air Kamiel gets drowsy and the world hazy ---------- */
+let airLevel = 0, airPrev = 0, airLastNap = 0;
+function setAir(a) {
+  const lv = a && typeof a.level === 'number' ? a.level : 0;
+  if (lv === airLevel) return;
+  airPrev = airLevel; airLevel = lv;
+  if (lv < airPrev) EV.request('strekken');   // fresh air again: a big stretch
+}
+function airHead() { return airLevel ? (airLevel === 2 ? .2 : .1) + Math.sin(t * .5) * .02 : 0; }
+function airEyes() {
+  if (!airLevel) return null;
+  const cyc = airLevel === 2 ? 5 : 8, closed = airLevel === 2 ? 3.6 : 1.4;
+  return (t % cyc) < closed ? 'dicht' : '';
+}
+function airWalk() { return airLevel === 2 ? .55 : airLevel === 1 ? .8 : 1; }
+function airTick() {   // now and then a nap, when the air is really bad
+  if (airLevel === 2 && Date.now() - airLastNap > 8 * 60000 && !EV.active && !walking) { airLastNap = Date.now(); EV.request('slapen'); }
+}
+function drawAirHaze() {
+  if (!airLevel) return;
+  ctx.fillStyle = `rgba(190,180,130,${airLevel === 2 ? .16 : .07})`; ctx.fillRect(0, 0, W, H);
+}
+
+
 function horizontal(days, ra, dec) {
   const rad = Math.PI / 180, phi = rad * LAT, th = rad * (280.16 + 360.9856235 * days) + rad * LON, Hh = th - ra;
   const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(Hh));
@@ -277,6 +642,7 @@ async function pollState() {
   try {
     const s = await (await fetch('api/state', { cache: 'no-store' })).json();
     if (s.sun) haSun = s.sun;
+    setAir(s.air);
     osdLines = s.osd || [];
     const cov = typeof s.clouds === 'number' ? s.clouds : null;
     if (s.weather && !params.get('w')) {
@@ -312,12 +678,15 @@ let EV = { active: false, check() {}, walkNow() { return false; }, pump() {}, ti
 const places = [];
 // how a scene is arranged lives in compose.js (styles, scoring, hills, stacks)
 const COMP = KamielCompose.create({ S, OBJ, PLACE, H, FEET, horY, baseY, words: WORDS, photos: PHOTOS });
-function compose(i) {
+function compose(i, forceHall) {
   const night = isNightTime(now()), today = now(), wb = WEATHER_BUCKET[weather] || 'zon';
   const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv
     && (!o.weather || !o.weather.length || o.weather.includes(wb));
   const r = COMP.compose(i, { night, ok, style: params.get('stijl') });
   EV.placeNew(i);
+  // now and then a hall instead of the outdoors (museum, disco, observatory, or one of your own)
+  const hall = (forceHall || (places[i] && i !== placeIndex())) ? pickHall(forceHall) : null;
+  if (hall) { places[i] = { items: hall.elements ? r.items.filter(x => x.layer === 2) : [], night, weather, hills: null, style: r.style, hall: hallData(hall) }; return; }
   places[i] = { items: r.items, night, weather, hills: r.hills, style: r.style };
   if (musicOn) addMusic(i);
   if (spotlight && spotlight.until * 1000 > Date.now()) addSpot(i);
@@ -369,7 +738,7 @@ function saveScene(why) {
       if (!it.onHill) delete x.base;
       return x;
     };
-    const pl = places.map(p => p ? { night: p.night, weather: p.weather, hills: p.hills, style: p.style, items: p.items.map(it => keepItem(it, p.items)) } : null);
+    const pl = places.map(p => p ? { night: p.night, weather: p.weather, hills: p.hills, style: p.style, hall: p.hall || null, items: p.items.map(it => keepItem(it, p.items)) } : null);
     const cl = clouds.map(c => ({ c: c.c.id, x: c.x, y: c.y, w: c.w, flip: c.flip, sq: c.sq, stack: c.stack ? c.stack.map(s2 => ({ o: s2.o.id, h: s2.h0 !== undefined ? s2.h0 : s2.h, ox: s2.ox, flip: s2.flip })) : null }));
     localStorage.setItem(SCENE_KEY, JSON.stringify({ t: Date.now(), why, PW, N, kx, dir, lastWalk, places: pl, clouds: cl, residents: EV.keepResidents ? EV.keepResidents() : [] }));
   } catch (e) { }
@@ -384,9 +753,10 @@ function restoreScene() {
     const items = p.items.map(x => x && byId[x.o] ? Object.assign({}, x, { o: byId[x.o], cloud: x.cloud ? clId[x.cloud] || null : undefined }) : null);
     items.forEach((it, k) => { if (it && p.items[k].on !== undefined) it.on = items[p.items[k].on] || null; });
     const ok = items.filter(it => it && (it.on === undefined || it.on));
-    if (!ok.length && p.items.length) return;   // its elements are gone: keep the new scene
+    if (!ok.length && p.items.length && !p.hall) return;   // its elements are gone: keep the new scene
     ok.forEach(it => { if (it.on === undefined) delete it.on; if (it.cloud === undefined) delete it.cloud; });
     places[i] = { items: ok, night: p.night, weather: p.weather, hills: p.hills, style: p.style, seen: true };
+    if (p.hall) places[i].hall = p.hall;
   });
   if (sv.clouds && sv.clouds.every(c => clId[c.c])) clouds = sv.clouds.map(c => Object.assign({}, c, { c: clId[c.c],
     stack: c.stack ? c.stack.filter(s2 => byId[s2.o]).map(s2 => Object.assign({}, s2, { o: byId[s2.o] })) : undefined }));
@@ -419,6 +789,7 @@ function schedule() {
   updateSeason();
   if (remShown && !params.get('r') && !KamielReminder.isActive(remShown, d)) remShown = null;
   if (calm()) return;   // the quiet mode (a rule, or 'niet storen'): no walking, no events
+  airTick();
   EV.check(d);
   if (walking || EV.active) return;
   if (msToWalk() <= 0) { lastWalk = Date.now(); if (!EV.walkNow()) go(rnd() < .5 ? -1 : 1); }
@@ -457,7 +828,7 @@ function setMessage(m) {
 // music: on the ground the album cover shows in a frame (one that's already there, or an added one);
 // sometimes instead a tv floats on a cloud or stands on something that can carry it
 function addMusic(i) {
-  const p = places[i]; if (!p || p.items.some(x => x.music || x.tv)) return;
+  const p = places[i]; if (!p || p.hall || p.items.some(x => x.music || x.tv)) return;
   const r = rnd(), o = TV(), asp0 = o.size[0] / o.size[1];
   if (r < .25) { const h = H * (.13 + rnd() * .08); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return; }
   if (r < .45) {
@@ -600,6 +971,7 @@ function doAction(a) {
   else if (a.type === 'rust') calmUntil = a.on === false ? 0 : Date.now() + (a.minutes || 30) * 60000;
   else if (a.type === 'vertrek') showBoard();
   else if (a.type === 'beweging') sawSomeone(false);
+  else if (a.type === 'zaal' && !walking && !EV.active) { const d2 = rnd() < .5 ? -1 : 1; compose(mod(placeIndex() + d2, N), a.id); go(d2); }
   else if (a.type === 'scherm') { screen(false, 'test vanuit de Studio'); setTimeout(() => { screenWhy = ''; screen(true, 'einde test'); lastMotion = Date.now(); applyScreen(); }, (a.secs || 10) * 1000); }
 }
 /* the tablet itself, through Fully Kiosk's JavaScript interface (Fully PLUS, "Enable JavaScript Interface"):
@@ -851,7 +1223,7 @@ function step(dt) {
   t += dt;
   tickSigns();
   if (walking) {
-    kx += dir * 70 * dt;
+    kx += dir * 70 * airWalk() * dt;
     if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); arrived(); }
   }
   EV.tick(dt);
@@ -1122,7 +1494,8 @@ function itemPos(it, i, k) {
   if (it._fk !== fk) { it._fk = fk; it._off = EV.itemOff(it, it.layer, sx, y, w, h); }
   const off = it._off;
   if (off) { sx += off.x || 0; y += off.y || 0; }
-  return { sx, y, w, h, f, rot: off && off.r ? off.r : 0, rc: { x: sx + w / 2, y: y + h / 2 } };
+  if (it.flipY && !(off && off.r)) y += h * (f.y - 1) * .9;   // upside down after the big move: on its head on the ground
+  return { sx, y, w, h, f, rot: off && off.r ? off.r : (it.flipY ? Math.PI : 0), rc: { x: sx + w / 2, y: y + h / 2 } };
 }
 function placeItems(layer, hill) {
   // one order for all places: further back first, so something big up front is never covered by the next place
@@ -1346,6 +1719,7 @@ function drawPet(g, o) {
     else { g.fillStyle = '#f4e6c2'; g.fillRect(ex - u, ey - u, u * 3, u * 3); g.fillStyle = '#111'; g.fillRect(ex, ey, u, u); }
   }
   g.restore();
+  petHat(g, o);
 }
 function petPoint(o, which) {
   const art = PETART[o.pet], u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u, p = art[which] || art.head;
@@ -1364,10 +1738,39 @@ function kamObj() {
   const ev = EV.active;
   return { cx: W / 2 + kam.x, feet: kam.feet !== null ? kam.feet : FEET - kam.y, s: kam.s, face: kam.face || dir,
     pose: ev ? (kam.pose || (blinkT < 0 ? 'blink' : 'stand')) : (walking ? 'walk' : (blinkT < 0 ? 'blink' : 'stand')),
-    wt: ev ? kam.wt : t * 6, r: kam.r, sq: kam.sq, sx: kam.sx, head: ev ? kam.head : (calm() ? .14 : nodAngle()), eyes: !ev && calm() ? 'dicht' : kam.eyes, eyeT: kam.eyeT, mouth: kam.mouth,
-    outfit: kam.outfit || (Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush };
+    wt: ev ? kam.wt : t * 6 * airWalk(), r: kam.r, sq: kam.sq, sx: kam.sx, head: ev ? kam.head : (calm() ? .14 : nodAngle() + airHead()),
+    eyes: !ev && calm() ? 'dicht' : (!ev && airEyes() !== null ? airEyes() : kam.eyes), eyeT: kam.eyeT, mouth: kam.mouth,
+    outfit: kam.outfit || festOutfit(Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush };
 }
 function drawKamiel() { if (!kam.hide) drawLlama(ctx, kamObj()); }
+/* the northern lights: some evenings (a chance per evening, set in the Studio), green and violet curtains in the sky */
+function seededDay(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return ((h >>> 0) % 10000) / 10000; }
+function auroraTonight(d) {
+  if (params.get('aurora')) return true;
+  const ev = new Date(d.getTime() - (d.getHours() < 12 ? 86400000 : 0));   // after midnight it is still the same evening
+  const pc = (S.events || {}).aurora_chance === undefined ? 15 : +(S.events || {}).aurora_chance;
+  return seededDay('aurora ' + ev.getFullYear() + '-' + ev.getMonth() + '-' + ev.getDate()) * 100 < pc;
+}
+let auroraA = 0;
+function drawAurora(sun, d) {
+  const want = sun.alt < -5 && (d.getHours() >= 18 || d.getHours() < 3 || params.get('aurora')) && auroraTonight(d) && !rainy() && weather !== 'bewolkt' ? 1 : 0;
+  auroraA += Math.sign(want - auroraA) * Math.min(Math.abs(want - auroraA), 1 / 600);   // fades in and out over ten seconds
+  if (auroraA <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const par = kx * .04;
+  for (let k = 0; k < 3; k++) {
+    const base = 150 + k * 45, len = 170 + k * 40;
+    for (let x = -10; x < W + 10; x += 5) {
+      const wx = x + par * (k + 1), y = base + Math.sin(wx * .004 + t * .15 + k * 2) * 40 + Math.sin(wx * .011 - t * .3 + k) * 14;
+      const shimmer = .5 + .5 * Math.sin(t * 1.4 + wx * .03 + k * 3) * Math.sin(t * .37 + wx * .007), a = auroraA * (.2 + .3 * shimmer) * (k === 1 ? 1 : .8);
+      if (a <= .01) continue;
+      const g = ctx.createLinearGradient(0, y - len, 0, y + 24);
+      g.addColorStop(0, 'rgba(170,80,255,0)'); g.addColorStop(.45, `rgba(170,90,255,${a * .55})`); g.addColorStop(.8, `rgba(80,255,170,${a})`); g.addColorStop(1, 'rgba(80,255,170,0)');
+      ctx.fillStyle = g; ctx.fillRect(x, y - len, 5.5, len + 24);
+    }
+  }
+  ctx.restore();
+}
 let rockets = [], flash = null;
 function drawFireworks() {
   if (rockets.length < 4 && rnd() < .03) rockets.push({ x: 120 + rnd() * (W - 240), y: 80 + rnd() * 160, t0: t, hue: Math.floor(rnd() * 360) });
@@ -1440,13 +1843,13 @@ function frame() {
   const mr = moonPos(d), arc = moonArc(d), moon = arc ? { alt: arc.alt, az: arc.az, phase: mr.phase } : { alt: -90, az: 0, phase: mr.phase };
   const hide = EV.hideWorld();   // the world crashed: only Kamiel is left
   ctx = mainCtx;
-  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else drawSky(sun, moon);
+  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else { drawSky(sun, moon); drawAurora(sun, d); }
   EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
   frameNo++;
   if (!hide) { placeItems(0); drawClouds(sun); drawHills(false); placeItems(1, true); drawHills(true); }
   if (kam.layer === 'far') drawKamiel();
-  if (!hide) { placeItems(1, false); drawGround(); }
+  if (!hide) { placeItems(1, false); drawGround(); drawHalls(); drawFestGround(); }
   EV.draw('ground', ctx);
   if (kam.layer === 'mid') drawKamiel();
   if (!hide) placeItems(2);
@@ -1456,10 +1859,12 @@ function frame() {
   ctx.globalCompositeOperation = 'source-atop';
   if (S.season_colors !== false && SEASON_TINT[seasonNow]) { ctx.fillStyle = SEASON_TINT[seasonNow]; ctx.fillRect(0, 0, W, H); }
   if (L < 1) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68})`; ctx.fillRect(0, 0, W, H); }
+  if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  if (!hide) drawWeather(sun);
+  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); }
   EV.draw('screen', ctx);
+  drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
   if (msgCanvas && msgAlpha > 0) { ctx.globalAlpha = msgAlpha; ctx.drawImage(msgCanvas, 0, 0); ctx.globalAlpha = 1; }
   drawRing();
@@ -1487,10 +1892,12 @@ EV = KamielEvents.create({
   night: () => isNightTime(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
-  now, doorPets: () => doorPets, beat: beatNow, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
+  now, doorPets: () => doorPets, festival: (d) => festival(d), festBoost: () => ((S.feest || {}).boost === undefined ? 3 : +(S.feest || {}).boost), beat: beatNow, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
   onStart: (id, name, cat) => { if (cat !== 'intern' || id === 'deurbel') tlog(cat === 'dier' ? 'dier' : 'event', name); },
 });
 const restored = restoreScene();
+if (params.get('zaal')) compose(placeIndex(), params.get('zaal'));   // ?zaal=museum (or disco, sterren) to try a hall
+if (params.get('lucht')) setInterval(() => setAir({ level: +params.get('lucht') }), 1000);   // ?lucht=2 to try bad air
 if (!restored) for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
 if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene };
 requestAnimationFrame(loop);
@@ -1750,11 +2157,19 @@ function fillRoepen() {
 
 /* ---------- tapping: message, sun, moon, an element, or the empty scene ---------- */
 const post = (u) => fetch(u, { method: 'POST' }).catch(() => {});
+// where a finger is on the canvas (the canvas is scaled to fill the screen)
+function canvasXY(e) { const r = cv.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H);
+  return { x: (e.clientX - r.left - (r.width - W * sc) / 2) / sc, y: (e.clientY - r.top - (r.height - H * sc) / 2) / sc }; }
+let downAt = null;
+document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('.win, .taskbar')) return; downAt = Object.assign(canvasXY(e), { t: performance.now() }); });
 document.addEventListener('pointerup', (e) => {
   if (e.target.closest && e.target.closest('.win, .taskbar')) return;   // the windows handle their own taps
   if (deskOpen) { closeDesk(); return; }                                // tapping the scene closes them
-  const r = cv.getBoundingClientRect(), sc = Math.max(r.width / W, r.height / H);
-  const x = (e.clientX - r.left - (r.width - W * sc) / 2) / sc, y = (e.clientY - r.top - (r.height - H * sc) / 2) / sc;
+  const { x, y } = canvasXY(e);
+  // a swipe that starts on Wifi's ball throws it
+  if (downAt && EV.throwBall && EV.throwBall(downAt, { x, y }, (performance.now() - downAt.t) / 1000)) { downAt = null; return; }
+  downAt = null;
+  if (hallTap(x, y)) return;   // something in a hall (museum, disco…)
   // tapping the sent photo: it goes away and the sender hears it was seen
   for (let k = hits.length - 1; k >= 0; k--) {
     const hh = hits[k];

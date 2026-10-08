@@ -78,9 +78,20 @@
     { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
     { id: 'begroeten', name: 'Een huisdier komt Kamiel begroeten', cat: 'intern' },
     { id: 'dansfeest', name: 'Dansfeest: iedereen danst op het nummer', cat: 'muziek' },
+    { id: 'heidiwraak', name: 'Heidi\u2019s wraak: ze kaapt het scherm', cat: 'verhaal' },
+    { id: 'ufo', name: 'Dobby wordt ontvoerd door een ufo', cat: 'verhaal' },
+    { id: 'verhuis', name: 'De grote verhuis', cat: 'verhaal' },
+    { id: 'ogen', name: 'Ogen in het donker', cat: 'verhaal' },
+    { id: 'taart', name: 'Verjaardagstaart', cat: 'feest' },
+    { id: 'spook', name: 'Het spook (Halloween)', cat: 'feest' },
+    { id: 'slee', name: 'De slee door de lucht (Kerstmis)', cat: 'feest' },
+    { id: 'eieren', name: 'Dobby verstopt eieren (Pasen)', cat: 'feest' },
+    { id: 'vuurwerkfeest', name: 'Groot vuurwerk (Nieuwjaar)', cat: 'feest' },
+    { id: 'verliefd', name: 'Verliefd (Valentijn)', cat: 'feest' },
+    { id: 'pepernoten', name: 'Pepernoten (Sinterklaas)', cat: 'feest' },
   ];
 
-  const CATS = { muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+  const CATS = { verhaal: 'Verhaaltjes', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
   const PETS = ['wifi', 'snoet', 'pippa', 'pebbels', 'dobby'];
 
   /* ---------- the plan: when today's events happen ---------- */
@@ -98,12 +109,18 @@
     return Math.floor(r() * 1440);
   }
   const num = (v, d) => (v === undefined || v === null || v === '') ? d : +v;
-  function planFor(d, cfg) {
-    const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false;
-    for (let k = 0; k < num(cfg.lama_per_day, 1); k++) out.push({ at: minuteOf(r, ev), cat: 'lama' });
-    for (let k = 0; k < num(cfg.common_per_day, 3); k++) out.push({ at: minuteOf(r, ev), cat: 'vaak' });
+  function planFor(d, cfg, fest, boost) {
+    const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false, B = fest ? Math.max(1, boost || 3) : 1;
+    // on a feast day (or a birthday) much more happens, and things of the day itself, mostly during the day and evening
+    for (let k = 0; k < Math.round(num(cfg.lama_per_day, 1) * B); k++) out.push({ at: minuteOf(r, ev), cat: 'lama' });
+    for (let k = 0; k < Math.round(num(cfg.common_per_day, 3) * B); k++) out.push({ at: minuteOf(r, ev), cat: 'vaak' });
     const pd = cfg.pets_per_day || {};
-    for (const p of PETS) for (let k = 0; k < num(pd[p], 2); k++) out.push({ at: minuteOf(r, ev), cat: 'dier', id: p });
+    for (const p of PETS) for (let k = 0; k < Math.round(num(pd[p], 2) * Math.min(B, 2)); k++) out.push({ at: minuteOf(r, ev), cat: 'dier', id: p });
+    if (fest) for (let k = 0; k < 2 + B; k++) out.push({ at: 480 + Math.floor(r() * 900), cat: 'feest' });
+    // the little stories: a few times a week, the same plan all week
+    const monS = new Date(d); monS.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const rs = seeded('verhaal ' + ymd(monS)), todayS = (d.getDay() + 6) % 7;
+    for (let k = 0; k < num(cfg.stories_per_week, 3) * (fest ? 2 : 1); k++) { const day = Math.floor(rs() * 7), at = 540 + Math.floor(rs() * 780); if (day === todayS || fest) out.push({ at: fest ? 480 + Math.floor(r() * 900) : at, cat: 'verhaal' }); }
     // "a few times a week": spread over the week, the same plan all week long
     const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const rw = seeded('week ' + ymd(mon)), today = (d.getDay() + 6) % 7;
@@ -501,8 +518,68 @@
       const a = Object.assign({ pet: name, s: PET[name].s * depthS(feet), wx, cx: scrX(wx), feet, face: rnd() < .5 ? -1 : 1, pose: 'lie', lockPose: true,
         wt: 0, rate: 9, r: 0, sq: 1, sx: 1, lift: 0, alpha: 1, eyes: '', home: wx, place: A.placeAt(wx),
         until: Date.now() + Math.max(5, +(cfg.pets_stay_min || 45)) * 60000 * (.7 + rnd() * .6) }, o || {});
+      if (name === 'wifi') a.ball = { wx: wx + (a.face > 0 ? 1 : -1) * 42, h: 0, vx: 0, vh: 0, moving: false, held: false };   // her ball lies in front of her
       a.brain = life(a);
       residents.push(a); return a;
+    }
+    /* Wifi's ball: swipe it on the tablet and she goes after it */
+    function ballStep(a, dt) {
+      const b = a.ball; if (!b) return;
+      if (b.held) { const n = A.petPoint(a, 'nose'); b.wx = worldX(n.x); b.h = Math.max(0, a.feet - n.y - 4); return; }
+      if (!b.moving) return;
+      b.vh -= 900 * dt; b.h += b.vh * dt; b.wx += b.vx * dt;
+      const [l, r] = area(a);
+      if (b.wx < l - 120 || b.wx > r + 120) { b.wx = clamp(b.wx, l - 120, r + 120); b.vx = -b.vx * .5; }
+      if (b.h <= 0) { b.h = 0; if (Math.abs(b.vh) > 80) { b.vh = -b.vh * .45; b.vx *= .75; } else { b.vh = 0; b.vx *= Math.pow(.15, dt); } }
+      if (b.h === 0 && b.vh === 0 && Math.abs(b.vx) < 6) { b.vx = 0; b.moving = false; }
+    }
+    function drawBall(g, a) {
+      const b = a.ball; if (!b || a.alpha <= 0) return;
+      const x = scrX(b.wx), y = a.feet - 1 - b.h; if (x < -30 || x > W + 30) return;
+      const k = Math.max(.3, 1 - b.h / 200);
+      g.fillStyle = `rgba(0,0,0,${.2 * k})`; g.beginPath(); g.ellipse(x, a.feet + 1, 7 * k, 2.2 * k, 0, 0, 7); g.fill();
+      g.fillStyle = '#e2343a'; g.fillRect(x - 6, y - 12, 12, 12); g.fillStyle = '#ff8a8a'; g.fillRect(x - 4, y - 10, 3, 3); g.fillStyle = '#ffd23f'; g.fillRect(x - 6, y - 7, 12, 2);
+    }
+    function throwBall(p0, p1, secs) {
+      for (const a of residents) {
+        const b = a.ball; if (!b || b.held || a.busy || !onScreen(a)) continue;
+        const bx = scrX(b.wx), by = a.feet - 7 - b.h;
+        if (Math.hypot(p0.x - bx, p0.y - by) > 48) continue;
+        const dt = Math.max(.06, secs), dx = p1.x - p0.x, dy = p1.y - p0.y;
+        if (Math.hypot(dx, dy) < 12) { b.vx = (rnd() < .5 ? -1 : 1) * (160 + rnd() * 120); b.vh = 280; }   // a tap: a little toss
+        else { b.vx = clamp(dx / dt, -950, 950); b.vh = clamp(-dy / dt, 120, 750); }
+        b.moving = true;
+        a.brain = fetchBall(a);
+        return true;
+      }
+      return false;
+    }
+    function* fetchBall(a, inner) {
+      resetPose(a); const b = a.ball;
+      if (a.pose === 'sleep' || a.pose === 'lie') { a.eyes = 'groot'; emote('!', 1, a); hold(a, 'stand'); yield* wait(.35); a.eyes = ''; }
+      if (Math.abs(b.vx) > 500 && onScreen(a)) emote('burst', .6, a);
+      // chase it, as long as it moves
+      for (let t = 0; t < 20; t++) {
+        let n = 0;
+        while ((b.moving || Math.abs(wrapD(b.wx - a.wx)) > 16) && n < 600) {
+          const d = wrapD(b.wx - a.wx), sp = PET.wifi.run * 1.6;
+          a.face = d > 0 ? 1 : -1; a.pose = 'walk'; a.lockPose = true; a.rate = 14;
+          a.wx += Math.sign(d) * Math.min(Math.abs(d) - 14 > 0 ? Math.abs(d) - 14 : 0, sp * st.dt);
+          if (b.h > 25 && Math.abs(d) < 40 && a.lift === 0 && rnd() < .05) yield* rJump(a, 30, .35);   // jumps for it in the air
+          n++; yield;
+          if (!b.moving && Math.abs(d) <= 16) break;
+        }
+        if (!b.moving) break;
+      }
+      hold(a, 'down'); yield* wait(.35); b.held = true; hold(a, null);
+      if (onScreen(a)) emote('heart', 1.4, a);
+      // proud trot back to her spot, and the ball goes down in front of her again
+      yield* rTo(a, clampArea(a, a.home), PET.wifi.run * .9);
+      a.face = rnd() < .5 ? -1 : 1; hold(a, 'sit'); yield* wait(.6);
+      b.held = false; b.h = 0; b.wx = a.wx + (a.face > 0 ? 1 : -1) * 42;
+      emote('hearts', 1.6, a); yield* wait(2.5);
+      yield* lieDown(a);
+      if (!inner) yield* life(a);
     }
     // walking and jumping for residents happen in world coordinates, so they stay put when the camera moves
     function* rTo(a, wx, speed) {
@@ -572,6 +649,10 @@
       hold(a, 'sit'); yield* wait(2); yield* lieDown(a);
     }
     function* wifiToy(a) {
+      if (a.ball && !a.ball.held) {   // plays with her own ball: a nudge with the nose, and after it
+        yield* getUp(a); a.ball.vx = (a.face > 0 ? 1 : -1) * (120 + rnd() * 160); a.ball.vh = 160 + rnd() * 120; a.ball.moving = true;
+        return yield* fetchBall(a, true);
+      }
       yield* getUp(a);
       const ball = { on: true, x: a.cx, y: a.feet - 1 }; let off = 0;
       const f = ballFx(ball);
@@ -711,6 +792,7 @@
         const side = a.cx < W / 2 ? -1 : 1;
         yield* rTo(a, worldX(W / 2 + side * (W / 2 + 90)), PET[a.pet].run * .7);
       }
+      if (a.ball) a.ball.held = true;
       lg(`${NAMES[a.pet]} is weer vertrokken.`);
       a.gone = true;
     }
@@ -931,6 +1013,256 @@
           for (const a of cast) { a.alpha = 0; if (a.res) { a.res.alpha = a.res.hidden || 1; a.res.busy = false; } }
           kam.y = 0; kam.r = 0; kam.head = 0; kam.eyes = ''; kam.sq = 1;
         }
+      } },
+      /* ---------- little stories without words ---------- */
+      // Heidi's revenge: she pushes Kamiel out of the picture and takes over the whole screen, until the gang comes back for her
+      heidiwraak: { long: true, run: function* () {
+        const side = rnd() < .5 ? -1 : 1;
+        const h = actor({ cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: 'vies' });
+        yield* actorTo(h, kx() + side * 125, 70); h.face = -side;
+        emote('angry', 1.4, h); kam.face = side; kam.eyes = 'groot'; emote('!', 1.2); yield* wait(1.4);
+        // the shove
+        yield* actorTo(h, kx() + side * 70, 140);
+        kam.eyes = 'x'; emote('stars', 1.5);
+        yield* tween(1, p => { kam.x = lerp(0, -side * (W / 2 + 160), ez(p)); kam.r = -side * .35 * Math.sin(p * Math.PI); kam.y = Math.sin(p * Math.PI) * 50; });
+        kam.r = 0; kam.y = 0; kam.eyes = '';
+        // the takeover: she walks to the middle and comes much too close
+        yield* actorTo(h, W / 2, 60); h.face = side; yield* wait(.8); h.face = -side; yield* wait(.6);
+        h.layer = 'front'; h.lockPose = true; h.pose = 'walk'; h.rate = 3;
+        yield* tween(3.2, p => { const e = ez(p); h.s = lerp(.86, 2.6, e); h.feet = lerp(FEET, H + 300, e); });
+        h.pose = 'tilt'; h.eyes = 'blij'; h.outfit = ['kroon']; emote('sparks', 1.6, h);
+        const glow = fx('screen', 0, (g) => { g.fillStyle = 'rgba(255,240,250,.06)'; g.fillRect(0, 0, W, H); });
+        for (let k = 0; k < 7; k++) {   // she chews, she looks at you, she does not care
+          yield* tween(2.6, p => { h.sq = 1 + Math.sin(p * 30) * .015; });
+          h.face = k % 2 ? side : -side; h.eyes = pick(['blij', 'vies', 'dicht', 'blij']);
+          if (k === 3) emote('dots', 2, h);
+        }
+        stop(glow);
+        // here they come: Kamiel and the whole gang, marching in
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((n, i) => { const a = pet(n, -side); a.cx -= side * i * 50; return a; });
+        kam.x = -side * (W / 2 + 120); kam.eyes = 'boos';
+        yield* par(walkTo(-side * 240, 90), ...gang.map((a, i) => petTo(a, W / 2 - side * (300 + i * 26), PET[a.pet].run)));
+        emote('angry', 1.5); gang.forEach(a => emote('burst', .6, a)); yield* wait(1.2);
+        h.eyes = 'groot'; emote('!?', 1.4, h);
+        // she shrinks back to her own size, and out she goes
+        yield* tween(1.6, p => { const e = ez(p); h.s = lerp(2.6, .86, e); h.feet = lerp(H + 300, FEET, e); });
+        h.layer = 'back'; h.pose = 'walk'; h.lockPose = false; h.outfit = [];
+        yield* par(actorTo(h, W / 2 + side * (W / 2 + 170), 170), walkTo(side * 80, 130), ...gang.map((a, i) => petTo(a, W / 2 + side * (40 + i * 30), PET[a.pet].run * 1.3)));
+        kam.eyes = 'blij'; emote('hearts', 2.5); gang.forEach(a => { emote('hearts', 2, a); });
+        for (let k = 0; k < 2; k++) yield* par(hop(40, .5), ...gang.map(a => petJump(a, 24, .4)));
+        yield* wait(1.2);
+        yield* par(walkTo(0, 70), ...gang.map(a => petLeave(a, -side, PET[a.pet].run)));
+        kam.eyes = '';
+      } },
+      // a ufo comes for Dobby, and brings him back… a little different
+      ufo: { long: true, run: function* () {
+        const side = rnd() < .5 ? -1 : 1, d = pet('dobby', side);
+        yield* petTo(d, kx() + side * 170, 60); hold(d, 'down');
+        const U = { x: W / 2 - side * (W / 2 + 140), y: 70, beam: 0, wob: 0 };
+        fx('back', 0, (g) => {
+          U.wob += st.dt;
+          if (U.beam > 0) { const gr = g.createLinearGradient(0, U.y, 0, FEET + 10); gr.addColorStop(0, `rgba(170,255,200,${.55 * U.beam})`); gr.addColorStop(1, `rgba(170,255,200,${.12 * U.beam})`);
+            g.fillStyle = gr; g.beginPath(); g.moveTo(U.x - 18, U.y + 18); g.lineTo(U.x + 18, U.y + 18); g.lineTo(U.x + 70, FEET + 10); g.lineTo(U.x - 70, FEET + 10); g.closePath(); g.fill(); }
+          sprC(g, SP.ufo, U.x, U.y + Math.sin(U.wob * 3) * 5, 6);
+        });
+        yield* tween(3, p => { U.x = lerp(W / 2 - side * (W / 2 + 140), d.cx, ez(p)); });
+        kam.face = side; kam.eyes = 'groot'; emote('!', 1.5);
+        yield* tween(.8, p => { U.beam = p; });
+        hold(d, 'jump'); d.eyes = 'groot';
+        yield* tween(3, p => { d.lift = (FEET - U.y - 40) * ez(p); d.r = Math.sin(p * 12) * .3; d.s = PET.dobby.s * (1 - .5 * p); });
+        d.alpha = 0; yield* tween(.5, p => { U.beam = 1 - p; });
+        yield* tween(1.2, p => { U.y = 70 - 200 * ez(p); });
+        // panic
+        kam.eyes = 'groot'; emote('sweat', 4);
+        for (let k = 0; k < 3; k++) { yield* walkTo(k % 2 ? -120 : 120, 200, 16); }
+        yield* walkTo(0, 150, 14); kam.face = side; emote('?', 2); yield* wait(2.5);
+        // he's back
+        U.x = d.cx; yield* tween(1.4, p => { U.y = -130 + 200 * ez(p); });
+        yield* tween(.6, p => { U.beam = p; });
+        d.alpha = 1; d.eyes = 'groot';
+        const ant = fx('front', 0, (g) => { if (d.alpha <= 0) return; const h0 = A.petPoint(d, 'head'); g.strokeStyle = '#3aff6a'; g.lineWidth = 2;
+          for (const o of [-5, 5]) { g.beginPath(); g.moveTo(h0.x + o, h0.y); g.lineTo(h0.x + o * 2, h0.y - 22); g.stroke(); g.fillStyle = '#3aff6a'; g.beginPath(); g.arc(h0.x + o * 2, h0.y - 23, 3.5, 0, 7); g.fill(); } });
+        yield* tween(2.5, p => { d.lift = (FEET - U.y - 40) * (1 - ez(p)); d.s = PET.dobby.s * (.5 + .5 * p); d.r = Math.sin(p * 10) * .2 * (1 - p); });
+        d.lift = 0; d.r = 0; hold(d, null);
+        yield* tween(.5, p => { U.beam = 1 - p; });
+        yield* tween(1.5, p => { U.x = lerp(d.cx, W / 2 + side * (W / 2 + 160), ez(p)); U.y = 70 - 60 * p; });
+        kam.eyes = ''; emote('?', 1.5); yield* wait(1);
+        for (let k = 0; k < 2; k++) { yield* petJump(d, 34, .45); emote('sparks', .8, d); }
+        emote('dots', 2); yield* wait(1.5);
+        yield* petLeave(d, side, 60); stop(ant);
+      } },
+      // the housemates move house: they carry something away, and bring it back… upside down
+      verhuis: { can: () => groundHits().length > 0, long: true, run: function* () {
+        const hh = groundHits().filter(x => !x.it.on).sort((a, b) => Math.abs(a.x + a.w / 2 - W / 2) - Math.abs(b.x + b.w / 2 - W / 2))[0]; if (!hh) return;
+        const cx0 = hh.x + hh.w / 2, side = cx0 < W / 2 ? -1 : 1, foot = hh.foot;
+        const crew = ['wifi', 'snoet', 'pebbels'].filter(p => !(cfg.off || []).includes(p)).map(n => pet(n, side));
+        const off = { x: 0, y: 0, r: 0 };
+        cur.itemOff = (it) => it === hh.it ? off : null;
+        yield* par(...crew.map((a, i) => petTo(a, cx0 + (i - 1) * hh.w * .3, PET[a.pet].run)));
+        kam.face = side; emote('?', 2);
+        crew.forEach(a => hold(a, 'down')); yield* wait(.8);
+        yield* tween(.6, p => { off.y = -16 * p; }); crew.forEach(a => { hold(a, null); a.lift = 6; });
+        const exit = side * (W / 2 + hh.w + 80);
+        yield* par(tween(5, p => { const e = ez(p); off.x = (exit - (cx0 - W / 2)) * e; off.r = Math.sin(p * 20) * .04; crew.forEach((a, i) => { a.cx = cx0 + (i - 1) * hh.w * .3 + off.x; a.pose = 'walk'; a.face = side; }); }));
+        crew.forEach(a => { a.alpha = 0; });
+        kam.eyes = 'groot'; emote('!?', 1.8); yield* wait(2); kam.eyes = ''; emote('dots', 2.5); yield* wait(3);
+        // back it comes, the wrong way up
+        crew.forEach(a => { a.alpha = 1; a.face = -side; });
+        yield* tween(5, p => { const e = ez(p); off.x = (exit - (cx0 - W / 2)) * (1 - e); off.r = Math.PI * Math.min(1, p * 1.2); off.y = -16 - Math.sin(p * Math.PI) * 6 + (hh.h * .9) * Math.min(1, p * 1.2) * 0;
+          crew.forEach((a, i) => { a.cx = cx0 + (i - 1) * hh.w * .3 + off.x; a.pose = 'walk'; }); });
+        off.y = 0; crew.forEach(a => { a.lift = 0; hold(a, 'sit'); emote('hearts', 1.6, a); });
+        kam.eyes = 'groot'; emote('?', 2); yield* wait(2.5); kam.eyes = ''; emote('dots', 2); yield* wait(2);
+        yield* par(...crew.map(a => petLeave(a, rnd() < .5 ? -1 : 1, PET[a.pet].run)));
+        // it stays upside down: keep that for this place
+        hh.it.flipY = true; cur.itemOff = null;
+      } },
+      // at night: everything goes dark, and two eyes come closer… it's only Pippa
+      ogen: { can: () => A.night(), run: function* () {
+        let dark = 0;
+        fx('screen', 0, (g) => { if (dark > 0) { g.fillStyle = `rgba(0,0,6,${.93 * dark})`; g.fillRect(0, 0, W, H); } });
+        const E = { x: 120, y: FEET - 34, on: 0, blink: 0 };
+        fx('screen', 0, (g) => { if (E.on <= 0) return; const open = E.blink > 0 ? .15 : 1;
+          for (const o of [-16, 16]) { g.fillStyle = `rgba(255,230,60,${E.on})`; g.beginPath(); g.ellipse(E.x + o, E.y, 10, 10 * open, 0, 0, 7); g.fill();
+            g.fillStyle = `rgba(0,0,0,${E.on})`; g.fillRect(E.x + o - 1, E.y - 5 * open, 2, 10 * open); } E.blink = Math.max(0, E.blink - st.dt); });
+        yield* tween(2, p => { dark = p; });
+        kam.eyes = 'groot'; emote('sweat', 3); yield* wait(2);
+        E.on = 1; yield* wait(1.5); E.blink = .2; yield* wait(1.2);
+        yield* shiver(1.2, 4);
+        yield* tween(4, p => { E.x = lerp(120, kx() - 150, ez(p)); if (p > .5 && p < .55) E.blink = .2; });
+        kam.eyes = 'x'; emote('!', 1.2); yield* tween(.3, p => { kam.y = Math.sin(p * Math.PI) * 50; }); kam.y = 0;
+        const c = pet('pippa', -1); c.cx = E.x; hold(c, 'sit'); c.face = 1;
+        E.on = 0; yield* tween(1.2, p => { dark = 1 - p; });
+        emote('dots', 2, c); kam.eyes = ''; yield* wait(1.5); emote('heart', 1.5, c); kam.eyes = 'blij'; emote('sweat', 2); yield* wait(2);
+        hold(c, null); yield* petLeave(c, -1, PET.pippa.run);
+      } },
+
+      /* ---------- feast days ---------- */
+      // the birthday cake: everyone comes, Kamiel blows out the candles
+      taart: { fest: ['verjaardag'], long: true, run: function* () {
+        const f = kface(), cx = kx() + f * 110;
+        let lit = 5, cakeOn = 0;
+        fx('front', 0, (g) => {
+          if (cakeOn <= 0) return; g.globalAlpha = cakeOn; const y = FEET + 6;
+          g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(cx, y + 2, 50, 7, 0, 0, 7); g.fill();
+          g.fillStyle = '#f7c6d9'; g.fillRect(cx - 44, y - 30, 88, 30); g.fillStyle = '#ffffff'; g.fillRect(cx - 44, y - 34, 88, 6);
+          g.fillStyle = '#f4a3c0'; g.fillRect(cx - 30, y - 54, 60, 20); g.fillStyle = '#fff'; g.fillRect(cx - 30, y - 57, 60, 5);
+          for (let k = 0; k < 9; k++) { g.fillStyle = ['#ff3d8b', '#3db8ff', '#ffd23f'][k % 3]; g.fillRect(cx - 40 + k * 10, y - 20, 4, 4); }
+          for (let k = 0; k < 5; k++) { const x = cx - 22 + k * 11; g.fillStyle = ['#7ee0a0', '#3db8ff', '#ffd23f', '#ff3d8b', '#b98cff'][k]; g.fillRect(x - 2, y - 72, 4, 15);
+            if (k < lit) { const fl = Math.sin(cur.t * 20 + k) * 1.5; g.fillStyle = '#ffd23f'; g.beginPath(); g.ellipse(x, y - 78 + fl * .3, 3, 6 + fl, 0, 0, 7); g.fill(); g.fillStyle = '#fff6c0'; g.fillRect(x - 1, y - 78, 2, 4); } }
+          g.globalAlpha = 1;
+        });
+        yield* tween(1, p => { cakeOn = p; });
+        kam.eyes = 'groot'; emote('!', 1.2); kam.face = f; yield* wait(1.2); kam.eyes = 'blij'; emote('hearts', 2);
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((n, i) => pet(n, i % 2 ? -1 : 1));
+        yield* par(...gang.map((a, i) => petTo(a, cx + (i - 2) * 58 + (i >= 2 ? 40 : -40), PET[a.pet].run)));
+        gang.forEach(a => { hold(a, a.pet === 'dobby' ? 'up' : 'sit'); a.face = a.cx < cx ? 1 : -1; });
+        yield* wait(1.5);
+        for (let k = 0; k < 4; k++) { gang.forEach(a => a.lift = (k % 2) * 6); yield* wait(.5); }   // a little song, they bob along
+        gang.forEach(a => { a.lift = 0; });
+        // blow!
+        kam.head = .12; kam.mouth = .7;
+        particles('front', { until: cur.t + 2, emit: (ps) => { const m = kp(20, 395); ps.push(P({ x: m.x, y: m.y, vx: f * (180 + rnd() * 80), vy: (rnd() - .5) * 40, life: .6 })); },
+          draw: (g, p, tt) => { g.fillStyle = `rgba(255,255,255,${.6 * (1 - tt)})`; g.fillRect(p.x, p.y, 6, 2); } });
+        for (let k = 0; k < 5; k++) { yield* wait(.35); lit--; }
+        kam.mouth = 0; kam.head = 0;
+        particles('screen', { until: cur.t + .1, emit: (ps) => { for (let k = 0; k < 60; k++) ps.push(P({ x: cx, y: FEET - 80, vx: (rnd() - .5) * 500, vy: -200 - rnd() * 300, grav: 500, life: 2, c: k % 4 })); },
+          draw: (g, p, tt) => { g.fillStyle = ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0'][p.c]; g.globalAlpha = 1 - tt; g.fillRect(p.x, p.y, 6, 3); g.globalAlpha = 1; } });
+        gang.forEach(a => emote('hearts', 2.5, a)); emote('hearts', 2.5);
+        for (let k = 0; k < 2; k++) yield* par(hop(36, .45), ...gang.map(a => petJump(a, 22, .4)));
+        yield* wait(2);
+        yield* par(...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)), tween(1.5, p => { cakeOn = 1 - p; }));
+        kam.eyes = '';
+      } },
+      // Halloween: a ghost! (it is Heidi under a sheet, which is to say: Heidi)
+      spook: { fest: ['halloween'], run: function* () {
+        const side = rnd() < .5 ? -1 : 1, g0 = actor({ cx: W / 2 + side * (W / 2 + 140), s: .86, set: 'heidi', face: -side, alpha: .5, eyes: 'groot' });
+        const wit = pet(pick(['snoet', 'pippa', 'wifi']), -side); wit.cx = kx() - side * 160; hold(wit, 'sit'); wit.face = side;
+        yield* tween(5, p => { g0.cx = lerp(W / 2 + side * (W / 2 + 140), kx() + side * 140, ez(p)); g0.feet = FEET - 30 - Math.sin(p * 9) * 10; g0.r = Math.sin(p * 7) * .06; });
+        kam.eyes = 'groot'; emote('!', 1.5); emote('!', 1.2, wit); yield* shiver(1.5, 5);
+        hold(wit, null); emote('sweat', 2, wit); yield* petTo(wit, W / 2 - side * (W / 2 + 90), PET[wit.pet].run * 2.5);
+        yield* tween(2, p => { g0.feet = FEET - 30 - Math.sin(p * 9) * 10; g0.cx = lerp(kx() + side * 140, kx() + side * 80, p); });
+        // she trips over her own sheet
+        yield* tween(.5, p => { g0.r = side * .6 * p; g0.feet = FEET - 30 + 30 * p; });
+        g0.alpha = 1; g0.eyes = 'vies'; emote('angry', 2, g0); kam.eyes = ''; emote('?', 2);
+        yield* wait(1.5); g0.r = 0; emote('dots', 2); yield* wait(1.5);
+        yield* actorTo(g0, W / 2 + side * (W / 2 + 160), 60);
+      } },
+      // Christmas: a sleigh through the sky, pulled by the housemates, with Heidi in it (of course)
+      slee: { fest: ['kerst'], run: function* () {
+        const d = rnd() < .5 ? -1 : 1, crew = PETS.filter(p => !(cfg.off || []).includes(p)).map(n => pet(n, -d));
+        const sl = actor({ cx: 0, s: .32, set: 'heidi', face: d, eyes: 'blij', layer: 'front' });
+        crew.forEach(a => { a.s *= .45; a.layer = 'front'; a.pose = 'jump'; a.lockPose = true; a.face = d; });
+        kam.face = d; kam.head = -.22; emote('?', 2);
+        fx('front', 0, (g) => { g.fillStyle = '#b8202a'; g.fillRect(sl.cx - 26, sl.feet - 6, 52, 14); g.fillStyle = '#e8c46a'; g.fillRect(sl.cx - 30, sl.feet + 8, 60, 3); });
+        const trail = particles('front', { until: cur.t + 12, emit: (ps) => { if (rnd() < .6) ps.push(P({ x: sl.cx - d * 30, y: sl.feet, vx: -d * 20, vy: 10, life: 1.2 })); },
+          draw: (g, p, tt) => { g.fillStyle = `rgba(255,240,150,${1 - tt})`; g.fillRect(p.x, p.y, 3, 3); } });
+        yield* tween(10, p => {
+          const x = lerp(-d * (W / 2 + 260), d * (W / 2 + 420), p) + W / 2, y = 150 + Math.sin(p * Math.PI * 2) * 30;
+          sl.cx = x; sl.feet = y;
+          crew.forEach((a, i) => { a.cx = x + d * (60 + i * 40); a.feet = y + 6 + Math.sin(cur.t * 8 + i) * 3; a.lift = 0; });
+        });
+        kam.eyes = 'blij'; emote('sparks', 2); kam.head = 0; yield* wait(2); kam.eyes = '';
+        crew.forEach(a => { a.alpha = 0; }); sl.alpha = 0; stop(trail);
+      } },
+      // Easter: Dobby hops through with a basket and hides eggs (go and find them on the tablet)
+      eieren: { fest: ['pasen'], run: function* () {
+        const side = rnd() < .5 ? -1 : 1, d = pet('dobby', side);
+        const bask = fx('front', 0, (g) => { const n = A.petPoint(d, 'nose'); g.fillStyle = '#b07a3a'; g.fillRect(n.x - 9, n.y + 4, 18, 10); g.strokeStyle = '#7a4a1a'; g.lineWidth = 2; g.beginPath(); g.arc(n.x, n.y + 4, 9, Math.PI, 0); g.stroke();
+          ['#ff8ac1', '#8ad0ff', '#ffe066'].forEach((c, k) => { g.fillStyle = c; g.beginPath(); g.ellipse(n.x - 5 + k * 5, n.y + 3, 3, 4, 0, 0, 7); g.fill(); }); });
+        for (let k = 0; k < 6; k++) {
+          const x = lerp(W / 2 + side * (W / 2 + 40), W / 2 - side * (W / 2 + 60), (k + 1) / 7);
+          yield* petJump(d, 26, .45, x); hold(d, 'down'); emote('sparks', .8, d); yield* wait(.5); hold(d, null);
+          if (k === 2) { kam.face = d.cx > kx() ? 1 : -1; emote('?', 1.5); }
+        }
+        stop(bask); yield* petLeave(d, -side, 60);
+        kam.head = .15; emote('dots', 2); yield* wait(2); kam.head = 0;
+      } },
+      // New Year: the big fireworks, everybody looks up
+      vuurwerkfeest: { fest: ['nieuwjaar'], long: true, run: function* () {
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((n, i) => pet(n, i % 2 ? -1 : 1));
+        yield* par(...gang.map((a, i) => petTo(a, W / 2 + (i - 2) * 120 + (i >= 2 ? 80 : -80), PET[a.pet].run)));
+        gang.forEach(a => { hold(a, a.pet === 'dobby' ? 'up' : 'sit'); a.r = a.face > 0 ? -.2 : .2; });
+        kam.head = -.25; kam.eyes = 'groot';
+        const bursts = [];
+        fx('screen', 0, (g) => {
+          if (rnd() < .06 && bursts.length < 6) bursts.push({ x: 120 + rnd() * (W - 240), y: 60 + rnd() * 150, t0: cur.t, hue: Math.floor(rnd() * 360), heart: rnd() < .2 });
+          for (let i = bursts.length - 1; i >= 0; i--) { const b = bursts[i], a = cur.t - b.t0; if (a > 2.6) { bursts.splice(i, 1); continue; }
+            g.fillStyle = `hsla(${b.hue},95%,70%,${Math.max(0, 1 - a / 2.6)})`;
+            for (let k = 0; k < 36; k++) { const an = k / 36 * Math.PI * 2; let dx = Math.cos(an), dy = Math.sin(an);
+              if (b.heart) { dx = 16 * Math.pow(Math.sin(an), 3) / 16; dy = -(13 * Math.cos(an) - 5 * Math.cos(2 * an) - 2 * Math.cos(3 * an) - Math.cos(4 * an)) / 16; }
+              const r = 24 + a * 90; g.fillRect(b.x + dx * r - 2, b.y + dy * r + a * a * 14 - 2, 5, 5); } }
+        });
+        for (let k = 0; k < 6; k++) { yield* wait(3); if (k % 2) { emote('hearts', 1.5); gang.forEach(a => emote(pick(['heart', 'sparks', '!']), 1.2, a)); } }
+        kam.eyes = 'blij'; kam.head = 0; gang.forEach(a => { a.r = 0; hold(a, null); });
+        yield* par(...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)));
+        kam.eyes = '';
+      } },
+      // Valentine: Kamiel is in love with Heidi. Heidi is not.
+      verliefd: { fest: ['valentijn'], run: function* () {
+        const side = rnd() < .5 ? -1 : 1, h = actor({ cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: '' });
+        yield* actorTo(h, kx() + side * 170, 55); h.face = -side;
+        kam.face = side; kam.eyes = 'groot'; kam.blush = true; emote('hearts', 3); yield* wait(2.5);
+        h.eyes = 'vies'; emote('dots', 2, h); yield* wait(1.5); h.face = side; emote('angry', 1.2, h);
+        yield* actorTo(h, W / 2 + side * (W / 2 + 150), 70);
+        kam.blush = false; kam.eyes = 'triest'; emote('tears', 3); yield* wait(3);
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((n, i) => pet(n, i % 2 ? -1 : 1));
+        yield* par(...gang.map((a, i) => petTo(a, kx() + (i - 2) * 50 + (i >= 2 ? 70 : -70), PET[a.pet].run)));
+        gang.forEach(a => { a.face = a.cx < kx() ? 1 : -1; emote('heart', 2, a); });
+        kam.eyes = 'blij'; emote('hearts', 2.5); yield* wait(2.5);
+        yield* par(...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)));
+        kam.eyes = '';
+      } },
+      // Sinterklaas: it rains pepernoten, and everybody tries to catch them
+      pepernoten: { fest: ['sinterklaas'], run: function* () {
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((n, i) => pet(n, i % 2 ? -1 : 1));
+        const nuts = particles('front', { until: cur.t + 14, emit: (ps) => { if (rnd() < .5) ps.push(P({ x: 60 + rnd() * (W - 120), y: -10, vy: 160 + rnd() * 80, vx: (rnd() - .5) * 20, life: 3.4 })); },
+          draw: (g, p) => { if (p.y > FEET + 4) { p.vy = 0; p.vx = 0; } g.fillStyle = '#9a5a2a'; g.beginPath(); g.arc(p.x, Math.min(p.y, FEET + 4), 4, 0, 7); g.fill(); } });
+        kam.head = -.2; kam.mouth = .6; emote('!', 1.2);
+        yield* par(...gang.map((a, i) => (function* () { yield* petTo(a, 120 + i * (W - 240) / 4, PET[a.pet].run); for (let k = 0; k < 5; k++) { hold(a, 'down'); yield* wait(.6); hold(a, null); yield* petJump(a, 14, .3, a.cx + (rnd() - .5) * 60); } })(),
+          (function* () { for (let k = 0; k < 8; k++) { yield* walkTo((rnd() - .5) * 300, 140, 12); yield* hop(20, .3); } })()));
+        kam.mouth = 0; kam.head = 0; kam.eyes = 'blij'; emote('hearts', 2); gang.forEach(a => emote('heart', 1.4, a)); yield* wait(2); stop(nuts);
+        yield* par(walkTo(0, 70), ...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)));
+        kam.eyes = '';
       } },
       begroeten: { can: () => !!greetFor && !greetFor.gone && !greetFor.busy && onScreen(greetFor), run: function* () { yield* greetRun(greetFor); } },
       // Heidi: the white lama. Lots of personality, mostly annoying: she won't cooperate and hates everything.
@@ -1830,7 +2162,8 @@
     const offList = () => (cfg.off || []);
     const can = (id) => { const d = DEF[id]; try { return !!d && (!d.can || d.can()); } catch (e) { return false; } };
     function choose(cat, forced) {
-      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern' && e.cat !== 'muziek') && (forced || !offList().includes(e.id)) && can(e.id));
+      const fk = A.festival ? (A.festival() || {}).kind : null;
+      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern' && e.cat !== 'muziek') && (e.cat !== 'feest' || (DEF[e.id] && (DEF[e.id].fest || []).includes(fk))) && (forced || !offList().includes(e.id)) && can(e.id));
       return pool.length ? pick(pool).id : null;
     }
     function start(id) {
@@ -1853,7 +2186,7 @@
     function tick(dt) {
       st.dt = dt; clock += dt;
       for (const a of residents.slice()) {
-        a.cx = scrX(a.wx); a.s = PET[a.pet].s * depthS(a.feet);
+        a.cx = scrX(a.wx); a.s = PET[a.pet].s * depthS(a.feet); ballStep(a, dt);
         if (a.pose === 'walk') a.wt += a.rate * dt;
         if (!a.busy && a.brain) { let done = false; try { done = a.brain.next().done; } catch (e) { console.error('huisdier', a.pet, e); done = true; } if (done) a.gone = true; }
         // when Kamiel walks on, those that are awake watch him go
@@ -1873,7 +2206,7 @@
       if (done || cur.t > (DEF[cur.id] && DEF[cur.id].long ? 150 : 66)) finish();
     }
     function draw(layer, g) {
-      if (layer === 'back' || layer === 'front') for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) A.drawPet(g, a);
+      if (layer === 'back' || layer === 'front') for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) { A.drawPet(g, a); if (a.ball) drawBall(g, a); }
       for (const f of rfx.slice()) {
         if (f.layer !== layer) continue;
         const age = clock - f.born;
@@ -1899,7 +2232,7 @@
       if (cfg.on === false) return;
       const key = ymd(d), m = d.getHours() * 60 + d.getMinutes();
       if (key !== planDay) {
-        const first = !planDay; plan = planFor(d, cfg); planDay = key;
+        const first = !planDay; plan = planFor(d, cfg, A.festival ? A.festival(d) : null, A.festBoost ? A.festBoost() : 3); planDay = key;
         if (first) plan.forEach(p => { if (p.at < m) p.done = true; });   // after a reload: what's past is past
       }
       for (const p of plan) if (!p.done && p.at <= m) { p.done = true; if (m - p.at <= 20) queue.push({ cat: p.cat, id: p.id }); }
@@ -1929,8 +2262,8 @@
 
     return {
       get active() { return !!cur; },
-      check, pump, walkNow, tick, draw, post, request, arrived, placeNew, tapPet,
-      residents: () => residents.map(a => ({ pet: a.pet, pose: a.pose, x: Math.round(a.cx), busy: !!a.busy })),
+      check, pump, walkNow, tick, draw, post, request, arrived, placeNew, tapPet, throwBall,
+      residents: () => residents.map(a => ({ pet: a.pet, pose: a.pose, x: Math.round(a.cx), busy: !!a.busy, ball: a.ball ? { x: scrX(a.ball.wx), y: a.feet - 7 - a.ball.h, moving: a.ball.moving, held: a.ball.held } : null })),
       // over a reload of the page: who lies where
       keepResidents: () => residents.filter(a => !a.gone).map(a => ({ pet: a.pet, wx: a.wx, feet: a.feet, face: a.face, pose: ['sleep', 'lie', 'sit', 'up'].includes(a.pose) ? a.pose : 'lie', place: a.place, until: a.until, home: a.home })),
       restoreResidents: (list) => { for (const r of list || []) if (PET[r.pet] && !isRes(r.pet)) makeResident(r.pet, r.wx, r.feet, { face: r.face, pose: r.pose, place: r.place, until: r.until, home: r.home }); },

@@ -119,7 +119,15 @@ DEFAULT_SETTINGS = {
     "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
                "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25,
-               "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20},
+               "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20,
+               "aurora_chance": 15, "stories_per_week": 3},
+    # feast days and birthdays: much more happens, with decorations and events of their own
+    "feest": {"on": True, "boost": 3, "days": [{"name": "Verjaardag", "date": "01-01"}, {"name": "Verjaardag", "date": "01-01"}],
+              "holidays": {"halloween": True, "kerst": True, "nieuwjaar": True, "pasen": True, "valentijn": True, "sinterklaas": True}},
+    # halls: now and then a place is a room (museum, disco, observatory, or one of your own)
+    "halls": {"chance": 12, "off": [], "custom": []},
+    # air quality: with bad air Kamiel gets drowsy
+    "air": {"on": False, "entity": "", "warn": 1000, "bad": 1500, "invert": False},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -194,7 +202,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack", "doorbell", "motion", "selfie"):
+    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); s["compose"] = cp
@@ -366,6 +374,19 @@ async def api_state(request):
                 wa = w.get("attributes", {})
                 out["wind"] = wa.get("wind_speed")
                 out["clouds"] = wa.get("cloud_coverage")
+        air = db["settings"].get("air") or {}
+        if air.get("on") and air.get("entity"):
+            st = await ha_get("/states/" + air["entity"])
+            try:
+                v = float(st.get("state"))
+                warn, bad = float(air.get("warn", 1000)), float(air.get("bad", 1500))
+                lv = (2 if v <= bad else 1 if v <= warn else 0) if air.get("invert") else (2 if v >= bad else 1 if v >= warn else 0)
+                out["air"] = {"level": lv, "value": v, "unit": (st.get("attributes") or {}).get("unit_of_measurement", "")}
+                if LAST.get("air") is not None and LAST["air"] != lv:
+                    log("huis", ["De lucht is weer fris", "De lucht wordt wat bedompt: Kamiel wordt suf", "De lucht is slecht: Kamiel valt bijna in slaap"][lv] + f" ({v:g} {out['air']['unit']}).")
+                LAST["air"] = lv
+            except (TypeError, ValueError, AttributeError):
+                pass
         lines = []
         for ent in db["settings"].get("osd_entities", []):
             st = await ha_get("/states/" + ent)
@@ -695,6 +716,49 @@ async def api_upload_photos(request):
     return web.json_response({"added": added, "failed": failed})
 
 
+async def api_hall_upload(request):
+    """A background for a hall of your own (one screen wide is best)."""
+    reader = await request.multipart()
+    name, data = "Eigen zaal", None
+    async for part in reader:
+        if part.name == "name":
+            name = (await part.text()).strip()[:40] or name
+        elif part.filename:
+            data = await part.read()
+    if not data:
+        raise web.HTTPBadRequest()
+    try:
+        p = await run_blocking(_photo, data)
+    except Exception:
+        return web.json_response({"ok": False, "error": "Dit beeld kon niet gelezen worden."}, status=400)
+    hall = {"id": "z" + p["id"], "name": name, "file": p["file"], "original": p.get("original"), "on": True, "elements": False}
+    async with lock:
+        db = load_db()
+        db["settings"].setdefault("halls", copy.deepcopy(DEFAULT_SETTINGS["halls"])).setdefault("custom", []).append(hall)
+        save_db(db)
+    log("systeem", f"Nieuwe zaal: {name}.")
+    return web.json_response({"ok": True, "hall": hall})
+
+
+async def api_hall_delete(request):
+    hid = request.match_info["id"]
+    async with lock:
+        db = load_db()
+        hs = db["settings"].get("halls", {})
+        gone = [c for c in hs.get("custom", []) if c["id"] == hid]
+        hs["custom"] = [c for c in hs.get("custom", []) if c["id"] != hid]
+        remove_files([c["file"] for c in gone] + [c["original"] for c in gone if c.get("original")])
+        save_db(db)
+    return web.json_response({"ok": True})
+
+
+async def api_hall_visit(request):
+    b = await request.json()
+    async with lock:
+        db = load_db(); push_action(db, {"type": "zaal", "id": str(b.get("id", ""))[:20]}); save_db(db, bump=False)
+    return web.json_response({"ok": True})
+
+
 async def api_delete_photo(request):
     pid = request.match_info["id"]
     async with lock:
@@ -806,6 +870,42 @@ async def api_settings(request):
                     m[k] = bool(b[k])
             if "away_entity" in b:
                 m["away_entity"] = str(b["away_entity"]).strip()[:120] or "zone.home"
+        if isinstance(body.get("feest"), dict):
+            f, b = s["feest"], body["feest"]
+            if "on" in b:
+                f["on"] = bool(b["on"])
+            if "boost" in b:
+                f["boost"] = max(1, min(6, int(b["boost"] or 3)))
+            if isinstance(b.get("days"), list):
+                f["days"] = [{"name": str(x.get("name", "")).strip()[:30] or "Verjaardag", "date": str(x.get("date", ""))[:5]}
+                             for x in b["days"][:20] if isinstance(x, dict) and re.match(r"^\d\d-\d\d$", str(x.get("date", "")))]
+            if isinstance(b.get("holidays"), dict):
+                for k in f["holidays"]:
+                    if k in b["holidays"]:
+                        f["holidays"][k] = bool(b["holidays"][k])
+        if isinstance(body.get("halls"), dict):
+            h, b = s["halls"], body["halls"]
+            if "chance" in b:
+                h["chance"] = max(0, min(100, int(b["chance"] or 0)))
+            if isinstance(b.get("off"), list):
+                h["off"] = [x for x in b["off"] if x in ("museum", "disco", "sterren")]
+            if isinstance(b.get("custom"), list):   # names and switches; files only come from an upload
+                known = {c["id"]: c for c in h.get("custom", [])}
+                h["custom"] = [dict(known[x["id"]], name=str(x.get("name", known[x["id"]]["name"]))[:40], on=bool(x.get("on", True)), elements=bool(x.get("elements", False)))
+                               for x in b["custom"] if isinstance(x, dict) and x.get("id") in known]
+        if isinstance(body.get("air"), dict):
+            a, b = s["air"], body["air"]
+            for k in ("on", "invert"):
+                if k in b:
+                    a[k] = bool(b[k])
+            if "entity" in b:
+                a["entity"] = str(b["entity"]).strip()[:120]
+            for k in ("warn", "bad"):
+                if k in b:
+                    try:
+                        a[k] = float(str(b[k]).replace(",", "."))
+                    except ValueError:
+                        pass
         if isinstance(body.get("selfie"), dict):
             m, b = s["selfie"], body["selfie"]
             for k in ("on", "monthly", "pets"):
@@ -841,7 +941,7 @@ async def api_settings(request):
                 e["pets_per_day"] = {k: max(0, min(12, int(v or 0))) for k, v in b["pets_per_day"].items() if k in EVENT_IDS}
             if "pets_together" in b:
                 e["pets_together"] = max(0, min(100, int(b["pets_together"])))
-            for k, top in (("pets_stay", 100), ("pets_lying", 100), ("pets_stay_min", 240), ("dance_chance", 500)):
+            for k, top in (("pets_stay", 100), ("pets_lying", 100), ("pets_stay_min", 240), ("dance_chance", 500), ("aurora_chance", 100), ("stories_per_week", 30)):
                 if k in b:
                     e[k] = max(0, min(top, int(b[k] or 0)))
             if isinstance(b.get("off"), list):
@@ -1269,7 +1369,7 @@ async def tg_handle(token, upd):
     if cmd == "/event":
         rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
         if rest.lower() in ("lijst", "list", "alle"):
-            groups = {"lama": "Elke dag", "dier": "Huisdieren", "muziek": "Op muziek", "vaak": "Vaak", "soms": "Soms"}
+            groups = {"lama": "Elke dag", "dier": "Huisdieren", "muziek": "Op muziek", "verhaal": "Verhaaltjes", "feest": "Op feestdagen", "vaak": "Vaak", "soms": "Soms"}
             out = []
             for cat, title in groups.items():
                 out.append(title + ":\n" + "\n".join(f"• {name} ({eid})" for eid, name, c in EVENTS if c == cat))
@@ -2497,6 +2597,9 @@ def make_studio():
     app.router.add_get("/api/tablet-status", api_tablet_status_get)
     app.router.add_post("/api/screen-test", api_screen_test)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
+    app.router.add_post("/api/halls", api_hall_upload)
+    app.router.add_delete("/api/halls/{id}", api_hall_delete)
+    app.router.add_post("/api/hall-visit", api_hall_visit)
     app.router.add_get("/api/backup", api_backup)
     app.router.add_post("/api/restore/chunk", api_restore_chunk)
     app.router.add_post("/api/restore/finish", api_restore_finish)

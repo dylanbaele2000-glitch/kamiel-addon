@@ -350,6 +350,18 @@ details.fold.sub>summary{font-size:15px}
       <p class="hint">Dit is de grond waar Kamiel doorheen wandelt. Elke schermbreedte is een plek; de randen tussen plekken worden automatisch zacht gemaakt.</p>
       <div class="pano" id="panoView"></div>
     </div>
+    <div class="card" id="cardHalls">
+      <h2>🏛️ Zalen</h2>
+      <p class="hint">Af en toe wandelt Kamiel geen landschap binnen maar een zaal. In het <b>museum</b> hangen jullie foto's als schilderijen (tik erop om ze van dichtbij te zien), in de <b>disco</b> lichten de vloertegels op in de maat van de muziek (tik op een tegel of op de discobal), in de <b>sterrenwacht</b> tik je vallende sterren in de lucht en kijk je door de telescoop. Je kan ook zelf zalen maken met je eigen achtergrond: tik daar op het scherm en er vliegt confetti.</p>
+      <div class="settings"><label class="field" for="hChanceZ">Kans dat een nieuwe plek een zaal is<label class="pct"><input type="number" id="hChanceZ" min="0" max="100" step="1"> %</label></label></div>
+      <div id="hallList" class="rems" style="gap:8px"></div>
+      <div class="row"><button type="button" class="primary" id="hallSave">Opslaan</button><span class="status" id="hallStatus" role="status"></span></div>
+      <h3 style="margin:10px 0 0;font-size:15px">Een eigen zaal maken</h3>
+      <p class="hint">Kies een afbeelding die de hele zaal toont, van het plafond tot de vloer (liggend, zoals het tabletscherm). Kamiel loopt over de onderkant, ongeveer op een vijfde van onderen: hou daar een vloer.</p>
+      <div class="row"><input type="text" id="hallName" maxlength="40" placeholder="Naam, bv. Onze woonkamer" style="max-width:280px">
+        <label class="btn" for="hallFile" style="cursor:pointer">Afbeelding kiezen…</label><input type="file" id="hallFile" accept="image/*" class="sr">
+        <span class="status" id="hallUpStatus" role="status"></span></div>
+    </div>
     <form class="card" id="panoForm">
       <h2>Panorama vervangen</h2>
       <p class="hint">Kies je panoramabestanden. Ze worden achter elkaar gezet in alfabetische volgorde van hun naam, dus noem ze bijvoorbeeld 1.png, 2.png. De lucht moet transparant zijn. Verwerken duurt ongeveer een minuut.</p>
@@ -526,6 +538,19 @@ details.fold.sub>summary{font-size:15px}
       </div>
       <label class="sw"><input type="checkbox" id="mToHa"><span><b>Batterij, scherm en beweging doorgeven aan Home Assistant</b><span>Dan heb je in Home Assistant <code>sensor.kamiel_tablet_batterij</code>, <code>binary_sensor.kamiel_tablet_lader</code>, <code>binary_sensor.kamiel_tablet_scherm</code> en <code>binary_sensor.kamiel_tablet_beweging</code>, voor je eigen automatiseringen. Daarvoor is de Fully Kiosk-integratie niet nodig.</span></span></label>
       <div class="row"><button type="button" class="primary" id="mSave">Opslaan</button><span class="status" id="mStatus" role="status"></span></div>
+    </div>
+
+    <div class="card" id="cardAir">
+      <h2>🌬️ Luchtkwaliteit</h2>
+      <p class="hint">Heb je een CO₂- of luchtkwaliteitssensor in Home Assistant? Dan wordt Kamiel suf als de lucht bedompt is: zijn hoofd hangt, zijn ogen vallen dicht, hij loopt trager en de wereld wordt wazig. Bij echt slechte lucht valt hij af en toe in slaap. Zet je een raam open, dan rekt hij zich uit en is hij weer fris. Het logboek houdt bij wanneer de lucht verandert.</p>
+      <label class="sw"><input type="checkbox" id="aOn"><span><b>Luchtkwaliteit volgen</b></span></label>
+      <div class="settings">
+        <label class="field" for="aEnt">Sensor<span>Bijvoorbeeld een CO₂-sensor (ppm).</span><select id="aEnt"></select></label>
+        <label class="field" for="aWarn">Suf vanaf<span>CO₂: 1000 ppm is een goede grens.</span><input type="number" id="aWarn" step="any"></label>
+        <label class="field" for="aBad">Heel suf vanaf<span>CO₂: vanaf 1500 ppm is de lucht echt slecht.</span><input type="number" id="aBad" step="any"></label>
+      </div>
+      <label class="sw"><input type="checkbox" id="aInv"><span><b>Lager is slechter</b><span>Voor sensors waar een hoog getal goed is (bv. "luchtkwaliteit 0–100 %"). Voor CO₂ laat je dit uit.</span></span></label>
+      <div class="row"><button type="button" class="primary" id="aSave">Opslaan</button><span class="status" id="aStatus" role="status"></span></div>
     </div>
 
     <div class="card" id="cardBtns">
@@ -732,6 +757,20 @@ details.fold.sub>summary{font-size:15px}
         <label class="field" for="eNormal">Soms<span>Keer per week, een willekeurige uit de lijst "soms".</span><input type="number" id="eNormal" min="0" max="50"></label>
         <label class="field" style="flex-direction:row;align-items:center;gap:8px;align-self:end"><input type="checkbox" id="eEvening"> Vaker tussen 17:00 en 19:30</label>
       </div>
+      <div class="settings">
+        <label class="field" for="eStories">Verhaaltjes<span>Keer per week een langer verhaaltje zonder woorden: Heidi's wraak, de ufo, de grote verhuis, ogen in het donker.</span><input type="number" id="eStories" min="0" max="30"></label>
+        <label class="field" for="eAurora">Noorderlicht<span>Kans per avond op noorderlicht in de lucht (bij helder weer, na zonsondergang).</span><label class="pct"><input type="number" id="eAurora" min="0" max="100" step="5"> %</label></label>
+      </div>
+      <details class="fold sub"><summary>Feestdagen en verjaardagen <small>veel meer gebeurtenissen, versiering, eigen feest-events</small></summary><div class="inner">
+        <p class="hint">Op deze dagen gebeurt er veel meer, Kamiel en de huisdieren kleden zich voor de gelegenheid, en er zijn eigen events: een verjaardagstaart met kaarsjes, een spook op Halloween, een slee door de lucht met Kerstmis, paaseieren om te zoeken (tik erop op de tablet), groot vuurwerk met Nieuwjaar, verliefd met Valentijn, pepernoten met Sinterklaas. Op verjaardagen hangen er slingers, zweven er ballonnen en dragen alle dieren een feesthoedje.</p>
+        <label class="sw"><input type="checkbox" id="fOn"><span><b>Feestdagen vieren</b></span></label>
+        <div class="settings"><label class="field" for="fBoost">Hoeveel meer gebeurt er<select id="fBoost"><option value="2">Twee keer zoveel</option><option value="3">Drie keer zoveel</option><option value="4">Vier keer zoveel</option><option value="6">Zes keer zoveel</option></select></label></div>
+        <div><b style="font-size:14px">Verjaardagen</b>
+          <div id="fDays" class="rems" style="gap:8px;margin-top:6px"></div>
+          <button type="button" id="fDayAdd" style="margin-top:8px">+ Verjaardag</button></div>
+        <div><b style="font-size:14px">Feestdagen</b><div class="days" id="fHol" style="margin-top:6px"></div></div>
+        <p class="hint">Uitproberen: met <b>▶</b> in de lijst met gebeurtenissen hieronder. De versiering zie je op de tablet met <code>?feest=verjaardag</code> (of halloween, kerst, nieuwjaar, pasen, valentijn, sinterklaas) achter het adres.</p>
+      </div></details>
       <details class="fold sub"><summary>Huisdieren <small>Wifi, Snoet, Pippa, Pebbels en Dobby</small></summary><div class="inner">
       <p class="hint">Wifi, Snoet, Pippa, Pebbels en Dobby komen langs, elk met hun eigen karakter. Meestal alleen, soms met z'n tweeën. Op de tablet kan je ze ook roepen (venster Roepen).</p>
       <div class="settings" id="petDays"></div>
@@ -1178,7 +1217,12 @@ async function renderSettings() {
   const E = s.events || {};
   $('eOn').checked = E.on !== false; $('eLama').value = E.lama_per_day === undefined ? 1 : E.lama_per_day; $('eCommon').value = E.common_per_day === undefined ? 3 : E.common_per_day;
   $('eNormal').value = E.normal_per_week === undefined ? 4 : E.normal_per_week; $('eEvening').checked = E.evening !== false;
-  const CATN = { muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdier', vaak: 'Vaak', soms: 'Soms' };
+  const CATN = { verhaal: 'Verhaaltje', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdier', vaak: 'Vaak', soms: 'Soms' };
+  $('eStories').value = E.stories_per_week === undefined ? 3 : E.stories_per_week; $('eAurora').value = E.aurora_chance === undefined ? 15 : E.aurora_chance;
+  const F = s.feest || {}; $('fOn').checked = F.on !== false; $('fBoost').value = String(F.boost || 3);
+  FDAYS = JSON.parse(JSON.stringify(F.days || [])); renderFDays();
+  const HOL = [['halloween', 'Halloween (31/10)'], ['kerst', 'Kerstmis (24–26/12)'], ['nieuwjaar', 'Nieuwjaar (31/12–1/1)'], ['pasen', 'Pasen'], ['valentijn', 'Valentijn (14/2)'], ['sinterklaas', 'Sinterklaas (5–6/12)']];
+  $('fHol').innerHTML = HOL.map(([k, n]) => `<label><input type="checkbox" class="fH" data-k="${k}" ${(F.holidays || {})[k] === false ? '' : 'checked'}> ${n}</label>`).join('');
   const PD = E.pets_per_day || {};
   $('petDays').innerHTML = [['wifi', 'Wifi'], ['snoet', 'Snoet'], ['pippa', 'Pippa'], ['pebbels', 'Pebbels'], ['dobby', 'Dobby']].map(([k, n]) =>
     `<label class="field" for="pd_${k}">${n}<span>Keer per dag.</span><input type="number" id="pd_${k}" class="petDay" data-p="${k}" min="0" max="12" value="${PD[k] === undefined ? 2 : PD[k]}"></label>`).join('');
@@ -1247,7 +1291,7 @@ $('setForm').addEventListener('submit', async (e) => {
     compose: { styles: Object.fromEntries([...document.querySelectorAll('.cStyle')].map(e => [e.dataset.s, e.checked])), color: $('compColor').checked },
     hills: { chance: +$('hChance').value || 0, height: +$('hHeight').value || 18 }, stack: { chance: +$('stChance').value || 0, max: +$('stMax').value || 3 },
     counts: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`n_${part}_${k}_0`).value || 0, +$(`n_${part}_${k}_1`).value || 0]]))])),
-    events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0, pets_together: +$('ePetTogether').value || 0, dance_chance: +$('eDance').value || 0,
+    events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0, pets_together: +$('ePetTogether').value || 0, dance_chance: +$('eDance').value || 0, stories_per_week: +$('eStories').value || 0, aurora_chance: +$('eAurora').value || 0,
       pets_stay: +$('ePetStay').value || 0, pets_lying: +$('ePetLying').value || 0, pets_stay_min: +$('ePetMin').value || 45,
       pets_per_day: Object.fromEntries([...document.querySelectorAll('.petDay')].map(e => [e.dataset.p, +e.value || 0])),
       off: [...document.querySelectorAll('.evOn')].filter(e => !e.checked).map(e => e.dataset.e) }, giant_chance: +$('sGiant').value, horizon_sink: +$('sSink').value || 0,
@@ -1261,6 +1305,7 @@ $('setForm').addEventListener('submit', async (e) => {
     windows: Object.fromEntries([...document.querySelectorAll('.wOn')].map(el => [el.dataset.k, el.checked])),
     window_titles: Object.fromEntries([...document.querySelectorAll('.wTitle')].map(el => [el.dataset.k, el.value])),
     window_close: +$('sWinClose').value, window_layout: $('sWinLayout').value,
+    feest: { on: $('fOn').checked, boost: +$('fBoost').value || 3, days: readFDays(), holidays: Object.fromEntries([...document.querySelectorAll('.fH')].map(e => [e.dataset.k, e.checked])) },
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
     outfits_off: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => !e.checked).map(e => e.dataset.o) : undefined,
     osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
@@ -1577,7 +1622,7 @@ async function renderHuis() {
   $('ruleExamples').innerHTML = '<span class="hint" style="flex-basis:100%;max-width:none">Voorbeelden (klik om toe te voegen):</span>' + EXAMPLES.map(([n], k) => `<button type="button" class="ex" data-k="${k}">${esc(n)}</button>`).join('');
   renderRules();
   BTNS = JSON.parse(JSON.stringify(s.buttons || [])); renderBtns(); renderQuick();
-  renderSelfie(); tabletStatus();
+  renderSelfie(); tabletStatus(); renderAir(); renderHalls();
 }
 $('ruleExamples').addEventListener('click', (e) => {
   const b = e.target.closest('.ex'); if (!b) return;
@@ -1618,6 +1663,70 @@ $('tTest').addEventListener('click', async () => {
 setInterval(() => { if (!$('p-huis').hidden) tabletStatus(); }, 10000);
 $('tab-huis').addEventListener('click', tabletStatus);
 ['mOn', 'mOff', 'mAfter', 'mAway', 'mToHa'].forEach(id => $(id).addEventListener('change', tabletStatus));
+
+
+/* feast days: the birthdays list */
+let FDAYS = [];
+function renderFDays() {
+  $('fDays').innerHTML = FDAYS.map((d, i) => { const [mm, dd] = (d.date || '01-01').split('-');
+    return `<div class="row" data-i="${i}"><input type="text" class="fdN" maxlength="30" value="${esc(d.name || '')}" placeholder="Naam (bv. van wie)" style="max-width:220px">
+      <input type="number" class="fdD" min="1" max="31" value="${+dd}" style="width:5em" aria-label="Dag"> /
+      <input type="number" class="fdM" min="1" max="12" value="${+mm}" style="width:5em" aria-label="Maand">
+      <button type="button" class="fdX danger">Weg</button></div>`; }).join('') || '<span class="hint">Nog geen verjaardagen.</span>';
+}
+function readFDays() {
+  return [...document.querySelectorAll('#fDays [data-i]')].map(r => ({ name: r.querySelector('.fdN').value,
+    date: String(Math.min(12, Math.max(1, +r.querySelector('.fdM').value || 1))).padStart(2, '0') + '-' + String(Math.min(31, Math.max(1, +r.querySelector('.fdD').value || 1))).padStart(2, '0') }));
+}
+$('fDayAdd').addEventListener('click', () => { FDAYS = readFDays(); FDAYS.push({ name: '', date: '01-01' }); renderFDays(); });
+$('fDays').addEventListener('click', (e) => { const b = e.target.closest('.fdX'); if (!b) return; FDAYS = readFDays(); FDAYS.splice(+b.closest('[data-i]').dataset.i, 1); renderFDays(); });
+
+/* halls */
+const HALLS0 = [['museum', '🖼️ Museum', 'Jullie foto\'s als schilderijen.'], ['disco', '🪩 Disco', 'Tegels die oplichten in de maat.'], ['sterren', '🔭 Sterrenwacht', 'Sterren, een planeet en een telescoop.']];
+let HCUSTOM = [];
+function renderHalls() {
+  const H0 = world.settings.halls || {}, off = H0.off || [];
+  $('hChanceZ').value = H0.chance === undefined ? 12 : H0.chance;
+  HCUSTOM = JSON.parse(JSON.stringify(H0.custom || []));
+  $('hallList').innerHTML = HALLS0.map(([id, n, d]) => `<div class="row"><label class="sw" style="flex:1"><input type="checkbox" class="hOn" data-id="${id}" ${off.includes(id) ? '' : 'checked'}><span><b>${n}</b><span>${d}</span></span></label>
+      <button type="button" class="hGo" data-id="${id}">▶ Ga erheen</button></div>`).join('')
+    + HCUSTOM.map((c, i) => `<div class="row" data-c="${i}"><img src="media/${esc(c.file)}" alt="" style="width:96px;height:60px;object-fit:cover;border-radius:8px">
+      <input type="text" class="hcN" maxlength="40" value="${esc(c.name)}" style="max-width:200px" aria-label="Naam van de zaal">
+      <label><input type="checkbox" class="hcOn" ${c.on !== false ? 'checked' : ''}> aan</label>
+      <label><input type="checkbox" class="hcEl" ${c.elements ? 'checked' : ''}> met elementen op de grond</label>
+      <button type="button" class="hGo" data-id="${esc(c.id)}">▶ Ga erheen</button><button type="button" class="hcX danger" data-id="${esc(c.id)}">Wissen</button></div>`).join('');
+}
+$('hallList').addEventListener('click', async (e) => {
+  const go = e.target.closest('.hGo'), del = e.target.closest('.hcX');
+  if (go) { const r = await fetch('api/hall-visit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: go.dataset.id }) });
+    status($('hallStatus'), r.ok ? 'Kamiel wandelt er binnen enkele seconden naartoe (als hij niet net iets anders doet).' : 'Lukte niet.', r.ok ? 'ok' : 'err'); }
+  if (del && confirm('Deze zaal wissen?')) { await fetch('api/halls/' + del.dataset.id, { method: 'DELETE' }); await load(); renderHalls(); }
+});
+$('hallSave').addEventListener('click', async () => {
+  const custom = [...document.querySelectorAll('#hallList [data-c]')].map(r => Object.assign({}, HCUSTOM[+r.dataset.c], { name: r.querySelector('.hcN').value, on: r.querySelector('.hcOn').checked, elements: r.querySelector('.hcEl').checked }));
+  const body = { halls: { chance: +$('hChanceZ').value || 0, off: [...document.querySelectorAll('.hOn')].filter(e => !e.checked).map(e => e.dataset.id), custom } };
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  status($('hallStatus'), r.ok ? 'Bewaard.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+$('hallFile').addEventListener('change', async () => {
+  const f = $('hallFile').files[0]; if (!f) return;
+  status($('hallUpStatus'), 'Bezig…');
+  const fd = new FormData(); fd.append('name', $('hallName').value || f.name.replace(/\.[^.]+$/, '')); fd.append('file', await shrink(f, 1600, 'image/jpeg', .92), f.name);
+  const r = await fetch('api/halls', { method: 'POST', body: fd }); const j = await r.json().catch(() => ({}));
+  status($('hallUpStatus'), j.ok ? 'Zaal toegevoegd.' : (j.error || 'Lukte niet.'), j.ok ? 'ok' : 'err');
+  $('hallFile').value = ''; $('hallName').value = ''; await load(); renderHalls();
+});
+
+/* air quality */
+function renderAir() {
+  const A0 = world.settings.air || {};
+  $('aOn').checked = !!A0.on; $('aWarn').value = A0.warn === undefined ? 1000 : A0.warn; $('aBad').value = A0.bad === undefined ? 1500 : A0.bad; $('aInv').checked = !!A0.invert;
+  $('aEnt').innerHTML = entOpts(['sensor'], A0.entity || '', 'Kies een sensor');
+}
+$('aSave').addEventListener('click', async () => {
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ air: { on: $('aOn').checked, entity: $('aEnt').value, warn: $('aWarn').value, bad: $('aBad').value, invert: $('aInv').checked } }) });
+  status($('aStatus'), r.ok ? 'Bewaard.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
 
 /* selfies */
 async function renderSelfie() {
