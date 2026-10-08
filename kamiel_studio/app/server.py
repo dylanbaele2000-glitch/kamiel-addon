@@ -109,7 +109,8 @@ DEFAULT_SETTINGS = {
     # "if this happens, then Kamiel does that": a list of rules (see RULES below)
     "rules": [],
     # the tablet's own camera (Fully Kiosk PLUS: motion detection + JavaScript interface)
-    "motion": {"on": False, "look": True, "wake": True, "screen_off": "nooit", "off_after": 10, "entity": ""},
+    "motion": {"on": False, "look": True, "wake": True, "screen_off": "nooit", "off_after": 10, "entity": "",
+               "away_off": False, "away_entity": "zone.home", "to_ha": True},
     # lights and sockets to switch from the Lampen window on the tablet
     "lamps": [],
     # selfies on Telegram: when someone is away for days, and once a month out of the blue
@@ -800,6 +801,11 @@ async def api_settings(request):
                 m["off_after"] = max(1, min(240, int(b["off_after"])))
             if "entity" in b:
                 m["entity"] = str(b["entity"]).strip()[:120]
+            for k in ("away_off", "to_ha"):
+                if k in b:
+                    m[k] = bool(b[k])
+            if "away_entity" in b:
+                m["away_entity"] = str(b["away_entity"]).strip()[:120] or "zone.home"
         if isinstance(body.get("selfie"), dict):
             m, b = s["selfie"], body["selfie"]
             for k in ("on", "monthly", "pets"):
@@ -963,6 +969,8 @@ async def api_live(request):
            "actions": [a for a in db.get("actions", []) if a.get("at", 0) > time.time() - 120]}
     try:
         out["message"] = await current_message(db)
+        if (s.get("motion") or {}).get("away_off"):
+            out["away"] = await nobody_home(s)
         if s.get("media_player"):
             st = await ha_get("/states/" + s["media_player"])
             if st:
@@ -2322,7 +2330,99 @@ async def watch_loop():
 
 async def api_motion(request):
     """The tablet saw someone (Fully Kiosk motion detection)."""
+    first = time.time() - WATCH["motion"] > 60
     WATCH["motion"] = time.time()
+    if first:
+        asyncio.ensure_future(tablet_to_ha())
+    return web.json_response({"ok": True})
+
+
+# ----------------------------------------------------------------- the tablet itself: how it is doing (Studio → Huis → De tablet)
+TABLET = {"seen": 0, "info": {}, "last_away": None, "pushed": 0}
+
+
+async def nobody_home(s):
+    """True when nobody is home: zone.home counts the people at home (or a person/group entity that is not 'home')."""
+    ent = (s.get("motion") or {}).get("away_entity") or "zone.home"
+    st = await ha_get("/states/" + ent)
+    if not st:
+        return None
+    v = str(st.get("state", ""))
+    away = v == "0" if ent.startswith("zone.") else v not in ("home", "on", "unknown", "unavailable")
+    if TABLET["last_away"] is not None and away != TABLET["last_away"]:
+        log("huis", "Niemand meer thuis: het scherm gaat uit." if away else "Er is iemand thuis: het scherm gaat weer aan.")
+    TABLET["last_away"] = away
+    return away
+
+
+async def ha_set_state(entity, state, attrs):
+    """Make (or update) an entity in Home Assistant, so automations there can use what the tablet knows."""
+    if not TOKEN:
+        return False
+    async with ClientSession(timeout=ClientTimeout(total=8)) as sess:
+        async with sess.post(f"{HA_URL}/states/{entity}", json={"state": state, "attributes": attrs},
+                             headers={"Authorization": "Bearer " + TOKEN}) as r:
+            return r.status < 300
+
+
+async def tablet_to_ha():
+    s = load_db()["settings"].get("motion") or {}
+    if not s.get("to_ha", True):
+        return
+    i = TABLET["info"]
+    try:
+        if i.get("battery") is not None:
+            await ha_set_state("sensor.kamiel_tablet_batterij", int(i["battery"]), {"unit_of_measurement": "%", "device_class": "battery",
+                               "state_class": "measurement", "friendly_name": "Kamiel tablet batterij", "icon": "mdi:tablet"})
+        if i.get("plugged") is not None:
+            await ha_set_state("binary_sensor.kamiel_tablet_lader", "on" if i["plugged"] else "off", {"device_class": "plug", "friendly_name": "Kamiel tablet aan de lader"})
+        if i.get("screen") is not None:
+            await ha_set_state("binary_sensor.kamiel_tablet_scherm", "on" if i["screen"] else "off", {"friendly_name": "Kamiel tablet scherm aan", "icon": "mdi:monitor"})
+        if await ha_set_state("binary_sensor.kamiel_tablet_beweging", "on" if time.time() - WATCH["motion"] < 60 else "off",
+                              {"device_class": "motion", "friendly_name": "Kamiel tablet beweging"}):
+            TABLET["pushed"] = time.time()
+    except Exception as e:
+        log("fout", "Tabletgegevens naar Home Assistant sturen mislukt: " + str(e), quiet=True)
+
+
+async def api_tablet_status_post(request):
+    """Every minute the tablet tells how it is doing (Fully Kiosk: battery, screen, motion detection…)."""
+    try:
+        b = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest()
+    keep = {}
+    for k in ("fully", "js", "motion_detect", "screen", "plugged"):
+        if k in b and b[k] is not None:
+            keep[k] = bool(b[k])
+    for k in ("battery", "w", "h", "last_motion"):
+        try:
+            if b.get(k) is not None:
+                keep[k] = float(b[k])
+        except (TypeError, ValueError):
+            pass
+    for k in ("version", "ip", "plan"):
+        if b.get(k):
+            keep[k] = str(b[k])[:60]
+    TABLET["seen"] = time.time(); TABLET["info"] = keep
+    asyncio.ensure_future(tablet_to_ha())
+    return web.json_response({"ok": True})
+
+
+async def api_tablet_status_get(request):
+    s = load_db()["settings"]
+    m = s.get("motion") or {}
+    away = await nobody_home(s) if m.get("away_off") else None
+    zone = await ha_get("/states/" + (m.get("away_entity") or "zone.home"))
+    return web.json_response({"seen": TABLET["seen"], "ago": time.time() - TABLET["seen"] if TABLET["seen"] else None, "info": TABLET["info"],
+                              "night": is_night(s), "night_start": s.get("night_start"), "night_end": s.get("night_end"),
+                              "away": away, "home_count": (zone or {}).get("state"), "motion_ago": time.time() - WATCH["motion"] if WATCH["motion"] else None,
+                              "pushed": TABLET["pushed"], "connected": bool(TOKEN)})
+
+
+async def api_screen_test(request):
+    async with lock:
+        db = load_db(); push_action(db, {"type": "scherm", "secs": 10}); save_db(db, bump=False)
     return web.json_response({"ok": True})
 
 
@@ -2361,6 +2461,7 @@ def common_routes(app):
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
     app.router.add_post("/api/log", api_log_post)
     app.router.add_post("/api/motion", api_motion)
+    app.router.add_post("/api/tablet-status", api_tablet_status_post)
 
 
 def make_studio():
@@ -2393,6 +2494,8 @@ def make_studio():
     app.router.add_post("/api/rule-test", api_rule_test)
     app.router.add_get("/api/services", api_services)
     app.router.add_get("/api/logboek", api_log_get)
+    app.router.add_get("/api/tablet-status", api_tablet_status_get)
+    app.router.add_post("/api/screen-test", api_screen_test)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
     app.router.add_get("/api/backup", api_backup)
     app.router.add_post("/api/restore/chunk", api_restore_chunk)

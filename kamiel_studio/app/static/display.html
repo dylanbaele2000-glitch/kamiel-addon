@@ -510,6 +510,7 @@ function tryTV(p, o, h, w, extra, layer = 2) {
 async function pollLive() {
   let j; try { j = await (await fetch('api/live', { cache: 'no-store' })).json(); } catch (e) { return; }
   setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
+  setAway(j.away);
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
   media = m; if (j.dismissed) remDismissed = j.dismissed;
@@ -558,24 +559,50 @@ function doAction(a) {
   else if (a.type === 'rust') calmUntil = a.on === false ? 0 : Date.now() + (a.minutes || 30) * 60000;
   else if (a.type === 'vertrek') showBoard();
   else if (a.type === 'beweging') sawSomeone(false);
+  else if (a.type === 'scherm') { screen(false, 'test vanuit de Studio'); setTimeout(() => { screenWhy = ''; screen(true, 'einde test'); lastMotion = Date.now(); applyScreen(); }, (a.secs || 10) * 1000); }
 }
-/* the tablet's own camera: Fully Kiosk (PLUS) sees movement and tells us through its JavaScript interface */
+/* the tablet itself, through Fully Kiosk's JavaScript interface (Fully PLUS, "Enable JavaScript Interface"):
+   it sees movement, turns the screen on and off, and tells the Studio how it is doing (battery, screen…) */
 const MOT = S.motion || {};
-let lastMotion = Date.now();
+const FK = () => (typeof fully !== 'undefined' && fully) ? fully : null;
+const fk = (fn, d) => { try { const f = FK(); return f ? fn(f) : d; } catch (e) { return d; } };
+let lastMotion = Date.now(), seenMotion = 0, awayNow = false, screenWhy = '';   // lastMotion also counts the start; seenMotion only real movement
 function sawSomeone(report) {
-  const n = Date.now(), recent = n - lastMotion < 25000; lastMotion = n;
+  const n = Date.now(), recent = n - lastMotion < 25000; lastMotion = n; seenMotion = n;
   if (report) fetch('api/motion', { method: 'POST' }).catch(() => {});
-  if (MOT.wake && window.fully) { try { if (!fully.getScreenOn()) fully.turnScreenOn(); } catch (e) { } }
+  if (MOT.wake !== false) screen(true, 'beweging');
   if (!recent && MOT.look !== false && !calm()) EV.request('kijken');
 }
 window.__kamielMotion = () => sawSomeone(true);
-if (MOT.on && window.fully) { try { fully.bind('onMotion', 'window.__kamielMotion && window.__kamielMotion();'); } catch (e) { } }
-// no one around for a while: the screen may go dark (and comes back on with movement)
-setInterval(() => {
-  if (!MOT.on || !window.fully || !MOT.screen_off || MOT.screen_off === 'nooit') return;
-  if (MOT.screen_off === 'nacht' && !isNightTime(now())) return;
-  if (Date.now() - lastMotion > (MOT.off_after || 10) * 60000) { try { if (fully.getScreenOn()) fully.turnScreenOff(true); } catch (e) { } }
-}, 30000);
+if (MOT.on) fk(f => f.bind('onMotion', 'window.__kamielMotion && window.__kamielMotion();'));
+function screen(on, why) {
+  const isOn = fk(f => f.getScreenOn(), null);
+  if (isOn === null || isOn === on) return;
+  fk(f => on ? f.turnScreenOn() : f.turnScreenOff(true));   // true: keep running, so it can wake up again
+  if (why !== screenWhy) { screenWhy = why; tlog('tablet', on ? 'Scherm aan (' + why + ').' : 'Scherm uit (' + why + ').'); }
+}
+// what the screen should do now; also sent to the Studio so you can see it is working
+function screenPlan() {
+  const idle = (Date.now() - lastMotion) / 60000, recent = Date.now() - seenMotion < 120000;
+  if (MOT.away_off && awayNow && !recent) return ['uit', 'niemand thuis'];
+  if (MOT.on && MOT.screen_off && MOT.screen_off !== 'nooit' && (MOT.screen_off === 'altijd' || isNightTime(now())) && idle > (MOT.off_after || 10))
+    return ['uit', MOT.screen_off === 'nacht' ? "'s nachts, geen beweging" : 'geen beweging'];
+  return ['aan', ''];
+}
+function applyScreen() { const [w, why] = screenPlan(); if (w === 'uit') screen(false, why); }
+setInterval(applyScreen, 30000);
+function setAway(a) {
+  if (a === undefined || a === null || a === awayNow) return;
+  awayNow = a;
+  if (!a && MOT.away_off) screen(true, 'iemand thuis'); else applyScreen();
+}
+function reportTablet() {
+  const st = { fully: !!FK() || /fully/i.test(navigator.userAgent), js: !!FK(), version: fk(f => f.getFullyVersion(), ''), battery: fk(f => f.getBatteryLevel(), null), plugged: fk(f => f.isPlugged(), null),
+    screen: fk(f => f.getScreenOn(), null), motion_detect: fk(f => f.getBooleanSetting('motionDetection'), null), ip: fk(f => f.getIp4Address(), ''),
+    w: innerWidth, h: innerHeight, last_motion: (Date.now() - lastMotion) / 1000, plan: screenPlan().join(': ') };
+  fetch('api/tablet-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) }).catch(() => {});
+}
+setTimeout(reportTablet, 4000); setInterval(reportTablet, 60000);
 const calm = () => Date.now() < calmUntil;
 // a still from a camera (the doorbell, or any rule): a frame right next to Kamiel, until its time is up or someone taps it
 let doorTimer = null;

@@ -208,6 +208,13 @@ details.fold>summary small{font:400 13px var(--f-ui);color:var(--muted)}
 details.fold>.inner{display:flex;flex-direction:column;gap:12px;padding:6px 0 4px}
 details.fold.sub{margin-top:6px;border-top:1px dashed var(--line)}
 details.fold.sub>summary{font-size:15px}
+.tstat{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}
+.tst{display:grid;grid-template-columns:1.6em minmax(0,1fr);gap:2px 8px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--bg);font-size:14px}
+.tst b{font-weight:600}
+.tst .ic{font-size:16px;line-height:1.3}
+.tst span.d{grid-column:2;color:var(--muted);font-size:13px}
+.tst.bad{border-color:color-mix(in srgb,var(--danger) 55%,var(--line))}
+.tst.ok{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@700&display=swap">
 <script src="static/reminder.js"></script>
@@ -484,7 +491,9 @@ details.fold.sub>summary{font-size:15px}
     </div>
 
     <div class="card" id="cardMot">
-      <h2>📷 Camera van de tablet</h2>
+      <h2>📱 De tablet: scherm, camera en batterij</h2>
+      <div class="tstat" id="tStat" aria-live="polite"><div class="empty">De status van de tablet wordt geladen…</div></div>
+      <div class="row"><button type="button" id="tTest">Test: scherm 10 seconden uit</button><span class="status" id="tTestStatus" role="status"></span></div>
       <p class="hint">De tablet kan met zijn eigen camera zien dat er iemand voor staat. Dan komt Kamiel nieuwsgierig dichterbij kijken, gaat het scherm aan, en kan het scherm uit als er lang niemand is. Er worden <b>geen</b> foto's of filmpjes gemaakt: de tablet ziet alleen "er beweegt iets".</p>
       <details class="guide">
         <summary>Hoe stel ik dit in? (in Fully Kiosk op de tablet)</summary>
@@ -509,6 +518,13 @@ details.fold.sub>summary{font-size:15px}
           <span>Optioneel, in plaats van (of naast) de camera van de tablet.</span>
           <select id="mEnt"></select></label>
       </div>
+      <label class="sw"><input type="checkbox" id="mAway"><span><b>Scherm uit als niemand thuis is</b><span>Komt er iemand thuis, dan gaat het weer aan. Ziet de tablet toch beweging, dan gaat het scherm even aan.</span></span></label>
+      <div class="settings">
+        <label class="field" for="mAwayEnt">Wie is er thuis
+          <span>Standaard <code>zone.home</code>: dat telt hoeveel personen thuis zijn. Werkt als de Home Assistant-app op jullie gsm's staat, met locatie aan.</span>
+          <select id="mAwayEnt"></select></label>
+      </div>
+      <label class="sw"><input type="checkbox" id="mToHa"><span><b>Batterij, scherm en beweging doorgeven aan Home Assistant</b><span>Dan heb je in Home Assistant <code>sensor.kamiel_tablet_batterij</code>, <code>binary_sensor.kamiel_tablet_lader</code>, <code>binary_sensor.kamiel_tablet_scherm</code> en <code>binary_sensor.kamiel_tablet_beweging</code>, voor je eigen automatiseringen. Daarvoor is de Fully Kiosk-integratie niet nodig.</span></span></label>
       <div class="row"><button type="button" class="primary" id="mSave">Opslaan</button><span class="status" id="mStatus" role="status"></span></div>
     </div>
 
@@ -1537,7 +1553,8 @@ $('dbTest').addEventListener('click', async () => {
   status($('dbStatus'), r.ok ? 'Ding dong! Kijk op de tablet (binnen een paar seconden).' : 'Testen lukte niet.', r.ok ? 'ok' : 'err');
 });
 $('mSave').addEventListener('click', async () => {
-  const b = { motion: { on: $('mOn').checked, look: $('mLook').checked, wake: $('mWake').checked, screen_off: $('mOff').value, off_after: +$('mAfter').value || 10, entity: $('mEnt').value } };
+  const b = { motion: { on: $('mOn').checked, look: $('mLook').checked, wake: $('mWake').checked, screen_off: $('mOff').value, off_after: +$('mAfter').value || 10, entity: $('mEnt').value,
+    away_off: $('mAway').checked, away_entity: $('mAwayEnt').value || 'zone.home', to_ha: $('mToHa').checked } };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
   status($('mStatus'), r.ok ? 'Bewaard. Herlaad de tablet om het te laten werken.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
@@ -1551,13 +1568,16 @@ async function renderHuis() {
   $('dbOn').checked = !!D.on; $('dbTrigger').value = D.trigger || ''; $('dbMode').value = D.mode || 'auto';
   $('dbCam').innerHTML = entOpts(['camera'], D.camera || '', 'Geen camera'); $('dbMin').value = D.minutes || 10;
   $('dbPets').checked = D.pets !== false; $('dbTg').checked = D.telegram !== false; $('dbKeep').checked = !!D.keep;
+  $('mAway').checked = !!M.away_off; $('mToHa').checked = M.to_ha !== false;
+  $('mAwayEnt').innerHTML = entOpts(['zone', 'group', 'person', 'binary_sensor', 'input_boolean'], M.away_entity || 'zone.home', 'zone.home (standaard)');
+  if (!M.away_entity || M.away_entity === 'zone.home') $('mAwayEnt').value = ENTMAP['zone.home'] ? 'zone.home' : '';
   $('mOn').checked = !!M.on; $('mLook').checked = M.look !== false; $('mWake').checked = M.wake !== false; $('mOff').value = M.screen_off || 'nooit'; $('mAfter').value = M.off_after || 10;
   $('mEnt').innerHTML = entOpts(['binary_sensor'], M.entity || '', 'Geen (alleen de tablet)');
   RULES = JSON.parse(JSON.stringify(s.rules || []));
   $('ruleExamples').innerHTML = '<span class="hint" style="flex-basis:100%;max-width:none">Voorbeelden (klik om toe te voegen):</span>' + EXAMPLES.map(([n], k) => `<button type="button" class="ex" data-k="${k}">${esc(n)}</button>`).join('');
   renderRules();
   BTNS = JSON.parse(JSON.stringify(s.buttons || [])); renderBtns(); renderQuick();
-  renderSelfie();
+  renderSelfie(); tabletStatus();
 }
 $('ruleExamples').addEventListener('click', (e) => {
   const b = e.target.closest('.ex'); if (!b) return;
@@ -1566,6 +1586,38 @@ $('ruleExamples').addEventListener('click', (e) => {
   if (!RULES[RULES.length - 1].entity) last.querySelector('.rEnt').focus();
   status($('ruleStatus'), 'Voorbeeld toegevoegd. Kies bij ALS je eigen sensor en klik dan op "Alle regels opslaan".');
 });
+
+
+/* how the tablet is doing: a checklist, so you can see that it works */
+const agoNL = (sec) => sec === null || sec === undefined ? 'nog niet' : sec < 60 ? Math.round(sec) + ' s geleden' : sec < 3600 ? Math.round(sec / 60) + ' min geleden' : Math.round(sec / 3600) + ' uur geleden';
+async function tabletStatus() {
+  let j; try { j = await (await fetch('api/tablet-status', { cache: 'no-store' })).json(); } catch { return; }
+  const i = j.info || {}, row = (ok, title, d) => `<div class="tst ${ok === true ? 'ok' : ok === false ? 'bad' : ''}"><span class="ic">${ok === true ? '✅' : ok === false ? '⚠️' : 'ℹ️'}</span><b>${title}</b><span class="d">${d}</span></div>`;
+  const live = j.ago !== null && j.ago < 150, M = { on: $('mOn').checked, off: $('mOff').value, after: +$('mAfter').value || 10, away: $('mAway').checked, toHa: $('mToHa').checked };
+  const out = [];
+  out.push(row(live, live ? 'De tablet is verbonden' : 'De tablet meldt zich niet', live ? `Laatst gezien ${agoNL(j.ago)}. Scherm ${Math.round(i.w)}×${Math.round(i.h)}.` : (j.ago ? `Laatst gezien ${agoNL(j.ago)}. Staat hij aan en toont hij Kamiel?` : 'Sinds de laatste herstart van Kamiel Studio nog niet gezien. Staat hij aan en toont hij Kamiel? (Na een update van de Studio kan dit een minuutje duren.)')));
+  if (live) {
+    out.push(row(!!i.js, i.js ? 'Fully Kiosk: JavaScript Interface aan' : 'Fully Kiosk: JavaScript Interface staat uit', i.js ? `Versie ${i.version || '?'}${i.ip ? ', IP ' + i.ip : ''}. Kamiel kan het scherm aan en uit zetten.` : (i.fully ? 'Zet in Fully: Advanced Web Settings → <b>Enable JavaScript Interface</b> (PLUS nodig). Zonder dit kan Kamiel het scherm niet aan of uit zetten en ziet hij geen beweging.' : 'Kamiel draait niet in Fully Kiosk, of de JavaScript Interface staat uit (Advanced Web Settings → Enable JavaScript Interface).')));
+    if (i.js) out.push(row(i.motion_detect === true ? true : i.motion_detect === false ? false : null, i.motion_detect ? 'Bewegingsdetectie staat aan' : 'Bewegingsdetectie staat uit', i.motion_detect ? `Laatste beweging: ${agoNL(j.motion_ago)}. Zwaai eens voor de tablet en kijk of dit verandert.` : 'Zet in Fully: Motion Detection → <b>Enable Visual Motion Detection</b>, met de camera aan de voorkant.'));
+    if (i.battery !== undefined) out.push(row(i.battery > 20 || i.plugged ? true : false, `Batterij ${Math.round(i.battery)}%`, i.plugged ? 'Aan de lader.' : 'Niet aan de lader.'));
+    if (i.screen !== undefined) out.push(row(null, 'Scherm nu ' + (i.screen ? 'aan' : 'uit'), 'Volgens het plan: ' + (i.plan || '?').replace('aan: ', 'aan').replace('uit: ', 'uit, want ') + '.'));
+  }
+  const nightTxt = `Nacht is van ${j.night_start} tot ${j.night_end} (dat stel je in bij Instellingen). Nu is het ${j.night ? 'nacht' : 'dag'}.`;
+  if (!M.on || M.off === 'nooit') out.push(row(null, 'Scherm uit bij geen beweging: niet ingesteld', 'Zet hieronder "Reageren op beweging" aan en kies bij "Scherm uit als er niemand is" voor "Alleen \'s nachts". ' + nightTxt));
+  else out.push(row(live && i.js && i.motion_detect ? true : false, M.off === 'nacht' ? "'s Nachts gaat het scherm uit" : 'Het scherm gaat uit zonder beweging', `Na ${M.after} min zonder beweging${M.off === 'nacht' ? ", alleen 's nachts" : ''}, en weer aan bij beweging. ${nightTxt}${live && i.js && i.motion_detect ? '' : ' Werkt pas als de punten hierboven in orde zijn.'}`));
+  const hc = j.home_count;
+  if (M.away) out.push(row(j.away === null ? false : true, 'Scherm uit als niemand thuis is', j.away === null ? 'Kamiel kan niet zien wie er thuis is: kies hieronder bij "Wie is er thuis" iets dat bestaat.' : `Nu ${j.away ? 'is er niemand thuis: het scherm hoort uit te zijn' : 'is er iemand thuis'}${/^\d+$/.test(hc || '') ? ` (${hc} thuis volgens zone.home)` : ''}.`));
+  else out.push(row(null, 'Scherm uit als niemand thuis is: uit', /^\d+$/.test(hc || '') ? `Volgens Home Assistant zijn er nu ${hc} personen thuis.` : 'Vink het hieronder aan als je dat wil.'));
+  if (M.toHa) out.push(row(j.pushed && Date.now() / 1000 - j.pushed < 150 ? true : null, 'Gegevens naar Home Assistant', j.pushed ? `Bijgewerkt ${agoNL(Date.now() / 1000 - j.pushed)}: kijk in Home Assistant naar <code>sensor.kamiel_tablet_batterij</code>.` : 'Nog niets doorgegeven (de tablet moet zich eerst melden).'));
+  $('tStat').innerHTML = out.join('');
+}
+$('tTest').addEventListener('click', async () => {
+  const r = await fetch('api/screen-test', { method: 'POST' });
+  status($('tTestStatus'), r.ok ? 'Binnen een paar seconden gaat het scherm 10 seconden uit en dan weer aan. Gebeurt er niets, kijk dan naar de punten hierboven.' : 'Lukte niet.', r.ok ? 'ok' : 'err');
+});
+setInterval(() => { if (!$('p-huis').hidden) tabletStatus(); }, 10000);
+$('tab-huis').addEventListener('click', tabletStatus);
+['mOn', 'mOff', 'mAfter', 'mAway', 'mToHa'].forEach(id => $(id).addEventListener('change', tabletStatus));
 
 /* selfies */
 async function renderSelfie() {
