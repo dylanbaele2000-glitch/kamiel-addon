@@ -77,9 +77,10 @@
     { id: 'deurbel', name: 'Er wordt aangebeld', cat: 'intern' },
     { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
     { id: 'begroeten', name: 'Een huisdier komt Kamiel begroeten', cat: 'intern' },
+    { id: 'dansfeest', name: 'Dansfeest: iedereen danst op het nummer', cat: 'muziek' },
   ];
 
-  const CATS = { lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+  const CATS = { muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
   const PETS = ['wifi', 'snoet', 'pippa', 'pebbels', 'dobby'];
 
   /* ---------- the plan: when today's events happen ---------- */
@@ -800,6 +801,137 @@
     /* ---------- the events ---------- */
     const DEF = {
       // a resident housemate comes to say hello (see "housemates that stay a while")
+      // a song with a tempo is playing and, now and then, everyone comes out for a big musical number, on the beat
+      dansfeest: { long: true, run: function* () {
+        const live0 = A.beat(), test = !live0, t0 = cur.t;
+        const beatNow = () => { const b = A.beat(); if (b) return b; return test ? { bpm: 112, pos: (cur.t - t0) * 112 / 60 } : null; };
+        const bpm = beatNow().bpm, solo = bpm >= 90 ? 4 : 2;
+        const frac = (x) => x - Math.floor(x), hop = (x) => Math.sin(Math.PI * frac(x));
+        // who dances: the housemates (not those switched off) and Heidi, in a row with Kamiel in the middle
+        const names = PETS.filter(p => !(cfg.off || []).includes(p));
+        const slotsX = [-405, -290, -175, 175, 290, 405, 420].map(x => W / 2 + x);
+        const cast = [];
+        names.forEach((n, i) => {
+          const side = slotsX[i] < W / 2 ? -1 : 1, a = pet(n, side), r = residents.find(x => x.pet === n && onScreen(x) && !x.busy);
+          if (r) { r.busy = true; r.hidden = r.alpha; r.alpha = 0; a.cx = r.cx; a.res = r; }   // the one lying here gets up and joins
+          a.tx = slotsX[i]; a.sx0 = a.cx; a.home = a.cx; cast.push(a);
+        });
+        const heidiOn = !(cfg.off || []).includes('lama');
+        const hd = heidiOn ? actor({ cx: W + 140, s: .78, set: 'heidi', face: -1, eyes: 'vies' }) : null;
+        if (hd) { hd.tx = slotsX[names.length] || W / 2 + 400; hd.sx0 = hd.cx; hd.home = hd.cx; hd.llama = true; cast.push(hd); }
+        // the stage: pools of light on the grass, beams from above, notes and confetti
+        const COL = ['255,80,170', '80,200,255', '255,220,80', '170,120,255'];
+        let glow = 0, beamOn = 0;
+        fx('ground', 0, (g) => { if (glow <= 0) return; for (const a of cast.concat([{ cx: kx() }])) {
+          const c = COL[Math.floor(beatNow() ? beatNow().pos : 0) % 4], gr = g.createRadialGradient(a.cx, FEET + 4, 4, a.cx, FEET + 4, 90);
+          gr.addColorStop(0, `rgba(${c},${.35 * glow})`); gr.addColorStop(1, `rgba(${c},0)`); g.fillStyle = gr; g.beginPath(); g.ellipse(a.cx, FEET + 4, 90, 20, 0, 0, 7); g.fill(); } });
+        fx('screen', 0, (g) => { if (beamOn <= 0) return; const b = beatNow(); if (!b) return;
+          g.save(); g.globalCompositeOperation = 'lighter';
+          for (let k = 0; k < 4; k++) { const sw = Math.sin(b.pos * Math.PI / 4 + k * 1.6), x0 = W * (.12 + k * .25), x1 = x0 + sw * 220;
+            const gr = g.createLinearGradient(x0, 0, x1, FEET); gr.addColorStop(0, `rgba(${COL[k]},${.28 * beamOn})`); gr.addColorStop(1, `rgba(${COL[k]},0)`);
+            g.fillStyle = gr; g.beginPath(); g.moveTo(x0 - 10, -10); g.lineTo(x0 + 10, -10); g.lineTo(x1 + 90, FEET + 20); g.lineTo(x1 - 90, FEET + 20); g.closePath(); g.fill(); }
+          g.restore(); });
+        const conf = []; let confOn = false;
+        fx('screen', 0, (g) => { const dt = st.dt;
+          if (confOn) for (let k = 0; k < 3; k++) conf.push({ x: rnd() * W, y: -10, vx: (rnd() - .5) * 60, vy: 60 + rnd() * 90, r: rnd() * 6, c: COL[Math.floor(rnd() * 4)], life: 6 });
+          for (let i = conf.length - 1; i >= 0; i--) { const p = conf[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.r += dt * 6; if (p.life < 0 || p.y > H) { conf.splice(i, 1); continue; }
+            g.fillStyle = `rgb(${p.c})`; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillRect(-4, -2, 8, 4); g.restore(); } });
+        const notes = [];
+        fx('screen', 0, (g) => { const dt = st.dt; for (let i = notes.length - 1; i >= 0; i--) { const n = notes[i]; n.t += dt; if (n.t > 2) { notes.splice(i, 1); continue; }
+          g.globalAlpha = 1 - n.t / 2; sprC(g, SP.note, n.x + Math.sin(n.t * 4) * 10, n.y - n.t * 50, 3.2); } g.globalAlpha = 1; });
+        const burstNotes = () => { for (const a of cast) if (rnd() < .5) notes.push({ x: a.cx, y: a.feet - 110, t: 0 }); };
+        // set a dancer for this frame (pets have lift, llamas lift their feet)
+        const put = (a, o) => {
+          if (a.llama) { a.feet = FEET - (o.lift || 0); a.r = o.r || 0; a.sq = o.sq || 1; a.lockPose = !!o.pose; a.pose = o.pose || 'stand'; }
+          else { a.lift = o.lift || 0; a.r = o.r || 0; a.sq = o.sq || 1; a.sx = o.sx || 1; a.lockPose = !!o.pose; a.pose = o.pose || 'stand'; }
+          if (o.cx !== undefined) a.cx = o.cx; if (o.face) a.face = o.face; a.rate = 9;
+        };
+        // the plan, in beats
+        const S = { in: 0, bounce: 8, wave: 16, solo: 24 }; S.chorus = S.solo + (cast.length + 1) * solo; S.finale = S.chorus + 8; S.out = S.finale + 6; S.end = S.out + 6;
+        try {
+        kam.eyes = 'groot'; emote('!', 1.4);
+        let b0 = null, lastBeat = -1, stopped = false, prevPos = 0;
+        for (;;) {
+          const bt = beatNow();
+          if (!bt) { stopped = true; break; }   // the music stopped: the show is over
+          if (b0 === null) b0 = Math.ceil(bt.pos) + 1;
+          // the speaker jumped (another position report, a skip): keep the dance going, still on the beat
+          else { const diff = bt.pos - (prevPos + st.dt * bpm / 60); if (Math.abs(diff) > .5) b0 += Math.round(diff); }
+          prevPos = bt.pos;
+          const lb = bt.pos - b0, beat = Math.floor(lb), fr = frac(lb);
+          if (beat !== lastBeat) { lastBeat = beat; if (beat >= S.bounce && beat < S.out && beat % 2 === 0) burstNotes(); }
+          glow = clamp((lb + 2) / 4, 0, 1) * (lb > S.out ? clamp(1 - (lb - S.out) / 4, 0, 1) : 1);
+          beamOn = clamp((lb - S.bounce + 2) / 4, 0, 1) * (lb > S.finale + 2 ? clamp(1 - (lb - S.finale - 2) / 3, 0, 1) : 1);
+          confOn = lb >= S.chorus && lb < S.finale + 3;
+          if (lb < 0) { kam.head = .12 * hop(bt.pos); yield; continue; }   // Kamiel hears it coming
+          kam.eyes = lb < S.finale ? 'blij' : kam.eyes;
+          // Kamiel himself: a happy bounce, his own solo, the kick line
+          if (lb < S.solo) { kam.y = hop(lb) * 16; kam.head = .1 * hop(lb); kam.sq = 1 - .06 * Math.exp(-fr * 8); kam.face = Math.floor(lb / 4) % 2 ? 1 : -1; }
+          cast.forEach((a, i) => {
+            const P = PET[a.pet] || { s: 1 }, wiggle = (i % 2 ? 1 : -1);
+            if (lb < S.bounce) {   // the entrance: hopping in, one after another, like a parade
+              const p = clamp((lb - i * .5) / 6, 0, 1);
+              put(a, { cx: lerp(a.sx0, a.tx, ez(p)), lift: p > 0 && p < 1 ? hop(lb) * 14 : 0, pose: p > 0 && p < 1 ? 'walk' : 'stand', face: p < 1 ? (a.tx > a.sx0 ? 1 : -1) : (a.tx < W / 2 ? 1 : -1) });
+            } else if (lb < S.wave) {   // everyone bounces together
+              const up = hop(lb);
+              put(a, { cx: a.tx, lift: up * 18, sq: 1 - .12 * Math.exp(-fr * 8), pose: a.llama ? (up > .3 ? 'tilt' : 'stand') : (up > .3 ? 'jump' : 'stand'), face: Math.floor(lb / 2) % 2 ? 1 : -1 });
+            } else if (lb < S.solo) {   // the wave, rolling through the line
+              const local = lb - S.wave - i * .35, on = local >= 0 && (local % 2) < 1;
+              put(a, { cx: a.tx, lift: on ? hop(local) * 30 : 0, pose: on ? (a.llama ? 'tilt' : 'jump') : 'stand', r: on ? wiggle * .1 * hop(local) : 0, face: a.tx < W / 2 ? 1 : -1 });
+            }
+          });
+          // the solos: one after the other in the spotlight; the others sway
+          if (lb >= S.solo && lb < S.chorus) {
+            const k = Math.floor((lb - S.solo) / solo), t = (lb - S.solo) - k * solo;
+            cast.forEach((a, i) => { if (i !== k) put(a, { cx: a.tx, r: Math.sin(lb * Math.PI) * .07, pose: a.llama ? 'stand' : (a.pet === 'dobby' ? 'stand' : 'sit') }); });
+            if (k < cast.length) {
+              const a = cast[k], f = frac(t);
+              kam.y = 0; kam.sq = 1; kam.head = .06 * hop(lb); kam.face = a.cx > kx() ? 1 : -1;
+              if (a.llama) {   // Heidi: refuses. Then does one perfect pirouette. Then pretends it never happened.
+                if (t < solo / 2) { put(a, { cx: a.tx, pose: 'stand', face: a.tx > W / 2 ? -1 : 1 }); a.eyes = 'vies'; if (f < .05 && t < 1) emote('angry', 1, a); }
+                else { a.eyes = 'blij'; put(a, { cx: a.tx, lift: hop(t / 2) * 26, pose: 'tilt', face: Math.floor(t * 4) % 2 ? 1 : -1 }); if (t > solo - .2) { a.eyes = 'vies'; emote('dots', 1.5, a); } }
+              } else if (a.pet === 'wifi') put(a, { cx: a.tx, lift: hop(t * 2) * 18, pose: 'jump', face: Math.floor(t * 2) % 2 ? 1 : -1 });   // spinning, spinning
+              else if (a.pet === 'snoet') put(a, { cx: a.tx, lift: hop(t / 2) * 75, pose: 'jump', r: frac(t / 2) * Math.PI * 2 });   // a twirl, high in the air
+              else if (a.pet === 'pippa') { put(a, { cx: a.tx, lift: 14 + hop(t) * 12, pose: 'jump', r: Math.sin(t * Math.PI / 2) * .3 }); if (f < .04) emote('sparks', .8, a); }   // ballet
+              else if (a.pet === 'pebbels') { const dir = a.face > 0 ? 1 : -1; a.pose = 'walk'; a.lockPose = true; a.rate = -9; a.cx = a.tx - dir * 60 * (t / solo); a.lift = 0; a.r = 0; }   // the moonwalk
+              else if (a.pet === 'dobby') put(a, { cx: a.tx, lift: hop(t) * 46, pose: 'jump', r: Math.sin(f * Math.PI * 2) * .6, sx: f > .35 && f < .65 ? -1 : 1 });   // binkies
+              if (f < .04 && (a.pet === 'wifi' || a.pet === 'snoet')) emote('burst', .4, a);
+            } else {   // Kamiel's own solo, last: the big finish of the solos
+              kam.y = hop(t) * 46; kam.r = Math.sin(t * Math.PI / 2) * .18; kam.face = Math.floor(t) % 2 ? 1 : -1; kam.head = .15 * hop(t);
+              if (frac(t) < .04) emote('sparks', .8);
+            }
+          }
+          // the kick line: everyone in time, tilting left, right, left
+          if (lb >= S.chorus && lb < S.finale) {
+            const side = Math.floor(lb) % 2 ? 1 : -1;
+            cast.forEach(a => put(a, { cx: a.tx, lift: hop(lb * 2) * 10, r: side * .16, pose: a.llama ? 'tilt' : 'jump', face: side }));
+            kam.r = side * .12; kam.y = hop(lb * 2) * 10; kam.face = side; kam.head = .08;
+          }
+          // the finale: one big jump together, and then the pose
+          if (lb >= S.finale && lb < S.out) {
+            const t = lb - S.finale;
+            if (t < 1) { cast.forEach(a => put(a, { cx: a.tx, lift: hop(t) * 70, pose: a.llama ? 'tilt' : 'jump', face: a.tx < W / 2 ? 1 : -1 })); kam.y = hop(t) * 80; kam.r = 0; }
+            else {
+              if (lastBeat === S.finale + 1 && fr < .05) { cast.forEach(a => emote('hearts', 2.5, a)); emote('hearts', 2.5); for (let k = 0; k < 60; k++) conf.push({ x: kx() + (rnd() - .5) * 200, y: FEET - 150, vx: (rnd() - .5) * 600, vy: -200 - rnd() * 300, r: 0, c: COL[k % 4], life: 3 }); }
+              cast.forEach(a => { put(a, { cx: a.tx, pose: a.llama ? 'tilt' : (a.pet === 'dobby' ? 'up' : 'sit'), face: a.tx < W / 2 ? 1 : -1 }); if (a.llama) a.eyes = 'blij'; });
+              kam.y = 0; kam.r = 0; kam.head = -.1; kam.eyes = 'blij'; kam.sq = 1;
+            }
+          }
+          // and off they go (those that were lying here go back to their spot)
+          if (lb >= S.out) {
+            const p = clamp((lb - S.out) / 5, 0, 1);
+            cast.forEach(a => { const to = a.res ? a.res.cx : a.home; put(a, { cx: lerp(a.tx, to, ez(p)), lift: p < 1 ? hop(lb) * 10 : 0, pose: p < 1 ? 'walk' : 'stand', face: to > a.tx ? 1 : -1 }); });
+            kam.head = 0; kam.eyes = '';
+            if (lb >= S.end) break;
+          }
+          yield;
+        }
+        if (stopped) { kam.eyes = 'groot'; emote('?', 1.5); cast.forEach(a => { if (!a.llama) { a.pose = 'stand'; a.lift = 0; } }); yield* wait(1); }
+        } finally {
+          for (const a of cast) { a.alpha = 0; if (a.res) { a.res.alpha = a.res.hidden || 1; a.res.busy = false; } }
+          kam.y = 0; kam.r = 0; kam.head = 0; kam.eyes = ''; kam.sq = 1;
+        }
+      } },
       begroeten: { can: () => !!greetFor && !greetFor.gone && !greetFor.busy && onScreen(greetFor), run: function* () { yield* greetRun(greetFor); } },
       // Heidi: the white lama. Lots of personality, mostly annoying: she won't cooperate and hates everything.
       lama: { run: function* () {
@@ -1698,7 +1830,7 @@
     const offList = () => (cfg.off || []);
     const can = (id) => { const d = DEF[id]; try { return !!d && (!d.can || d.can()); } catch (e) { return false; } };
     function choose(cat, forced) {
-      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern') && (forced || !offList().includes(e.id)) && can(e.id));
+      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern' && e.cat !== 'muziek') && (forced || !offList().includes(e.id)) && can(e.id));
       return pool.length ? pick(pool).id : null;
     }
     function start(id) {
@@ -1738,7 +1870,7 @@
       }
       let done = false;
       try { done = cur.gen.next().done; } catch (e) { console.error('event', cur.id, e); done = true; }
-      if (done || cur.t > 66) finish();
+      if (done || cur.t > (DEF[cur.id] && DEF[cur.id].long ? 150 : 66)) finish();
     }
     function draw(layer, g) {
       if (layer === 'back' || layer === 'front') for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) A.drawPet(g, a);

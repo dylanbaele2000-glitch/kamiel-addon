@@ -514,6 +514,13 @@ async function pollLive() {
   const m = j.media, playing = !!(m && m.playing);
   media = m; if (j.dismissed) remDismissed = j.dismissed;
   if (playing && m.art && m.art !== coverKey) { coverKey = m.art; coverImg = load('api/cover?v=' + m.art); }
+  // a new song with a tempo: now and then everyone comes out to dance (1 in N songs, set in the Studio)
+  if (lastSong === null) lastSong = playing && m.bpm ? m.title : '';   // after a reload: not for the song that was already on
+  else if (playing && m.bpm && m.title && m.title !== lastSong) {
+    const n = (S.events || {}).dance_chance === undefined ? 20 : +(S.events || {}).dance_chance;
+    if (n > 0 && rnd() < 1 / n && !calm()) { EV.request('dansfeest'); tlog('event', 'Dansfeest op “' + m.title + '” (' + m.bpm + ' bpm)'); }
+    lastSong = m.title;
+  } else if (!playing) lastSong = '';
   if (playing !== musicOn) {
     musicOn = playing;
     for (let i = 0; i < N; i++) { if (musicOn) addMusic(i); else if (!visible(i)) dropMusic(places[i]); }
@@ -541,7 +548,7 @@ async function pollLive() {
   setTimers(j.timers);
   if (tr) lastTrigger = tr.changed;
 }
-let lastSnap = null, lastEventN = null, lastActionN = null;
+let lastSnap = null, lastEventN = null, lastActionN = null, lastSong = null;
 let tempOutfit = null, tempOutfitUntil = 0, calmUntil = 0;
 let doorPets = false;   // the doorbell event: do Wifi and Snoet come barking along
 function doAction(a) {
@@ -1119,6 +1126,14 @@ function drawGround() {
 }
 // a song from the list in the Studio is playing: Kamiel nods along, a quick dip of the head on every beat
 let media = null;
+// where we are in the song, in beats (null when no song with a tempo is playing)
+function beatNow() {
+  const bpm = +params.get('bpm') || (musicOn && media && media.bpm);
+  if (!bpm) return null;
+  const pos = media && media.position !== null && media.position !== undefined && media.updated
+    ? media.position + (Date.now() / 1000 - media.updated) : performance.now() / 1000;
+  return { bpm, pos: pos * bpm / 60 };
+}
 function nodAngle() {
   const bpm = +params.get('bpm') || (media && media.bpm);   // ?bpm=128 to try it out
   if (!(musicOn || params.get('bpm')) || !bpm) return 0;
@@ -1404,7 +1419,7 @@ EV = KamielEvents.create({
   night: () => isNightTime(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
-  now, doorPets: () => doorPets, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
+  now, doorPets: () => doorPets, beat: beatNow, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
   onStart: (id, name, cat) => { if (cat !== 'intern' || id === 'deurbel') tlog(cat === 'dier' ? 'dier' : 'event', name); },
 });
 for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
