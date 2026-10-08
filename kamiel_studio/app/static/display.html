@@ -11,6 +11,11 @@
     var d = document.getElementById('kerr');
     if (!d) { d = document.createElement('div'); d.id = 'kerr'; d.style.cssText = 'position:fixed;left:3vw;bottom:4vh;right:3vw;z-index:99;font:16px monospace;color:#fff;background:rgba(160,0,0,.85);padding:12px;white-space:pre-wrap'; (document.body || document.documentElement).appendChild(d); }
     d.textContent += 'Kamiel kon niet starten: ' + msg + ' (' + String(src).split('/').pop() + ':' + line + ')\n';
+    window.tlog && window.tlog('fout', msg + ' (' + String(src).split('/').pop() + ':' + line + ')');
+  };
+  // a line in the logbook of Kamiel Studio
+  window.tlog = function (kind, text) {
+    try { fetch('api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: kind, text: String(text).slice(0, 200) }) }).catch(function () {}); } catch (e) { }
   };
   window.addEventListener('unhandledrejection', function (e) { window.onerror(String(e.reason && e.reason.message || e.reason), 'display', 0); });
 </script>
@@ -301,7 +306,7 @@ const SEASON_TINT = { lente: 'rgba(255,170,215,.05)', zomer: 'rgba(255,225,140,.
 
 /* ---------- world events (see events.js): a stub until the engine starts below ---------- */
 let EV = { active: false, check() {}, walkNow() { return false; }, pump() {}, tick() {}, draw() {}, post() {}, itemOff() { return null; },
-  cloudOff() { return null; }, hideWorld() { return false; }, walkPending() { return false; }, request() {} };
+  cloudOff() { return null; }, hideWorld() { return false; }, walkPending() { return false; }, request() {}, arrived() {}, placeNew() {}, tapPet() { return false; } };
 
 /* ---------- composing each place ---------- */
 const places = [];
@@ -312,6 +317,7 @@ function compose(i) {
   const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv
     && (!o.weather || !o.weather.length || o.weather.includes(wb));
   const r = COMP.compose(i, { night, ok, style: params.get('stijl') });
+  EV.placeNew(i);
   places[i] = { items: r.items, night, weather, hills: r.hills, style: r.style };
   if (musicOn) addMusic(i);
   if (spotlight && spotlight.until * 1000 > Date.now()) addSpot(i);
@@ -394,7 +400,7 @@ function showReminder(r) {
 }
 function arrived() {
   if (timerSign) { dropSign('timer'); placeSign('timer', signObj('timer', timerSign.flap), .2 + timerSign.flap.rows * .045); }   // the timer walks along
-  arrivals++; showReminder(pickReminder()); }
+  arrivals++; showReminder(pickReminder()); EV.arrived(); }
 showReminder(pickReminder());   // on start-up too
 if (document.fonts) document.fonts.load(`700 40px Arimo`).then(() => { if (remShown) showReminder(remShown); }).catch(() => {});
 
@@ -520,7 +526,7 @@ async function pollLive() {
     for (let i = 0; i < N; i++) addSpot(i);
   }
   if (!j.spotlight && spotlight) dropSpot();   // /wis, wissen in the Studio, or its time is over
-  if (j.snapshot && j.snapshot !== lastSnap) { lastSnap = j.snapshot; sendSnapshot(j.snapshot); }
+  if (j.snapshot && j.snapshot !== lastSnap) { lastSnap = j.snapshot; if (j.snap && j.snap.kind === 'selfie') sendSelfie(j.snapshot, j.snap); else sendSnapshot(j.snapshot); }
   // an event asked for via /event or the Studio (only new ones: not again after a reload)
   if (j.event) {
     if (lastEventN !== null && j.event.n !== lastEventN) EV.request(j.event.id || '');
@@ -572,6 +578,41 @@ function placeDoor(url, minutes, pets) {
   placeSign('door', o, .42);
   const it = p.items.find(x => x.door); if (it) { it.photo = url; it.cache = null; it.doorPets = !!pets; }
   clearTimeout(doorTimer); doorTimer = setTimeout(() => dropSign('door'), minutes * 60000);
+}
+// a selfie for Telegram: Kamiel much too close to the camera, the scene blurred behind him (portrait, like a phone)
+function sendSelfie(id, o) {
+  const SW = 768, SH = 1024, c = document.createElement('canvas'); c.width = SW; c.height = SH; const g = c.getContext('2d');
+  // the background: this very moment of Kamielland, out of focus
+  // (only a side of the screen: in the middle stands Kamiel himself, and he is already in the picture)
+  const sm = document.createElement('canvas'); sm.width = 48; sm.height = 64; const sg = sm.getContext('2d'), bx = rnd() < .5 ? 0 : W - 400;
+  sg.drawImage(cv, bx, 0, 400, H, 0, 0, 48, 64);
+  g.imageSmoothingEnabled = true; g.drawImage(sm, 0, 0, SW, SH);
+  g.fillStyle = 'rgba(255,240,230,.08)'; g.fillRect(0, 0, SW, SH);
+  const v = o.variant || 'neus', base = kamObj(), face = rnd() < .5 ? -1 : 1;
+  const K = (s, hx, hy, extra) => {   // Kamiel at scale s with his head (frame point 230,330) at hx,hy
+    const h = 225 * s, w = 128.3 * s, x = (-w / 2 + 230 * w / 780) * (face > 0 ? -1 : 1), d = h - 330 * h / 1370, r = (extra && extra.r) || 0;
+    // he turns around his feet, far below the picture: keep his head where we want it
+    return Object.assign({}, base, { s, face, cx: hx - x * Math.cos(r) - d * Math.sin(r), feet: hy + d * Math.cos(r) - x * Math.sin(r), pose: 'stand', head: 0, r: 0, sq: 1, sx: 1, alpha: 1, blur: 0, clipY: null, eyes: '' }, extra || {});
+  };
+  if (v === 'dier' && o.pet && PETART[o.pet]) {
+    drawLlama(g, K(7.2, SW * .62, SH * .44, { eyes: 'blij', r: face * -.08 }));
+    const pu = 7.5, art = PETART[o.pet];
+    drawPet(g, { pet: o.pet, cx: SW * .3, feet: SH + art.h * PET_U * pu * .25, s: pu, face: 1, pose: 'stand', noShadow: true, r: -.06 });
+  } else if (v === 'schuin') drawLlama(g, K(8.2, SW * .5, SH * .5, { r: face * .28, eyes: 'blij', blush: true }));
+  else if (v === 'boven') drawLlama(g, K(8.6, SW * .48, SH * .62, { r: face * -.12, eyes: 'groot', sq: .92 }));
+  else if (v === 'wazig') {   // a shaky hand
+    for (let k = 2; k >= 0; k--) { g.globalAlpha = k ? .28 : 1; drawLlama(g, K(8.6, SW * .5 + k * 22, SH * .52 - k * 9, { eyes: 'groot' })); }
+    g.globalAlpha = 1;
+  } else drawLlama(g, K(9.2, SW * .55, SH * .5, { eyes: 'groot', r: face * .1 }));   // 'neus': nose first
+  // phone-camera look: a little flash glare, vignette, the camcorder date
+  const gl = g.createRadialGradient(SW * .72, SH * .2, 10, SW * .72, SH * .2, 260); gl.addColorStop(0, 'rgba(255,255,255,.35)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gl; g.fillRect(0, 0, SW, SH);
+  const vg = g.createRadialGradient(SW / 2, SH / 2, SH * .35, SW / 2, SH / 2, SH * .75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)');
+  g.fillStyle = vg; g.fillRect(0, 0, SW, SH);
+  g.fillStyle = 'rgba(0,0,0,.1)'; for (let y = 0; y < SH; y += 3) g.fillRect(0, y, SW, 1);
+  const d = now(); g.font = "40px 'VT323', ui-monospace, monospace"; g.fillStyle = '#ffb347'; g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowOffsetX = 2; g.shadowOffsetY = 2;
+  g.fillText(`${MON[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}  ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, 34, SH - 40);
+  c.toBlob(b => { if (b) fetch('api/snapshot/' + id, { method: 'POST', body: b, headers: { 'Content-Type': 'image/jpeg' } }).catch(() => {}); }, 'image/jpeg', .9);
 }
 // /kijk on Telegram: a still of the screen, with the camcorder text on it
 function sendSnapshot(id) {
@@ -1363,10 +1404,13 @@ EV = KamielEvents.create({
   night: () => isNightTime(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
-  now, doorPets: () => doorPets,
+  now, doorPets: () => doorPets, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
+  onStart: (id, name, cat) => { if (cat !== 'intern' || id === 'deurbel') tlog(cat === 'dier' ? 'dier' : 'event', name); },
 });
+for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
 if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk };
 requestAnimationFrame(loop);
+if (!params.get('ev') && !params.get('t')) tlog('tablet', 'Kamiel gestart op de tablet (' + innerWidth + '×' + innerHeight + ').');
 pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
 setInterval(pollWorld, 120000);
@@ -1386,6 +1430,33 @@ const wins = {};
 function touchDesk() { lastTouch = Date.now(); }
 async function loadDesk() { try { deskData = await (await fetch('api/desk', { cache: 'no-store' })).json(); } catch (e) { deskData = deskData || {}; } }
 async function loadRows() { try { deskRows = (await (await fetch('api/departures', { cache: 'no-store' })).json()).rows || []; } catch (e) { deskRows = []; } }
+// a loose but tidy layout: the biggest windows first, each in the highest free spot (a skyline),
+// with a little overlap and a small random nudge so it still looks like a real, used desktop
+function arrange(keys) {
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const dr = deskEl.getBoundingClientRect(), DW = dr.width, DH = dr.height - 54, tidy = (S.window_layout || 'verspreid') === 'netjes';
+  const gap = tidy ? 10 : -16, M = 10, placed = [];
+  const list = keys.map(k => ({ k, el: wins[k], w: wins[k].offsetWidth, h: wins[k].offsetHeight })).sort((a, b) => b.h * b.w - a.h * a.w);
+  const hits = (x, y, w, h) => placed.some(p => x < p.x + p.w + gap && x + w + gap > p.x && y < p.y + p.h + gap && y + h + gap > p.y);
+  for (const it of list) {
+    let best = null;
+    for (let y = M; y + it.h <= DH && !best; y += 8)
+      for (let x = M; x + it.w <= DW - M; x += 8) if (!hits(x, y, it.w, it.h)) { best = { x, y }; break; }
+    if (!best) {   // no room left: the spot where it covers the least
+      let low = 1e12;
+      for (let y = M; y + it.h <= Math.max(M + 1, DH); y += 24) for (let x = M; x + it.w <= DW - M; x += 24) {
+        const ov = (x0, y0, x1, y1, p) => Math.max(0, Math.min(x1, p.x + p.w) - Math.max(x0, p.x)) * Math.max(0, Math.min(y1, p.y + p.h) - Math.max(y0, p.y));
+        // covering another window's title bar counts extra: you should always be able to grab every window
+        const cov = placed.reduce((s, p) => s + ov(x, y, x + it.w, y + it.h, p) + 6 * ov(x, y, x + it.w, y + it.h, { x: p.x, y: p.y, w: p.w, h: 34 }), 0);
+        if (cov < low) { low = cov; best = { x, y }; }
+      }
+      best = best || { x: M, y: M };
+    }
+    if (!tidy) { best.x = clamp(best.x + (rnd() - .5) * 26, 2, DW - it.w - 2); best.y = clamp(best.y + (rnd() - .5) * 18, 2, Math.max(2, DH - it.h)); }
+    placed.push({ x: best.x, y: best.y, w: it.w, h: it.h });
+    it.el.style.left = Math.round(best.x) + 'px'; it.el.style.top = Math.round(best.y) + 'px';
+  }
+}
 function spots(keys) {
   const layout = S.window_layout || 'verspreid';
   const base = { weer: [3, 5], vertrek: [56, 4], knoppen: [5, 47], kleerkast: [52, 30], muziek: [32, 30], wandel: [34, 6], roepen: [30, 52] };
@@ -1402,7 +1473,12 @@ async function openDesk(only) {
   if (!deskOpen) return;
   const pos = spots(keys);
   clearInterval(walkTimer); walkTimer = setInterval(() => { if (deskOpen && wins.wandel) tickWandel(); }, 500);
-  keys.forEach((k, n) => setTimeout(() => { if (deskOpen) makeWin(k, pos[n]); }, 90 * n));
+  // all windows are made first (invisible), measured and laid out; then they pop up one by one
+  keys.forEach((k, n) => { makeWin(k, pos[n]); wins[k].style.visibility = 'hidden'; });
+  await new Promise(r => setTimeout(r, 120));   // let pictures and fonts settle before measuring
+  if (!deskOpen) return;
+  arrange(keys);
+  keys.slice().sort((a, b) => wins[a].offsetTop - wins[b].offsetTop).forEach((k, n) => setTimeout(() => { if (deskOpen && wins[k]) { wins[k].style.visibility = ''; front(wins[k]); } }, 90 * n));
   setTimeout(() => { if (deskOpen) renderTaskbar(); }, 90 * keys.length);
   clearInterval(deskTimer);
   deskTimer = setInterval(async () => {
@@ -1603,6 +1679,7 @@ document.addEventListener('pointerup', (e) => {
       dropSpot(); return;
     }
   }
+  if (EV.tapPet(x, y)) return;   // a housemate lying in the scene: a pat on the head
   for (let k = hits.length - 1; k >= 0; k--) {
     const hh = hits[k];
     if (hh.it.door && x >= hh.x && x <= hh.x + hh.w && y >= hh.y && y <= hh.y + hh.h) { dropSign('door'); return; }

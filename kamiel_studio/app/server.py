@@ -22,6 +22,22 @@ DATA = os.environ.get("KAMIEL_DATA", "/data")
 MEDIA = os.path.join(DATA, "media")
 ORIG = os.path.join(DATA, "originals")
 DB_FILE = os.path.join(DATA, "kamiel.json")
+LOG_FILE = os.path.join(DATA, "logboek.json")
+
+
+def _addon_version():
+    for p in (os.path.join(APP, "addon_config.yaml"), os.path.join(APP, "..", "config.yaml")):
+        try:
+            with open(p) as f:
+                m = re.search(r'^version:\s*"?([^"\n]+)', f.read(), re.M)
+                if m:
+                    return m.group(1)
+        except OSError:
+            pass
+    return "?"
+
+
+ADDON_VERSION = _addon_version()
 def read_token():
     """The Supervisor hands the add-on a token. Depending on how the add-on starts, it is
     either in the environment or only in s6's container environment folder."""
@@ -96,10 +112,13 @@ DEFAULT_SETTINGS = {
     "motion": {"on": False, "look": True, "wake": True, "screen_off": "nooit", "off_after": 10, "entity": ""},
     # lights and sockets to switch from the Lampen window on the tablet
     "lamps": [],
+    # selfies on Telegram: when someone is away for days, and once a month out of the blue
+    "selfie": {"on": False, "people": [], "days": 3, "monthly": True, "pets": True},
     "hills": {"chance": 40, "height": 18},           # % of places with hills; how high, in % of the screen
     "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
-               "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25},
+               "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25,
+               "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -138,6 +157,7 @@ LOCATION = {"lat": 50.5, "lon": 4.5}   # replaced at start-up by the location se
 
 # ----------------------------------------------------------------- storage
 def first_run():
+    shutil.rmtree(os.path.join(DATA, "backup-tmp"), ignore_errors=True)   # left-over downloads and half uploads
     os.makedirs(MEDIA, exist_ok=True)
     os.makedirs(ORIG, exist_ok=True)
     if not os.path.exists(DB_FILE):
@@ -173,7 +193,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack", "doorbell", "motion"):
+    for k in ("hills", "stack", "doorbell", "motion", "selfie"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); s["compose"] = cp
@@ -194,6 +214,78 @@ def load_db():
         s["lamps"] = []
     db["settings"] = s
     return db
+
+
+# ----------------------------------------------------------------- the logbook (Studio → Logboek)
+LOG_KINDS = ("event", "dier", "weer", "huis", "deurbel", "telegram", "selfie", "tablet", "systeem", "fout")
+LOG = {"items": None, "dirty": False, "n": 0}
+LOG_MAX = 1500
+
+
+def _log_items():
+    if LOG["items"] is None:
+        try:
+            with open(LOG_FILE) as f:
+                LOG["items"] = json.load(f)[-LOG_MAX:]
+        except (OSError, ValueError):
+            LOG["items"] = []
+        LOG["n"] = LOG["items"][-1]["n"] if LOG["items"] else 0
+    return LOG["items"]
+
+
+def log(kind, text, quiet=False):
+    """One line in the logbook (and in the add-on log)."""
+    items = _log_items()
+    LOG["n"] += 1
+    items.append({"n": LOG["n"], "t": time.time(), "kind": kind if kind in LOG_KINDS else "systeem", "text": str(text)[:300]})
+    del items[:-LOG_MAX]
+    LOG["dirty"] = True
+    if not quiet:
+        print(f"[{kind}] {text}", flush=True)
+
+
+async def log_writer():
+    while True:
+        await asyncio.sleep(5)
+        if LOG["dirty"] and LOG["items"] is not None:
+            LOG["dirty"] = False
+            try:
+                tmp = LOG_FILE + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(LOG["items"], f)
+                os.replace(tmp, LOG_FILE)
+            except OSError as e:
+                print("Logboek bewaren mislukt: " + str(e), flush=True)
+
+
+async def api_log_get(request):
+    after = int(request.query.get("after", 0) or 0)
+    return web.json_response([x for x in _log_items() if x["n"] > after][-600:])
+
+
+async def api_log_clear(request):
+    LOG["items"] = []; LOG["dirty"] = True
+    log("systeem", "Logboek gewist in de Studio.")
+    return web.json_response({"ok": True})
+
+
+TABLET_LOG = {"times": []}
+
+
+async def api_log_post(request):
+    """The tablet reports what happens on screen (events, housemates, errors). Only short lines, not too many."""
+    now = time.time()
+    TABLET_LOG["times"] = [t for t in TABLET_LOG["times"] if now - t < 60]
+    if len(TABLET_LOG["times"]) >= 20:
+        return web.json_response({"ok": False}, status=429)
+    TABLET_LOG["times"].append(now)
+    try:
+        b = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest()
+    kind = b.get("kind") if b.get("kind") in ("event", "dier", "tablet", "fout") else "tablet"
+    log(kind, ("Tablet: " if kind == "fout" else "") + str(b.get("text", ""))[:200], quiet=kind != "fout")
+    return web.json_response({"ok": True})
 
 
 def save_db(db, bump=True):
@@ -249,6 +341,9 @@ async def ha_get(path):
             return await r.json()
 
 
+LAST = {}   # last seen values, for the logbook
+
+
 async def api_state(request):
     db = load_db()
     out = {"sun": None, "weather": None, "wind": None, "connected": bool(TOKEN)}
@@ -263,6 +358,10 @@ async def api_state(request):
             w = await ha_get("/states/" + ent)
             if w:
                 out["weather"] = WEATHER_MAP.get(w.get("state"), "licht")
+                if LAST.get("weather") != w.get("state"):
+                    if LAST.get("weather"):
+                        log("weer", f"Het weer veranderde: {COND_NL.get(LAST['weather'], LAST['weather'])} → {COND_NL.get(w.get('state'), w.get('state'))}")
+                    LAST["weather"] = w.get("state")
                 wa = w.get("attributes", {})
                 out["wind"] = wa.get("wind_speed")
                 out["clouds"] = wa.get("cloud_coverage")
@@ -298,6 +397,8 @@ async def api_entities(request):
 # ----------------------------------------------------------------- world (read only)
 async def api_world(request):
     db = load_db()
+    if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
+        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
         "assets": db["assets"],
@@ -373,7 +474,7 @@ def _measure_old_assets():
             with open(os.path.join(MEDIA, a["files"]["main"]), "rb") as f:
                 found[a["id"]] = process.metrics(process.load_rgba(f.read()))
         except Exception as e:
-            print("Meten mislukt voor " + a.get("label", a["id"]) + ": " + str(e), flush=True)
+            log("fout", "Meten mislukt voor " + a.get("label", a["id"]) + ": " + str(e))
     return found
 
 
@@ -699,6 +800,16 @@ async def api_settings(request):
                 m["off_after"] = max(1, min(240, int(b["off_after"])))
             if "entity" in b:
                 m["entity"] = str(b["entity"]).strip()[:120]
+        if isinstance(body.get("selfie"), dict):
+            m, b = s["selfie"], body["selfie"]
+            for k in ("on", "monthly", "pets"):
+                if k in b:
+                    m[k] = bool(b[k])
+            if "days" in b:
+                m["days"] = max(1, min(30, int(b["days"] or 3)))
+            if isinstance(b.get("people"), list):
+                m["people"] = [{"entity": str(x.get("entity", "")).strip()[:120], "chat": x.get("chat") if isinstance(x.get("chat"), int) else ""}
+                               for x in b["people"][:10] if isinstance(x, dict) and str(x.get("entity", "")).startswith(("person.", "device_tracker."))]
         if isinstance(body.get("rules"), list):
             s["rules"] = [r for r in (_clean_rule(x) for x in body["rules"][:40]) if r]
         if isinstance(body.get("hills"), dict):
@@ -724,6 +835,9 @@ async def api_settings(request):
                 e["pets_per_day"] = {k: max(0, min(12, int(v or 0))) for k, v in b["pets_per_day"].items() if k in EVENT_IDS}
             if "pets_together" in b:
                 e["pets_together"] = max(0, min(100, int(b["pets_together"])))
+            for k, top in (("pets_stay", 100), ("pets_lying", 100), ("pets_stay_min", 240)):
+                if k in b:
+                    e[k] = max(0, min(top, int(b[k] or 0)))
             if isinstance(b.get("off"), list):
                 e["off"] = [x for x in b["off"] if x in EVENT_IDS]
         if isinstance(body.get("sizes"), dict):
@@ -845,7 +959,7 @@ async def api_live(request):
     out = {"message": None, "media": None, "trigger": None, "outfit": current_outfit(db), "dismissed": db.get("dismissed", {}),
            "spotlight": ({k: v for k, v in db["spotlight"].items() if k != "chat"}
                          if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
-           "snapshot": SNAP.get("id"), "event": db.get("event_req"),
+           "snapshot": SNAP.get("id"), "snap": SNAP.get("opts"), "event": db.get("event_req"),
            "actions": [a for a in db.get("actions", []) if a.get("at", 0) > time.time() - 120]}
     try:
         out["message"] = await current_message(db)
@@ -1033,7 +1147,7 @@ TG_HELP = ("Stuur me gewoon een tekst en hij verschijnt op het scherm thuis.\n"
            "Een foto komt in een kader in de scène.\n\n"
            "/bus  de volgende trams en bussen\n/kijk  een foto van het scherm nu\n/wis  het bericht weghalen\n"
            "/muziek Titel 127  Kamiel knikt mee op dat nummer (127 = tempo)\n/muziek  de lijst met nummers\n"
-           "/event  er gebeurt iets in Kamielland\n/event lijst  alle events")
+           "/event  er gebeurt iets in Kamielland\n/event lijst  alle events\n/selfie  Kamiel stuurt een selfie")
 
 
 def tg_conf(db=None):
@@ -1064,7 +1178,7 @@ async def tg_say(chat, text):
         try:
             await tg_call(tok, "sendMessage", {"chat_id": chat, "text": text})
         except Exception as e:
-            print("Telegram: versturen mislukt: " + str(e), flush=True)
+            log("fout", "Telegram: versturen mislukt: " + str(e))
 
 
 def _hm(ts):
@@ -1089,11 +1203,13 @@ async def tg_handle(token, upd):
                 conf.pop("pair", None)
                 save_db(db, bump=False)
                 reply = f"Hallo {who}! Je bent gekoppeld aan Kamiel. 🦙\n\n" + TG_HELP
+                log("telegram", f"{who} is gekoppeld aan Telegram.")
             else:
                 reply = "Ik ken je nog niet. Vraag thuis om je te koppelen in Kamiel Studio."
             await tg_call(token, "sendMessage", {"chat_id": chat, "text": reply})
             return
         minutes = conf.get("minutes", 60)
+    log("telegram", f"{who}: " + (text[:90] if text else ("een foto" if msg.get("photo") else "iets")), quiet=True)
     cmd = text.split()[0].lower().split("@")[0] if text.startswith("/") else ""
     if cmd in ("/start", "/help", "/hulp"):
         return await tg_say(chat, TG_HELP)
@@ -1116,16 +1232,16 @@ async def tg_handle(token, upd):
     if cmd == "/kijk":
         if SNAP.get("id"):
             return await tg_say(chat, "Even geduld, ik ben al een foto aan het maken.")
-        SNAP.clear(); SNAP.update({"id": uuid.uuid4().hex[:8], "chat": chat, "event": asyncio.Event(), "data": None})
         await tg_say(chat, "📼 Even kijken…")
-        try:
-            await asyncio.wait_for(SNAP["event"].wait(), 25)
-            await tg_call(token, "sendPhoto", {"chat_id": chat}, files={"photo": ("kamiel.jpg", SNAP["data"], "image/jpeg")})
-        except asyncio.TimeoutError:
-            await tg_say(chat, "De tablet antwoordt niet. Staat hij aan?")
-        finally:
-            SNAP.clear()
-        return
+        data = await take_picture()
+        if not data:
+            return await tg_say(chat, "De tablet antwoordt niet. Staat hij aan?")
+        return await tg_call(token, "sendPhoto", {"chat_id": chat}, files={"photo": ("kamiel.jpg", data, "image/jpeg")})
+    if cmd == "/selfie":
+        if SNAP.get("id"):
+            return await tg_say(chat, "Even geduld, ik ben al een foto aan het maken.")
+        ok = await send_selfie([chat], "maand", who)
+        return None if ok else await tg_say(chat, "De tablet antwoordt niet. Staat hij aan?")
     if cmd == "/muziek":
         rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
         if not rest:
@@ -1209,9 +1325,9 @@ async def tg_loop():
                 try:
                     await tg_handle(token, u)
                 except Exception as e:
-                    print("Telegram: bericht kon niet verwerkt worden: " + str(e), flush=True)
+                    log("fout", "Telegram: bericht kon niet verwerkt worden: " + str(e))
         except Exception as e:
-            print("Telegram: " + str(e), flush=True)
+            log("fout", "Telegram: " + str(e))
             await asyncio.sleep(15)
 
 
@@ -1294,6 +1410,272 @@ async def api_photo_seen(request):
     if chat:
         asyncio.ensure_future(tg_say(chat, f"👀 Foto gezien om {_hm(time.time())}."))
     return web.json_response({"ok": True})
+
+
+async def take_picture(opts=None, wait=25):
+    """Ask the tablet for a picture: the screen as it is (/kijk), or a selfie of Kamiel (opts kind 'selfie'). JPEG bytes or None."""
+    if SNAP.get("id"):
+        return None
+    SNAP.clear(); SNAP.update({"id": uuid.uuid4().hex[:8], "event": asyncio.Event(), "data": None, "opts": opts})
+    try:
+        await asyncio.wait_for(SNAP["event"].wait(), wait)
+        return SNAP["data"]
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        SNAP.clear()
+
+
+# ----------------------------------------------------------------- selfies: Kamiel sends a (much too close) selfie on Telegram
+SELFIE_AWAY = [
+    "{naam}. Het is al {dagen} dagen. Ik sta hier gewoon. Te kijken.",
+    "Dag {dagen} zonder {naam}. Wifi slaapt op je plek. Ik heb niets gezegd.",
+    "Ik weet niet waar je bent, {naam}, maar ik weet wel dat het hier stil is.",
+    "Geen paniek. Alles is goed. Behalve dat jij er niet bent. Groetjes, Kamiel",
+    "Ik heb je kussen niet opgegeten. Dit is gewoon mijn gezicht. Kom naar huis, {naam}.",
+    "Ze zeggen dat lama's niet kunnen missen. Ze zeggen veel. — K.",
+    "{dagen} dagen. Ik tel ze. Ik ben een lama, ik heb tijd.",
+    "Is het daar leuker dan hier? Wees eerlijk, {naam}.",
+    "Ik ben niet boos. Ik ben gewoon heel dichtbij.",
+    "Pippa doet alsof het haar niet kan schelen. Het kan haar schelen. Mij ook.",
+]
+SELFIE_MONTH = [
+    "Gewoon een selfie. Geen reden.",
+    "Mijn goede kant. Ze zijn allebei goed.",
+    "Dacht dat je dit moest zien.",
+    "Vandaag voelde ik me mooi.",
+    "Maandelijkse controle: ik ben er nog. Jij ook?",
+    "Niemand vroeg erom. Graag gedaan.",
+    "Ik heb een nieuwe camera ontdekt. Hij is van jou.",
+]
+SELFIE_PET = [
+    "Selfie met {dier}. {dier} wilde niet. Te laat.",
+    "{dier} en ik. Beste vrienden. Officieel.",
+    "Iemand moest het huis bewaken. Ik doe dat. Met {dier}.",
+    "{dier} zegt hallo. (Dat zei {dier} niet. Ik vertaal.)",
+]
+PET_NAMES = {"wifi": "Wifi", "snoet": "Snoet", "pippa": "Pippa", "pebbels": "Pebbels", "dobby": "Dobby"}
+
+
+async def send_selfie(chats, why, naam="", dagen=0):
+    """why: 'weg' (someone is away for days) or 'maand' (the monthly one). Returns True when sent."""
+    import random
+    conf = tg_conf()
+    if not conf.get("token") or not chats:
+        return False
+    s = load_db()["settings"].get("selfie") or {}
+    pet = random.choice(list(PET_NAMES)) if why == "maand" and s.get("pets", True) and random.random() < .5 else ""
+    variant = random.choice(["neus", "schuin", "boven", "wazig"]) if not pet else "dier"
+    if why == "weg":
+        text = random.choice(SELFIE_AWAY).format(naam=naam or "jij", dagen=dagen)
+    elif pet:
+        text = random.choice(SELFIE_PET).format(dier=PET_NAMES[pet])
+    else:
+        text = random.choice(SELFIE_MONTH)
+    data = await take_picture({"kind": "selfie", "variant": variant, "pet": pet}, wait=30)
+    if not data:
+        log("fout", "Selfie: de tablet antwoordde niet.")
+        return False
+    for c in chats:
+        try:
+            await tg_call(conf["token"], "sendPhoto", {"chat_id": c, "caption": text}, files={"photo": ("kamiel-selfie.jpg", data, "image/jpeg")})
+        except Exception as e:
+            log("fout", "Selfie versturen mislukt: " + str(e))
+    names = ", ".join(x.get("name", "") for x in conf.get("chats", []) if x["id"] in chats)
+    log("selfie", f"Selfie gestuurd naar {names or 'Telegram'}: “{text}”")
+    return True
+
+
+def _month_plan(now):
+    import random
+    key = time.strftime("%Y-%m", time.localtime(now))
+    r = random.Random("selfie " + key)
+    t = time.localtime(now)
+    day = r.randint(1, 28)
+    at = time.mktime((t.tm_year, t.tm_mon, day, r.randint(11, 19), r.randint(0, 59), 0, 0, 0, -1))
+    return key, at
+
+
+async def selfie_loop():
+    while True:
+        await asyncio.sleep(15 if not SELFIE_STATE["started"] else 600)
+        SELFIE_STATE["started"] = True
+        try:
+            db = load_db()
+            s = db["settings"].get("selfie") or {}
+            conf = tg_conf(db)
+            if not s.get("on") or not conf.get("token") or not conf.get("chats"):
+                continue
+            now, hour = time.time(), time.localtime().tm_hour
+            st = db.get("selfie_state") or {}
+            all_chats = [c["id"] for c in conf["chats"]]
+            changed = False
+            # someone away for days
+            for p in s.get("people", []):
+                ent = p.get("entity")
+                if not ent:
+                    continue
+                cur = await ha_get("/states/" + ent)
+                if not cur or cur.get("state") in ("home", "unknown", "unavailable", None):
+                    if (st.get("away") or {}).pop(ent, None) is not None:
+                        changed = True
+                    continue
+                since = _ts(cur.get("last_changed")) or now
+                days = int((now - since) // 86400)
+                rec = (st.setdefault("away", {})).get(ent) or {}
+                if rec.get("since") != since:
+                    rec = {"since": since, "n": 0}
+                step = max(1, int(s.get("days", 3)))
+                if days >= step * (rec["n"] + 1) and 10 <= hour < 21:
+                    naam = (cur.get("attributes") or {}).get("friendly_name") or ent.split(".")[-1].title()
+                    chats = [p["chat"]] if p.get("chat") in all_chats else all_chats
+                    if await send_selfie(chats, "weg", naam, days):
+                        rec["n"] = days // step
+                st["away"][ent] = rec; changed = True
+            # once a month, out of the blue
+            if s.get("monthly", True):
+                key, at = _month_plan(now)
+                if st.get("month") != key and now >= at and 10 <= hour < 21:
+                    if await send_selfie(all_chats, "maand"):
+                        st["month"] = key; changed = True
+            if changed:
+                async with lock:
+                    db = load_db(); db["selfie_state"] = st; save_db(db, bump=False)
+        except Exception as e:
+            log("fout", "Selfies: " + str(e))
+
+
+SELFIE_STATE = {"started": False}
+
+
+async def api_selfie_preview(request):
+    """Studio: show a selfie (not sent)."""
+    v = request.query.get("variant", "")
+    pet = request.query.get("pet", "")
+    data = await take_picture({"kind": "selfie", "variant": v if v in ("neus", "schuin", "boven", "wazig", "dier") else "neus",
+                               "pet": pet if pet in PET_NAMES else ""}, wait=20)
+    if not data:
+        return web.json_response({"ok": False, "error": "De tablet antwoordt niet. Staat hij aan?"}, status=504)
+    return web.Response(body=data, content_type="image/jpeg")
+
+
+async def api_selfie_send(request):
+    conf = tg_conf()
+    if not conf.get("token") or not conf.get("chats"):
+        return web.json_response({"ok": False, "error": "Telegram is nog niet ingesteld (tabblad Bericht)."}, status=400)
+    ok = await send_selfie([c["id"] for c in conf["chats"]], "maand")
+    return web.json_response({"ok": ok, "error": "" if ok else "De tablet antwoordt niet. Staat hij aan?"})
+
+
+# ----------------------------------------------------------------- back-up and restore (Studio → Instellingen → Back-up)
+BACKUP_TMP = os.path.join(DATA, "backup-tmp")
+
+
+def _strip_secrets(db):
+    db = copy.deepcopy(db)
+    tg = db.get("telegram")
+    if tg:   # the bot's key stays at home; the linked phones come along
+        db["telegram"] = {"chats": tg.get("chats", []), "minutes": tg.get("minutes", 60)}
+    for k in ("actions", "event_req", "message", "spotlight", "selfie_state"):
+        db.pop(k, None)
+    return db
+
+
+def _make_backup(full):
+    import zipfile
+    os.makedirs(BACKUP_TMP, exist_ok=True)
+    name = time.strftime("kamiel-backup-%Y-%m-%d") + ("" if full else "-instellingen") + ".zip"
+    path = os.path.join(BACKUP_TMP, name)
+    db = _strip_secrets(load_db())
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("kamiel.json", json.dumps(db, indent=1))
+        z.writestr("LEESMIJ.txt", "Back-up van Kamiel Studio, " + time.strftime("%d/%m/%Y %H:%M") + ".\n"
+                   "Terugzetten: Kamiel Studio > Instellingen > Back-up > Terugzetten.\n"
+                   + ("Met alle elementen, foto's en het panorama.\n" if full else "Alleen de instellingen, regels, herinneringen en nummers (geen afbeeldingen).\n"))
+        if full:
+            for d, pre in ((MEDIA, "media/"), (ORIG, "originals/")):
+                if os.path.isdir(d):
+                    for f in sorted(os.listdir(d)):
+                        fp = os.path.join(d, f)
+                        if os.path.isfile(fp):
+                            z.write(fp, pre + f, compress_type=zipfile.ZIP_STORED)
+    return path, name
+
+
+async def api_backup(request):
+    full = request.query.get("full", "1") != "0"
+    for f in os.listdir(BACKUP_TMP) if os.path.isdir(BACKUP_TMP) else []:   # yesterday's leftovers
+        if not f.endswith(".part"):
+            try: os.remove(os.path.join(BACKUP_TMP, f))
+            except OSError: pass
+    path, name = await run_blocking(_make_backup, full)
+    log("systeem", f"Back-up gemaakt ({'alles' if full else 'alleen instellingen'}, {os.path.getsize(path) // 1024} kB).")
+    return web.FileResponse(path, headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
+async def api_restore_chunk(request):
+    """A back-up comes in in pieces (Home Assistant does not let more than 16 MB through at once)."""
+    rid = re.sub(r"[^a-z0-9]", "", request.query.get("id", ""))[:16]
+    if not rid:
+        raise web.HTTPBadRequest()
+    os.makedirs(BACKUP_TMP, exist_ok=True)
+    data = await request.read()
+    with open(os.path.join(BACKUP_TMP, rid + ".part"), "wb" if request.query.get("i") == "0" else "ab") as f:
+        f.write(data)
+    return web.json_response({"ok": True})
+
+
+def _restore(path):
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        if "kamiel.json" not in names:
+            raise ValueError("Dit is geen back-up van Kamiel (kamiel.json ontbreekt).")
+        new = json.loads(z.read("kamiel.json"))
+        if not isinstance(new, dict) or "settings" not in new:
+            raise ValueError("De back-up is beschadigd.")
+        files = [n for n in names if n.startswith(("media/", "originals/")) and not n.endswith("/")]
+        cur = load_db()
+        if files:   # everything: elements, photos, panorama and settings
+            for n in files:
+                base = os.path.basename(n)
+                if not base or base.startswith("."):
+                    continue
+                dest = os.path.join(MEDIA if n.startswith("media/") else ORIG, base)
+                with z.open(n) as src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out)
+            keep = {k: cur[k] for k in ("telegram",) if k in cur}
+            tg = new.get("telegram") or {}
+            if keep.get("telegram"):   # keep the bot key that is here now; take the linked phones from the back-up if there are none
+                keep["telegram"]["chats"] = keep["telegram"].get("chats") or tg.get("chats", [])
+            new.update(keep)
+            what = f"alles ({len(new.get('assets', []))} elementen, {len(new.get('photos', []))} foto's)"
+        else:   # settings only: the pictures stay as they are
+            for k in ("settings", "reminders", "songs", "dismissed"):
+                if k in new:
+                    cur[k] = new[k]
+            new = cur
+            what = "de instellingen"
+        save_db(new)
+        return what
+
+
+async def api_restore_finish(request):
+    rid = re.sub(r"[^a-z0-9]", "", request.query.get("id", ""))[:16]
+    path = os.path.join(BACKUP_TMP, rid + ".part")
+    if not rid or not os.path.exists(path):
+        raise web.HTTPBadRequest()
+    try:
+        async with lock:
+            what = await run_blocking(_restore, path)
+    except Exception as e:
+        log("fout", "Back-up terugzetten mislukt: " + str(e))
+        return web.json_response({"ok": False, "error": str(e) if isinstance(e, ValueError) else "Dit bestand kon niet gelezen worden."}, status=400)
+    finally:
+        try: os.remove(path)
+        except OSError: pass
+    log("systeem", f"Back-up teruggezet: {what}.")
+    return web.json_response({"ok": True, "what": what})
 
 
 async def api_snapshot(request):
@@ -1825,7 +2207,7 @@ async def tg_broadcast(text, photo=None):
             else:
                 await tg_call(conf["token"], "sendMessage", {"chat_id": c["id"], "text": text})
         except Exception as e:
-            print("Telegram: " + str(e), flush=True)
+            log("fout", "Telegram: " + str(e))
 
 
 async def run_actions(rule_name, actions):
@@ -1844,7 +2226,7 @@ async def run_actions(rule_name, actions):
             elif t == "camera":
                 data = await camera_still(a.get("entity"))
                 if not data:
-                    print(f"Regel '{rule_name}': geen camerabeeld van {a.get('entity')}", flush=True); continue
+                    log("fout", f"Regel '{rule_name}': geen camerabeeld van {a.get('entity')}"); continue
                 p = await run_blocking(_photo, data)
                 p["label"] = (rule_name or "Camera")[:40] + " " + time.strftime("%d/%m %H:%M")
                 async with lock:
@@ -1864,7 +2246,7 @@ async def run_actions(rule_name, actions):
                 photo = await camera_still(a.get("entity")) if a.get("photo") and a.get("entity") else None
                 await tg_broadcast(a.get("text") or rule_name or "Kamiel", photo)
         except Exception as e:
-            print(f"Regel '{rule_name}': {e}", flush=True)
+            log("fout", f"Regel '{rule_name}': {e}")
 
 
 def doorbell_rule(s):
@@ -1930,11 +2312,11 @@ async def watch_loop():
                 if time.time() - WATCH["fired"].get(key, 0) < 60 * float(r.get("cooldown", 0)):
                     continue
                 WATCH["fired"][key] = time.time()
-                print(f"Regel '{r.get('name') or ent}': {old} → {new}", flush=True)
+                log("deurbel" if r["id"] == "deurbel" else "huis", ("🔔 Er werd aangebeld" if r["id"] == "deurbel" else f"Regel '{r.get('name') or ent}'") + f" ({old} → {new})")
                 asyncio.ensure_future(run_actions(r.get("name") or ent, r["actions"]))
             WATCH["last"].update(states)
         except Exception as e:
-            print("Regels: " + str(e), flush=True)
+            log("fout", "Regels: " + str(e))
             await asyncio.sleep(10)
 
 
@@ -1977,11 +2359,13 @@ def common_routes(app):
     app.router.add_post("/api/reminder-dismiss/{id}", api_dismiss_reminder)
     app.router.add_post("/api/photo-seen/{id}", api_photo_seen)
     app.router.add_post("/api/snapshot/{id}", api_snapshot)
+    app.router.add_post("/api/log", api_log_post)
     app.router.add_post("/api/motion", api_motion)
 
 
 def make_studio():
     app = web.Application(client_max_size=60 * 1024 * 1024, middlewares=[fresh_scripts])
+    app["studio"] = True
     app.router.add_get("/", page("studio.html"))
     common_routes(app)
     app.router.add_get("/api/entities", api_entities)
@@ -2008,6 +2392,13 @@ def make_studio():
     app.router.add_post("/api/event", api_event)
     app.router.add_post("/api/rule-test", api_rule_test)
     app.router.add_get("/api/services", api_services)
+    app.router.add_get("/api/logboek", api_log_get)
+    app.router.add_get("/api/selfie-preview", api_selfie_preview)
+    app.router.add_get("/api/backup", api_backup)
+    app.router.add_post("/api/restore/chunk", api_restore_chunk)
+    app.router.add_post("/api/restore/finish", api_restore_finish)
+    app.router.add_post("/api/selfie-send", api_selfie_send)
+    app.router.add_delete("/api/logboek", api_log_clear)
     app.router.add_post("/api/call-test", api_call_test)
     return app
 
@@ -2041,20 +2432,26 @@ async def main():
         await web.TCPSite(r, "0.0.0.0", port).start()
         runners.append(r)
     print("Kamiel Studio draait: studio op 8099 (via Home Assistant), tablet op 8100", flush=True)
+    log("systeem", f"Kamiel Studio gestart (versie {ADDON_VERSION}).", quiet=True)
     if not TOKEN:
-        print("Let op: geen toegang tot Home Assistant (geen token gevonden). Weer en sensoren werken niet.", flush=True)
+        log("fout", "Geen toegang tot Home Assistant (geen token gevonden). Weer en sensoren werken niet.")
     else:
         try:
             ok = await ha_get("/states/sun.sun")
             conf = await ha_get("/config")   # where the house is, for the sun (only used if sun.sun is missing)
             if conf and conf.get("latitude") is not None:
                 LOCATION.update({"lat": float(conf["latitude"]), "lon": float(conf["longitude"])})
-            print("Verbonden met Home Assistant." if ok else "Token gevonden, maar Home Assistant antwoordt niet.", flush=True)
+            if ok:
+                print("Verbonden met Home Assistant.", flush=True)
+            else:
+                log("fout", "Token gevonden, maar Home Assistant antwoordt niet.")
         except Exception as e:
-            print("Verbinding met Home Assistant mislukt: " + str(e), flush=True)
+            log("fout", "Verbinding met Home Assistant mislukt: " + str(e))
     asyncio.ensure_future(tg_loop())
     asyncio.ensure_future(measure_old_assets())
     asyncio.ensure_future(watch_loop())
+    asyncio.ensure_future(log_writer())
+    asyncio.ensure_future(selfie_loop())
     await asyncio.Event().wait()
 
 

@@ -76,6 +76,7 @@
     { id: 'lucht-valt', name: 'De lucht valt naar beneden', cat: 'soms' },
     { id: 'deurbel', name: 'Er wordt aangebeld', cat: 'intern' },
     { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
+    { id: 'begroeten', name: 'Een huisdier komt Kamiel begroeten', cat: 'intern' },
   ];
 
   const CATS = { lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
@@ -179,8 +180,10 @@
       .concat(A.sky() ? [A.sky()] : []);
 
     /* ---------- effects ---------- */
-    function fx(layer, dur, draw) { const f = { layer, dur, born: cur.t, draw }; cur.fx.push(f); return f; }
-    const stop = (f) => { if (cur && f) cur.fx = cur.fx.filter(x => x !== f); };
+    let clock = 0;
+    const rfx = [];   // effects of the residents, when no event is running
+    function fx(layer, dur, draw) { const f = cur ? { layer, dur, born: cur.t, draw } : { layer, dur, born: clock, draw, own: true }; (cur ? cur.fx : rfx).push(f); return f; }
+    const stop = (f) => { if (!f) return; if (cur) cur.fx = cur.fx.filter(x => x !== f); const k = rfx.indexOf(f); if (k >= 0) rfx.splice(k, 1); };
     const headOf = (who) => who ? (who.pet ? (p => ({ x: p.x, y: p.y - 4 }))(A.petPoint(who, 'head')) : A.llamaPoint(who, 200, -30)) : kp(200, -30);
     const uOf = (who) => who && who.pet ? 3.6 : clamp(5.5 * (who ? who.s : kam.s), 3.5, 9);
     function emote(kind, dur, who) {
@@ -310,7 +313,10 @@
       yield* tween(secs || .5, p => { a.lift = Math.sin(p * Math.PI) * height; if (toX !== undefined) a.cx = lerp(x0, toX, p); });
       a.lift = 0; hold(a, null);
     }
-    function* petLeave(a, side, speed) { yield* petTo(a, W / 2 + side * (W / 2 + 90), speed); a.alpha = 0; }
+    function* petLeave(a, side, speed) {
+      if (a.stay) { a.stay = false; yield* settle(a); return; }   // it stays a while: see the residents
+      yield* petTo(a, W / 2 + side * (W / 2 + 90), speed); a.alpha = 0;
+    }
     const back = (fx) => kp(fx, 470);   // a spot on Kamiel's back
     function ballFx(ball) {
       return fx('front', 0, (g) => { if (!ball.on) return; const x = ball.x, y = ball.y; g.fillStyle = 'rgba(0,0,0,.18)'; g.beginPath(); g.ellipse(x, FEET + 2, 6, 2, 0, 0, 7); g.fill();
@@ -455,7 +461,11 @@
       b.alpha = 0;
     }
     function* petVisit(name) {
+      const r0 = isRes(name);
+      if (r0 && onScreen(r0) && !r0.busy) { yield* greetRun(r0); return; }   // it was lying here already
+      if (r0 && !r0.busy) { r0.gone = true; residents.splice(residents.indexOf(r0), 1); }   // it got up somewhere else and comes over
       const side = rnd() < .5 ? -1 : 1, a = pet(name, side);
+      a.stay = residents.length < MAXRES && rnd() * 100 < (cfg.pets_stay === undefined ? 35 : +cfg.pets_stay);
       const runs = { wifi, snoet, pippa, pebbels, dobby };
       const others = PETS.filter(p => p !== name && !(cfg.off || []).includes(p));
       const together = rnd() * 100 < (cfg.pets_together === undefined ? 25 : +cfg.pets_together) && others.length;
@@ -465,8 +475,332 @@
       kam.eyes = ''; kam.blush = false;
     }
 
+
+    /* ---------- housemates that stay a while ----------
+       A resident belongs to a spot in the world (wx), not to an event: it keeps lying there when Kamiel walks on,
+       it is sometimes already there when he arrives, it looks at him and comes to say hello.
+       Each one runs its own little life (a generator), with moves that suit that animal. */
+    const residents = [];
+    const MAXRES = 3;
+    const wrapD = (d) => { const P = A.PW; return ((d + P / 2) % P + P) % P - P / 2; };
+    const scrX = (wx) => W / 2 + wrapD(wx - A.cam());
+    const worldX = (sx) => A.cam() + sx - W / 2;
+    const onScreen = (a) => a.cx > -50 && a.cx < W + 50;
+    const isRes = (name) => residents.find(r => r.pet === name);
+    const depthS = (feet) => 1 + (feet - FEET) / 320;
+    const LIE = (a) => a.pet === 'dobby' ? 'lie' : 'lie';
+    const SIT = (a) => a.pet === 'dobby' ? 'up' : 'sit';
+    const DOGLIKE = (a) => DOGS.includes(a.pet);
+    const NAMES = { wifi: 'Wifi', snoet: 'Snoet', pippa: 'Pippa', pebbels: 'Pebbels', dobby: 'Dobby' };
+    const lg = (text) => { if (A.log) A.log('dier', text); };
+    const toward = (a, sx) => { a.face = sx > a.cx ? 1 : -1; };
+    const noseDown = (a, amt) => amt * (a.face > 0 ? 1 : -1);
+    function resetPose(a) { a.r = 0; a.sq = 1; a.sx = 1; a.lift = 0; a.eyes = ''; }
+    function makeResident(name, wx, feet, o) {
+      const a = Object.assign({ pet: name, s: PET[name].s * depthS(feet), wx, cx: scrX(wx), feet, face: rnd() < .5 ? -1 : 1, pose: 'lie', lockPose: true,
+        wt: 0, rate: 9, r: 0, sq: 1, sx: 1, lift: 0, alpha: 1, eyes: '', home: wx, place: A.placeAt(wx),
+        until: Date.now() + Math.max(5, +(cfg.pets_stay_min || 45)) * 60000 * (.7 + rnd() * .6) }, o || {});
+      a.brain = life(a);
+      residents.push(a); return a;
+    }
+    // walking and jumping for residents happen in world coordinates, so they stay put when the camera moves
+    function* rTo(a, wx, speed) {
+      const d = wrapD(wx - a.wx) > 0 ? 1 : -1; a.face = d; hold(a, 'walk'); a.rate = 6 * Math.max(.7, speed / 60);
+      let left = Math.abs(wrapD(wx - a.wx));
+      while (left > 0) { const step = Math.min(left, speed * st.dt); a.wx += d * step; left -= step; yield; }
+      hold(a, null); a.rate = 9;
+    }
+    function* rJump(a, height, secs, dwx) {
+      const x0 = a.wx; hold(a, 'jump');
+      yield* tween(secs || .45, p => { a.lift = Math.sin(p * Math.PI) * height; if (dwx) a.wx = x0 + dwx * p; });
+      a.lift = 0; hold(a, null);
+    }
+    const area = (a) => { const c0 = A.placeCenter(a.place), c = a.wx - wrapD(a.wx - c0); return [c - A.PLACE / 2 + 70, c + A.PLACE / 2 - 70]; };
+    const clampArea = (a, wx) => { const [l, r] = area(a); return clamp(wx, l, r); };
+    function* lieDown(a) {
+      if (DOGLIKE(a)) {   // dogs turn around once or twice before they lie down
+        for (let k = 0; k < 2 + Math.floor(rnd() * 2); k++) { a.face = -a.face; yield* rJump(a, 4, .22); }
+      } else if (a.pet !== 'dobby') { hold(a, 'down'); yield* wait(.6); }
+      hold(a, LIE(a));
+    }
+    function* getUp(a) {
+      if (a.pose === 'sleep') { hold(a, LIE(a)); yield* wait(.5); }
+      hold(a, 'stand');
+      if (a.pet !== 'dobby') {   // a good stretch: front down, bottom up
+        hold(a, 'down'); yield* tween(.5, p => { a.r = noseDown(a, .16 * p); }); yield* wait(.8);
+        yield* tween(.4, p => { a.r = noseDown(a, .16 * (1 - p)); }); a.r = 0;
+      }
+      hold(a, null);
+    }
+
+    /* the common things everyone does */
+    function* doze(a) {
+      hold(a, 'sleep'); const n = 12 + rnd() * 25, z = onScreen(a) ? emote('zzz', n, a) : null;
+      yield* tween(n, p => { a.sq = 1 + Math.sin(p * n * 1.6) * .025; });
+      a.sq = 1; stop(z);
+    }
+    function* rest(a) {
+      hold(a, LIE(a));
+      for (let k = 0, n = 3 + Math.floor(rnd() * 4); k < n; k++) {
+        yield* wait(2 + rnd() * 4);
+        if (rnd() < .4) a.face = -a.face;
+        else { hold(a, 'sleep'); yield* wait(.15); hold(a, LIE(a)); }   // a slow blink
+      }
+    }
+    function* sitUp(a) {
+      if (a.pose === 'sleep' || a.pose === 'lie') { hold(a, LIE(a)); yield* wait(.4); }
+      hold(a, SIT(a)); toward(a, kx());
+      if (rnd() < .4 && onScreen(a)) emote(pick(['?', 'heart', 'dots']), 1.6, a);
+      yield* wait(3 + rnd() * 5);
+      if (rnd() < .5) { a.face = -a.face; yield* wait(1.5 + rnd() * 2); }
+    }
+    function* shift(a) {
+      yield* getUp(a);
+      const to = clampArea(a, a.wx + (rnd() < .5 ? -1 : 1) * (40 + rnd() * 110));
+      yield* rTo(a, to, PET[a.pet].run * .45);
+      yield* lieDown(a);
+    }
+
+    /* what makes each of them themselves */
+    function* wifiDig(a) {
+      yield* getUp(a); hold(a, 'down');
+      const dirt = rParts((ps) => { if (rnd() < .5) ps.push(P({ x: a.cx + (a.face > 0 ? -16 : 16), y: a.feet - 3, vx: (a.face > 0 ? -1 : 1) * (40 + rnd() * 60), vy: -60 - rnd() * 60, grav: 300, life: .7 })); },
+        (g, p, t) => { g.fillStyle = `rgba(110,80,50,${1 - t})`; g.fillRect(p.x, p.y, 4, 4); });
+      yield* tween(3.5, p => { a.lift = Math.abs(Math.sin(p * 40)) * 2; });
+      stop(dirt); a.lift = 0; if (onScreen(a)) emote('sparks', 1.4, a);
+      hold(a, 'sit'); yield* wait(2); yield* lieDown(a);
+    }
+    function* wifiToy(a) {
+      yield* getUp(a);
+      const ball = { on: true, x: a.cx, y: a.feet - 1 }; let off = 0;
+      const f = ballFx(ball);
+      for (let k = 0; k < 3; k++) {
+        const t0x = a.wx + (rnd() < .5 ? -1 : 1) * (50 + rnd() * 60), to = clampArea(a, t0x);
+        yield* tween(.6, p => { off = wrapD(to - a.wx) * p; ball.x = a.cx + off; ball.y = a.feet - 1 - Math.sin(p * Math.PI) * 30; });
+        yield* rTo(a, to - (to > a.wx ? 14 : -14), PET.wifi.run); hold(a, 'down'); yield* wait(.4); hold(a, null);
+        ball.x = a.cx + (a.face > 0 ? 14 : -14);
+      }
+      if (onScreen(a)) emote('heart', 1.4, a);
+      yield* lieDown(a); yield* wait(4); stop(f);
+    }
+    function* wifiBeg(a) {
+      if (!onScreen(a)) return yield* rest(a);
+      if (a.pose !== 'sit') yield* getUp(a);
+      hold(a, 'sit'); toward(a, kx());
+      for (let k = 0; k < 3; k++) { yield* wait(.8); yield* rJump(a, 10, .3); hold(a, 'sit'); }
+      emote('hearts', 2, a); yield* wait(2.5);
+    }
+    function* snoetSpin(a) {   // chasing his own tail
+      yield* getUp(a);
+      for (let k = 0; k < 10; k++) { a.face = -a.face; yield* rJump(a, 6, .16); }
+      if (onScreen(a)) emote('stars', 2, a);
+      yield* tween(1.6, p => { a.r = Math.sin(p * 18) * .12 * (1 - p); }); a.r = 0;
+      yield* lieDown(a);
+    }
+    function* snoetSneeze(a) {
+      const p0 = a.pose; hold(a, p0 === 'sleep' ? 'lie' : p0);
+      yield* tween(.5, p => { a.sq = 1 - .06 * p; }); a.sq = 1.08;
+      if (onScreen(a)) { let once = true; const sn = rParts((ps) => { if (!once) return; once = false; const n = A.petPoint(a, 'nose');
+        for (let k = 0; k < 8; k++) ps.push(P({ x: n.x, y: n.y, vx: (a.face > 0 ? 1 : -1) * (40 + rnd() * 70), vy: (rnd() - .5) * 50, life: .5 })); },
+        (g, p, t) => { g.fillStyle = `rgba(255,255,255,${1 - t})`; g.fillRect(p.x, p.y, 3, 3); }); setTimeout(() => stop(sn), 1500); }
+      yield* wait(.15); a.sq = 1; yield* wait(1.2);
+      if (rnd() < .4) { yield* tween(.4, p => { a.sq = 1 - .06 * p; }); a.sq = 1.08; yield* wait(.15); a.sq = 1; }
+      yield* wait(2);
+    }
+    function* snoetBark(a) {   // something in the sky needs to be told off
+      if (a.pose !== 'sit') yield* getUp(a);
+      hold(a, 'sit'); a.r = noseDown(a, -.2);
+      for (let k = 0; k < 4; k++) { if (onScreen(a)) emote('burst', .4, a); yield* rJump(a, 5, .2); hold(a, 'sit'); yield* wait(.35 + rnd() * .5); }
+      a.r = 0; yield* wait(1.5); yield* lieDown(a);
+    }
+    function* snoetZoom(a) {
+      yield* getUp(a);
+      const [l, r] = area(a);
+      for (let k = 0; k < 3; k++) { yield* rTo(a, k % 2 ? l + 20 : r - 20, PET.snoet.run * 2.2); }
+      if (onScreen(a)) emote('sweat', 2, a);
+      yield* rTo(a, clampArea(a, a.home), PET.snoet.run); hold(a, 'sit'); yield* wait(1.5); yield* lieDown(a);
+    }
+    function* pippaGroom(a) {
+      if (a.pose !== 'sit') { hold(a, 'sit'); yield* wait(1); }
+      for (let k = 0; k < 6; k++) { hold(a, 'paw'); a.r = noseDown(a, .05); yield* wait(.35); a.r = 0; yield* wait(.25); }
+      hold(a, 'sit'); yield* wait(1.5);
+      if (rnd() < .6) { hold(a, 'down'); yield* tween(.8, p => { a.r = noseDown(a, .1 * Math.sin(p * Math.PI)); }); a.r = 0; hold(a, 'sit'); }   // and the back
+      yield* wait(2); hold(a, LIE(a));
+    }
+    function* pippaKnead(a) {
+      hold(a, 'down');
+      yield* tween(4 + rnd() * 3, p => { a.lift = (Math.floor(p * 18) % 2) * 1.5; a.sx = 1 + (Math.floor(p * 18) % 2) * .015; });
+      a.lift = 0; a.sx = 1; if (onScreen(a)) emote('heart', 1.4, a);
+      hold(a, LIE(a)); a.sx = 1.05; a.sq = .96; yield* wait(8 + rnd() * 10); a.sx = 1; a.sq = 1;   // a loaf
+    }
+    function* pippaStare(a) {   // she looks at Kamiel. For a long time. She does not blink.
+      if (!onScreen(a)) return yield* rest(a);
+      hold(a, 'sit'); toward(a, kx()); yield* wait(4);
+      if (rnd() < .4) emote('angry', 1.4, a);
+      yield* wait(3); a.face = -a.face; yield* wait(2); hold(a, LIE(a));
+    }
+    function* pebbelsHunt(a) {   // a butterfly. He will get it. (He won't.)
+      if (!onScreen(a)) return yield* rest(a);
+      yield* getUp(a);
+      const bf = { x: a.cx + (a.face > 0 ? 1 : -1) * 120, y: a.feet - 60, t: 0, gone: false };
+      const f = fx('front', 0, (g) => { bf.t += st.dt; const x = bf.x + Math.sin(bf.t * 2.1) * 30, y = bf.y + Math.sin(bf.t * 3.3) * 14, w = Math.abs(Math.sin(bf.t * 18)) * 6 + 1;
+        g.fillStyle = '#ffd23f'; g.fillRect(x - w, y - 4, w, 6); g.fillRect(x + 1, y - 4, w, 6); g.fillStyle = '#2a1408'; g.fillRect(x, y - 4, 1, 7); });
+      toward(a, bf.x); hold(a, 'down');
+      yield* tween(2.4, p => { a.sx = 1 + Math.sin(p * 30) * .03; });   // the wiggle
+      a.sx = 1;
+      const dist = worldX(bf.x) - a.wx - (a.face > 0 ? 20 : -20);
+      yield* rJump(a, 40, .5, dist * .8);
+      yield* tween(1.2, () => { bf.y -= 120 * st.dt; bf.x += 50 * st.dt; });
+      hold(a, 'sit'); toward(a, bf.x); if (onScreen(a)) emote('?', 2, a);
+      yield* tween(2.5, () => { bf.y -= 80 * st.dt; }); stop(f);
+      yield* wait(1); yield* lieDown(a);
+    }
+    function* pebbelsRoll(a) {
+      hold(a, LIE(a));
+      yield* tween(3, p => { a.r = Math.sin(p * Math.PI * 4) * .22; }); a.r = 0;
+      if (onScreen(a)) emote('heart', 1.5, a); yield* wait(3);
+    }
+    function* dobbyBinky(a) {   // the happy rabbit jump: up, a twist in the air, down
+      if (a.pose !== 'stand') { hold(a, 'stand'); yield* wait(.3); }
+      for (let k = 0, n = 1 + Math.floor(rnd() * 3); k < n; k++) {
+        const s0 = a.face; hold(a, 'jump');
+        yield* tween(.55, p => { a.lift = Math.sin(p * Math.PI) * 38; a.r = Math.sin(p * Math.PI * 2) * .5; a.sx = p > .3 && p < .6 ? -1 : 1; a.wx += (s0 > 0 ? 1 : -1) * 70 * st.dt; });
+        a.lift = 0; a.r = 0; a.sx = 1; hold(a, null); yield* wait(.25);
+      }
+      if (onScreen(a)) emote('sparks', 1.4, a);
+      yield* wait(1);
+    }
+    function* dobbyFlop(a) {   // falls over on his side, very dramatic, and sleeps
+      hold(a, 'lie'); yield* wait(1.5);
+      const side = rnd() < .5 ? -1 : 1;
+      yield* tween(.25, p => { a.r = side * 1.3 * p * p; }); a.r = side * 1.3;
+      hold(a, 'sleep'); a.r = side * 1.3; yield* wait(10 + rnd() * 15);
+      yield* tween(.4, p => { a.r = side * 1.3 * (1 - p); }); a.r = 0; hold(a, 'lie');
+    }
+    function* dobbyMunch(a) {
+      if (a.pose !== 'stand') { hold(a, 'stand'); yield* wait(.4); }
+      hold(a, 'down');
+      const bits = rParts((ps) => { if (rnd() < .08) { const n = A.petPoint(a, 'nose'); ps.push(P({ x: n.x, y: a.feet - 2, vx: (rnd() - .5) * 20, vy: -20, grav: 90, life: .5 })); } },
+        (g, p, t) => { g.fillStyle = `rgba(90,170,60,${1 - t})`; g.fillRect(p.x, p.y, 2, 4); });
+      yield* tween(5 + rnd() * 4, p => { a.sq = 1 + Math.sin(p * 90) * .015; }); a.sq = 1; stop(bits);
+      hold(a, 'lie');
+    }
+    function* dobbyLook(a) {
+      hold(a, 'up'); for (let k = 0; k < 3; k++) { yield* wait(1 + rnd()); a.face = -a.face; }
+      yield* wait(1); hold(a, 'lie');
+    }
+    const PERS = {
+      wifi: [[doze, 4], [rest, 3], [sitUp, 2], [shift, 2], [wifiDig, 1], [wifiToy, 1.5], [wifiBeg, 1]],
+      snoet: [[doze, 3], [rest, 2], [sitUp, 2], [shift, 1], [snoetSpin, 1.5], [snoetSneeze, 1], [snoetBark, 1], [snoetZoom, 1]],
+      pippa: [[doze, 5], [rest, 3], [sitUp, 1], [pippaGroom, 2], [pippaKnead, 1.5], [pippaStare, 1], [shift, .5]],
+      pebbels: [[doze, 5], [rest, 3], [sitUp, 1.5], [pebbelsHunt, 1.5], [pebbelsRoll, 1.5], [shift, 1]],
+      dobby: [[doze, 3], [rest, 3], [dobbyBinky, 1.5], [dobbyFlop, 1.5], [dobbyMunch, 2], [dobbyLook, 1.5], [shift, .5]],
+    };
+    const wpick = (list) => { let r = rnd() * list.reduce((s, x) => s + x[1], 0); for (const x of list) { r -= x[1]; if (r <= 0) return x[0]; } return list[0][0]; };
+    function* life(a) {
+      for (;;) {
+        if (Date.now() > a.until) { yield* rLeave(a); return; }
+        resetPose(a);
+        yield* wpick(PERS[a.pet])(a);
+      }
+    }
+    function* rLeave(a) {
+      if (onScreen(a)) {
+        yield* getUp(a);
+        const side = a.cx < W / 2 ? -1 : 1;
+        yield* rTo(a, worldX(W / 2 + side * (W / 2 + 90)), PET[a.pet].run * .7);
+      }
+      lg(`${NAMES[a.pet]} is weer vertrokken.`);
+      a.gone = true;
+    }
+    // Kamiel arrives: those that are awake look at him; sometimes one comes over to say hello
+    function* notice(a) {
+      resetPose(a);
+      lg(`Kamiel komt aan en ${NAMES[a.pet]} ligt daar ${a.pose === 'sleep' ? 'te slapen' : 'te luieren'}.`);
+      if (a.pose === 'sleep' && rnd() < .35) return yield* life(a);   // fast asleep
+      if (a.pose === 'sleep') { hold(a, LIE(a)); yield* wait(.6 + rnd()); }
+      hold(a, SIT(a)); toward(a, kx()); emote('!', 1.2, a);
+      yield* wait(1.5);
+      if (!greetFor && rnd() < .65) { greetFor = a; request('begroeten'); yield* wait(8); if (greetFor === a && !a.busy) greetFor = null; }
+      yield* life(a);
+    }
+    let greetFor = null;
+    function arrived() {
+      for (const a of residents) if (!a.busy && onScreen(a)) a.brain = notice(a);
+    }
+    // a new scene is made somewhere out of sight: whoever lay there has gone home; sometimes someone lies there already
+    function placeNew(i) {
+      for (const a of residents.slice()) if (a.place === i && !onScreen(a) && !a.busy) { a.gone = true; residents.splice(residents.indexOf(a), 1); }
+      if (cfg.on === false || residents.length >= MAXRES || rnd() * 100 >= (cfg.pets_lying === undefined ? 20 : +cfg.pets_lying)) return;
+      const free = PETS.filter(p => !isRes(p) && !(cfg.off || []).includes(p)); if (!free.length) return;
+      const name = pick(free), c = A.placeCenter(i);
+      let dx = 0; for (let t = 0; t < 12; t++) { dx = (rnd() * 2 - 1) * (A.PLACE / 2 - 90); if (Math.abs(dx) > 150 && residents.every(r => Math.abs(wrapD(r.wx - c - dx)) > 100)) break; }
+      const a = makeResident(name, c + dx, FEET + (rnd() * 40 - 12), { pose: rnd() < .6 ? 'sleep' : LIE({ pet: name }) });
+      a.brain = (function* () { yield* wait(rnd() * 20); yield* life(a); })();
+    }
+    // after a visit: sometimes they don't leave, they look for a spot and lie down
+    function* settle(a) {
+      let sx = W / 2; for (let t = 0; t < 20; t++) { sx = 90 + rnd() * (W - 180); if (Math.abs(sx - kx()) > 150 && residents.every(r => Math.abs(r.cx - sx) > 100)) break; }
+      yield* petTo(a, sx, PET[a.pet].run * .5);
+      const r = makeResident(a.pet, worldX(a.cx), a.feet, { face: a.face, pose: 'stand', lockPose: false });
+      a.alpha = 0; r.brain = (function* () { yield* lieDown(r); yield* tween(.6, p => { r.feet = FEET + 14 * p; r.s = PET[r.pet].s * depthS(r.feet); }); yield* life(r); })();
+      lg(`${NAMES[a.pet]} blijft nog wat en gaat liggen.`);
+    }
+    // tapping a resident on the tablet
+    function tapPet(x, y) {
+      for (const a of residents) {
+        const u = 3.3 * a.s, w = 36 * u, h = 31 * u;
+        if (a.busy || Math.abs(x - a.cx) > w / 2 || y < a.feet - h || y > a.feet + 6) continue;
+        a.brain = (function* () {
+          resetPose(a);
+          if (a.pose === 'sleep') { hold(a, LIE(a)); emote('!', 1.2, a); yield* rJump(a, 10, .25); }
+          hold(a, SIT(a)); emote('hearts', 2, a); a.eyes = 'hart'; yield* wait(2.2); a.eyes = '';
+          yield* life(a);
+        })();
+        return true;
+      }
+      return false;
+    }
+    // the hello: the resident comes to Kamiel and does its own thing
+    const GREET = {
+      wifi: function* (a, side) { hold(a, 'down'); yield* tween(.4, p => { a.r = noseDown(a, .16 * p); }); yield* wait(.8); a.r = 0;
+        for (let k = 0; k < 3; k++) { yield* rJump(a, 18, .3); emote('burst', .4, a); } hold(a, 'sit'); emote('hearts', 2, a); kam.eyes = 'blij'; yield* wait(2); },
+      snoet: function* (a) { for (let k = 0; k < 8; k++) { a.face = -a.face; yield* rJump(a, 6, .15); }
+        toward(a, kx()); for (let k = 0; k < 2; k++) { yield* rJump(a, 32, .4); emote('heart', .8, a); } kam.eyes = 'blij'; emote('hearts', 2); yield* wait(1.5); },
+      pippa: function* (a, side) { const x0 = a.wx; yield* rTo(a, worldX(kx() - side * 70), 28); emote('hearts', 2, a); kam.eyes = 'dicht'; kam.blush = true;
+        yield* rTo(a, x0, 28); a.face = -side; hold(a, 'sit'); yield* wait(1); hold(a, 'paw'); yield* wait(1.5); hold(a, 'sit'); kam.blush = false; },
+      pebbels: function* (a, side) { kam.head = .2; hold(a, 'sit'); yield* wait(.6); yield* rJump(a, 22, .4); emote('?', 1.2, a);
+        yield* wait(.5); emote('heart', 1.6, a); kam.eyes = 'blij'; yield* wait(1.6); kam.head = 0; },
+      dobby: function* (a) { yield* dobbyBinky(a); toward(a, kx()); kam.head = .22; hold(a, 'up'); yield* wait(.8); emote('hearts', 2, a); kam.eyes = 'blij'; yield* wait(2); kam.head = 0; },
+    };
+    function* greetRun(a) {
+      a.busy = true;
+      try {
+        resetPose(a);
+        const side = a.cx > kx() ? 1 : -1; kam.face = side; kam.eyes = 'groot'; emote('!', 1); yield* wait(.8); kam.eyes = '';
+        if (a.pose === 'sleep' || a.pose === 'lie') { hold(a, 'stand'); yield* wait(.4); }
+        yield* rTo(a, worldX(kx() + side * 90), PET[a.pet].run * .8); toward(a, kx());
+        yield* GREET[a.pet](a, side);
+        kam.eyes = ''; kam.head = 0;
+        if (rnd() < .5) yield* rTo(a, clampArea(a, a.home), PET[a.pet].run * .5);   // back to its spot, or it stays close
+        else { const near = clampArea(a, worldX(kx() + side * 150)); yield* rTo(a, near, PET[a.pet].run * .4); }
+        yield* lieDown(a);
+        lg(`${NAMES[a.pet]} kwam Kamiel begroeten.`);
+      } finally { a.busy = false; a.brain = life(a); greetFor = null; }
+    }
+    // particles that belong to a resident (not to an event)
+    function rParts(emit, drawP) {
+      const ps = [];
+      return fx('front', 0, (g) => {
+        const dt = st.dt; emit(ps, dt);
+        for (let i = ps.length - 1; i >= 0; i--) { const p = ps[i]; p.age += dt; if (p.age > p.life) { ps.splice(i, 1); continue; } p.vy += (p.grav || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; drawP(g, p, p.age / p.life); }
+      });
+    }
+
     /* ---------- the events ---------- */
     const DEF = {
+      // a resident housemate comes to say hello (see "housemates that stay a while")
+      begroeten: { can: () => !!greetFor && !greetFor.gone && !greetFor.busy && onScreen(greetFor), run: function* () { yield* greetRun(greetFor); } },
       // Heidi: the white lama. Lots of personality, mostly annoying: she won't cooperate and hates everything.
       lama: { run: function* () {
         const side = rnd() < .5 ? -1 : 1, H0 = { cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: 'vies' };
@@ -1373,18 +1707,29 @@
       A.kamReset(); kam.face = face;
       cur = { id, t: 0, fx: [], actors: [], post: null, itemOff: null, cloudOff: null, hide: false, cleanup: [] };
       cur.gen = def.run();
+      const e = LIST.find(x => x.id === id); if (A.onStart && e) A.onStart(id, e.name, e.cat);
       return true;
     }
     function finish() {
       const c = cur; cur = null;
+      try { if (c.gen && c.gen.return) c.gen.return(); } catch (e) { }
       c.cleanup.forEach(f => { try { f(); } catch (e) { } });
       const center = A.center(0);   // always end up in a place, never between two
       if (Math.abs(A.cam() - center) > 1) { A.setCam(center); A.arrive(); }
       const f = kam.face; A.kamReset(); if (f) A.setDir(f);
     }
     function tick(dt) {
+      st.dt = dt; clock += dt;
+      for (const a of residents.slice()) {
+        a.cx = scrX(a.wx); a.s = PET[a.pet].s * depthS(a.feet);
+        if (a.pose === 'walk') a.wt += a.rate * dt;
+        if (!a.busy && a.brain) { let done = false; try { done = a.brain.next().done; } catch (e) { console.error('huisdier', a.pet, e); done = true; } if (done) a.gone = true; }
+        // when Kamiel walks on, those that are awake watch him go
+        if (A.walking() && !a.busy && onScreen(a) && (a.pose === 'sit' || a.pose === 'up' || a.pose === 'stand')) a.face = a.cx < W / 2 ? 1 : -1;
+      }
+      for (let i = residents.length - 1; i >= 0; i--) if (residents[i].gone) residents.splice(i, 1);
       if (!cur) return;
-      st.dt = dt; cur.t += dt;
+      cur.t += dt;
       if (kam.pose === 'walk') kam.wt += kam.rate * dt;
       kam.eyeT += dt;
       for (const a of cur.actors) {
@@ -1396,6 +1741,13 @@
       if (done || cur.t > 66) finish();
     }
     function draw(layer, g) {
+      if (layer === 'back' || layer === 'front') for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) A.drawPet(g, a);
+      for (const f of rfx.slice()) {
+        if (f.layer !== layer) continue;
+        const age = clock - f.born;
+        if (f.dur && age > f.dur) { stop(f); continue; }
+        g.save(); try { f.draw(g, age); } catch (e) { console.error(e); stop(f); } g.restore();
+      }
       if (!cur) return;
       if (layer === 'back' || layer === 'front') for (const a of cur.actors) if ((a.layer || 'back') === layer && a.alpha > 0) { if (a.pet) A.drawPet(g, a); else A.drawLlama(g, a); }
       for (const f of cur.fx.slice()) {
@@ -1445,7 +1797,8 @@
 
     return {
       get active() { return !!cur; },
-      check, pump, walkNow, tick, draw, post, request,
+      check, pump, walkNow, tick, draw, post, request, arrived, placeNew, tapPet,
+      residents: () => residents.map(a => ({ pet: a.pet, pose: a.pose, x: Math.round(a.cx), busy: !!a.busy })),
       itemOff: (it, layer, sx, y, w, h) => cur && cur.itemOff ? cur.itemOff(it, layer, sx, y, w, h) : null,
       cloudOff: (cl, x, y, w, h) => cur && cur.cloudOff ? cur.cloudOff(cl, x, y, w, h) : null,
       hideWorld: () => !!(cur && cur.hide),

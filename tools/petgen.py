@@ -1,6 +1,7 @@
 """Builds the pixel-art pets for Kamiel (static/pets.js) and a preview sheet.
 Each pet is drawn from simple shapes on a grid, outlined, given a little fur texture,
-and gets its frames: stand, blink, walk1-4, down (crouched), jump."""
+and gets its frames: stand, blink, walk1-4, down (crouched), jump, and for staying a while:
+sit, lie, sleep (dogs and cats; cats also paw = licking a paw), lie, sleep and up (the rabbit on his hind legs)."""
 import json, math, sys, hashlib
 from PIL import Image
 
@@ -123,12 +124,19 @@ def dog(name, C, small=False):
     """Long-haired chihuahua. C: colours."""
     W, H = 36, 31
     OY = 3
-    def body(legs, crouch=0, jump=False):
+    def body(legs, crouch=0, jump=False, pose=""):
         g = Grid(W, H); dy = crouch + OY
-        # tail: a long fluffy plume curling up over the back
-        g.thick([(25, 16 + dy), (28, 12 + dy), (29.5, 8 + dy), (28, 5 + dy)], 1.7, C["fur"])
-        g.ell(29.5, 9 + dy, 2.6, 3.8, C["fur"]); g.ell(28.6, 5.6 + dy, 1.8, 1.9, C["tip"])
-        fluff(g, C["fringe"], (26, 2 + dy, 33, 14 + dy), .55, name + "tail", dirs=((1, 0), (0, -1), (1, -1)))
+        if pose == "sit":   # the tail lies on the ground, curled forward a little
+            g.thick([(25, 26 + OY), (29, 26 + OY), (31.5, 24 + OY)], 1.6, C["fur"]); g.ell(31.5, 23.5 + OY, 1.8, 1.8, C["tip"])
+            fluff(g, C["fringe"], (25, 23 + OY, 34, 27 + OY), .5, name + "tails", dirs=((0, -1), (1, 0)))
+        elif pose == "lie":   # curled along the body
+            g.thick([(26, 23 + dy), (30, 24 + dy), (32.5, 22 + dy)], 1.6, C["fur"]); g.ell(32.5, 21.5 + dy, 1.8, 1.9, C["tip"])
+            fluff(g, C["fringe"], (26, 19 + dy, 35, 25 + dy), .5, name + "taill", dirs=((0, -1), (1, 0)))
+        else:
+            # tail: a long fluffy plume curling up over the back
+            g.thick([(25, 16 + dy), (28, 12 + dy), (29.5, 8 + dy), (28, 5 + dy)], 1.7, C["fur"])
+            g.ell(29.5, 9 + dy, 2.6, 3.8, C["fur"]); g.ell(28.6, 5.6 + dy, 1.8, 1.9, C["tip"])
+            fluff(g, C["fringe"], (26, 2 + dy, 33, 14 + dy), .55, name + "tail", dirs=((1, 0), (0, -1), (1, -1)))
         # legs (behind the body first: far legs darker)
         for (x, top, bottom, far, dx) in legs:
             col = shade(C["leg"], .78) if far else C["leg"]
@@ -136,7 +144,13 @@ def dog(name, C, small=False):
             g.rect(int(x + dx), top + dy, int(x + dx) + 1, bottom + OY, C["fur2"] if far else C["fur"])
             g.rect(int(x + dx), (top + 2 if front and C.get("leg_full") else bottom - 2) + dy - (0 if front and C.get("leg_full") else 0), int(x + dx) + 1, bottom + OY, col) if front and C.get("leg_full") else g.rect(int(x + dx), bottom - 2 + OY, int(x + dx) + 1, bottom + OY, col)
             g.put(int(x + dx) - 1, bottom + OY, col)   # a little paw
-        g.ell(19, 17 + dy, 8.6, 5.2, C["fur"])               # body
+        if pose == "sit":   # sitting: the body slopes down to a round haunch on the ground
+            g.ell(17.5, 20 + dy, 6.4, 5.6, C["fur"]); g.ell(21, 23.5 + OY, 4.8, 3.8, C["fur"])
+            g.rect(15, 25 + OY, 22, 26 + OY, C["fur"]); g.rect(14, 26 + OY, 17, 26 + OY, C["leg"])
+        else:
+            g.ell(19, 17 + dy, 8.6, 5.2, C["fur"])               # body
+        if pose == "lie":   # front paws stretched out in front
+            g.rect(3, 25 + OY, 10, 26 + OY, C["leg"]); g.put(2, 26 + OY, C["leg"])
         g.ell(11.5, 15 + dy, 4.4, 5.4, C["fur"])             # neck and chest
         g.ell(10.5, 17.2 + dy, 2.8, 3.8, C["bib"])           # chest bib
         g.ell(8.5, 9.6 + dy, 6.2, 5.6, C["fur"])             # head
@@ -171,15 +185,23 @@ def dog(name, C, small=False):
         frames[ph] = body(legset(ph))
     frames["down"] = body([(12, 21, 26, False, -1), (14.5, 21, 26, True, -1), (22, 21, 26, False, 1), (24.5, 21, 26, True, 1)], crouch=3)
     frames["jump"] = body([(10, 19, 24, False, 0), (12.5, 19, 24, True, 0), (24, 19, 25, False, 1), (26.5, 19, 25, True, 1)])
+    frames["sit"] = body([(11, 19, 26, False, 0), (13.5, 19, 26, True, 0)], pose="sit")
+    frames["lie"] = body([], crouch=5, pose="lie")
+    frames["sleep"] = body([], crouch=6, pose="lie")
     eye, nose, mouth = (6, 10 + OY), (0, 11 + OY), (2, 13 + OY)
     return finish(name, frames, eye, nose, mouth, head=(9, 1), C=C, small=small, oy=OY)
 
 
 def cat(name, C, chubby=False):
     W, H = 38, 30
-    def body(legs, crouch=0):
+    def body(legs, crouch=0, pose=""):
         g = Grid(W, H); dy = crouch
-        g.thick([(28, 18 + dy), (32, 16 + dy), (34, 11 + dy), (33.5, 6 + dy), (35, 3.5 + dy)], 1.1, C["tail"])   # tail up
+        if pose in ("sit", "paw"):   # tail around the feet
+            g.thick([(25, 27), (30, 27.5), (34, 26), (35, 24)], 1.1, C["tail"])
+        elif pose == "lie":
+            g.thick([(29, 24 + dy - 1), (33, 26), (36, 25.5)], 1.1, C["tail"])
+        else:
+            g.thick([(28, 18 + dy), (32, 16 + dy), (34, 11 + dy), (33.5, 6 + dy), (35, 3.5 + dy)], 1.1, C["tail"])   # tail up
         for (x, top, bottom, far, dx, sock) in legs:
             col = C["fur2"] if far else C["leg"]
             g.rect(int(x + dx), top + dy, int(x + dx) + 1, bottom, col)
@@ -191,16 +213,29 @@ def cat(name, C, chubby=False):
             g.rect(int(x + dx) - 1, bottom, int(x + dx) + 1, bottom, sock)
             if sock != col:
                 g.rect(int(x + dx), bottom - 1, int(x + dx) + 1, bottom, sock)
-        g.ell(21, 18.5 + dy, 10.5, 5.6 if not chubby else 6.6, C["fur"])   # body
+        if pose in ("sit", "paw"):   # sitting up straight: a pear shape
+            g.ell(17.5, 20, 6.2, 6.4 if not chubby else 7, C["fur"]); g.ell(21.5, 24, 5.6, 4.4, C["fur"])
+            hs = C.get("hind_socks", C.get("socks", C["leg"]))
+            g.rect(16, 27, 24, 28, C["fur"]); g.rect(15, 28, 18, 28, hs)
+        else:
+            g.ell(21, 18.5 + dy, 10.5, 5.6 if not chubby else 6.6, C["fur"])   # body
+        if pose == "lie":   # front paws tucked in front, like a loaf
+            sk = C.get("socks", C["leg"])
+            g.rect(4, 27, 10, 28, C["leg"]); g.rect(3, 28, 6, 28, sk)
+        if pose == "paw":   # one front paw up at the mouth, licking it
+            sk = C.get("socks", C["leg"])
+            g.rect(6, 15, 7, 21, C.get("leg_white") or C["leg"]); g.rect(5, 14, 7, 15, sk)
         g.ell(12, 16 + dy, 4.2, 5.2, C["fur"])                             # neck/chest
         g.ell(8.5, 11 + dy, 6, 5.4, C["fur"])                              # head
         g.poly([(3.2, 8 + dy), (3.5, 1.5 + dy), (7.6, 6 + dy)], C["fur"])   # ears: pointy
         g.poly([(9.5, 6 + dy), (13.6, 1.6 + dy), (13.4, 9 + dy)], C["fur"])
         g.poly([(4.3, 7 + dy), (4.5, 3.4 + dy), (6.6, 6 + dy)], C["ear"])
         g.poly([(10.6, 6.5 + dy), (12.9, 3.6 + dy), (12.6, 8.3 + dy)], C["ear"])
-        if C.get("belly"):   # tuxedo: white underneath
+        if C.get("belly") and pose not in ("sit", "paw"):   # tuxedo: white underneath
             g.ell(19, 22.5 + dy, 10, 3.2, C["belly"], only=(C["fur"],))
             g.ell(28, 19 + dy, 2.5, 2.5, C["belly"], only=(C["fur"],))
+        elif C.get("belly"):
+            g.ell(16, 23, 4, 4, C["belly"], only=(C["fur"],))
         if C.get("warm"):    # warm orange patches in the coat
             g.ell(24, 16.5 + dy, 2.2, 1.4, C["warm"], only=(C["fur"],))
         if C.get("chest"):
@@ -212,12 +247,12 @@ def cat(name, C, chubby=False):
         g.ell(4.4, 13.6 + dy, 3.4, 2.2, C["muzzle"])                    # muzzle/chin
         if C.get("stripes"):
             for sx in range(14, 31, 3):
-                g.rect(sx, 13 + dy, sx, 21 + dy, C["stripes"], only=(C["fur"],))
+                g.rect(sx, 13 + dy, sx, 29, C["stripes"], only=(C["fur"],))
             for sx in (7, 9, 11):   # the "M" on the forehead
                 g.rect(sx, 6 + dy, sx, 9 + dy, C["stripes"], only=(C["fur"],))
             g.rect(10, 13 + dy, 13, 13 + dy, C["stripes"], only=(C["fur"],))
-            for k in range(29, 36, 2):
-                g.rect(k, 2, k, 18, C["stripes"], only=(C["tail"],))
+            for k in range(25, 37, 2):
+                g.rect(k, 2, k, 29, C["stripes"], only=(C["tail"],))
         return g
     def legset(phase):
         socks = C.get("socks", C["leg"])
@@ -228,6 +263,10 @@ def cat(name, C, chubby=False):
     socks = C.get("socks", C["leg"])
     frames["down"] = body([(11, 23, 28, False, -1, socks), (13.5, 23, 28, True, -1, socks), (27, 23, 28, False, 1, socks), (29.5, 23, 28, True, 1, socks)], crouch=4)
     frames["jump"] = body([(9, 21, 26, False, 0, socks), (11.5, 21, 26, True, 0, socks), (29, 21, 27, False, 1, socks), (31.5, 21, 27, True, 1, socks)])
+    frames["sit"] = body([(11, 21, 28, False, 0, socks), (13.5, 21, 28, True, 0, socks)], pose="sit")
+    frames["paw"] = body([(13.5, 21, 28, True, 0, socks)], pose="paw")
+    frames["lie"] = body([], crouch=5, pose="lie")
+    frames["sleep"] = body([], crouch=6, pose="lie")
     return finish(name, frames, (6, 11), (1, 13), (3, 15), head=(9, 1), C=C)
 
 
@@ -236,9 +275,27 @@ def rabbit(name, C):
     def body(phase):
         g = Grid(W, H)
         # a hop: gather, push off, fly, land; everything lifts together
-        up = {"stand": 0, "walk1": 0, "walk2": 2, "walk3": 4, "walk4": 1, "jump": 5, "down": -1}[phase]
-        st = {"stand": 0, "walk1": 0, "walk2": 1, "walk3": 2, "walk4": 1, "jump": 2, "down": 0}[phase]
+        if phase == "up":   # on his hind legs, looking around (a periscope)
+            g.ell(20, 27.5, 4, 1.4, C["fur2"])
+            g.ell(16, 19, 5.8, 8.6, C["fur"]); g.ell(19.5, 22, 2, 2, C["fur"])
+            g.ell(12.5, 10, 2.6, 3.6, C["chest"]); g.rect(10, 15, 11, 17, C["fur"])
+            g.ell(10.5, 8, 5.6, 5, C["fur"])
+            g.ell(12, 0.8, 1.4, 3.6, C["fur"]); g.ell(14.5, 1.2, 1.3, 3.4, C["fur2"]); g.ell(12, 1, .6, 2.4, C["ear"])
+            g.ell(13, 15.5, 2.6, 4, C["chest"])
+            g.ell(6, 10, 2.2, 2, C["muzzle"], only=(C["fur"],))
+            g.put(5.5, 10.5, C["blaze"]); g.put(6.5, 10.5, C["blaze"]); g.put(5.5, 11.5, C["blaze"])
+            return g
+        up = {"stand": 0, "walk1": 0, "walk2": 2, "walk3": 4, "walk4": 1, "jump": 5, "down": -1, "lie": -2, "sleep": -2}[phase]
+        st = {"stand": 0, "walk1": 0, "walk2": 1, "walk3": 2, "walk4": 1, "jump": 2, "down": 0, "lie": 0, "sleep": 0}[phase]
         dy = 5 - up
+        if phase in ("lie", "sleep"):   # flat as a loaf, ears laid back
+            g.ell(18, 18.5 + dy, 9.5, 5.6, C["fur"]); g.ell(26, 17 + dy, 2, 2, C["fur"])
+            g.ell(8, 13 + dy, 5.8, 5, C["fur"])
+            g.ell(15, 9.5 + dy, 4.6, 1.4, C["fur"]); g.ell(16, 10.6 + dy, 4.2, 1.2, C["fur2"]); g.ell(15, 9.6 + dy, 3.2, .6, C["ear"])
+            g.ell(10.5, 19.5 + dy, 3, 3, C["chest"])
+            g.ell(3.5, 15 + dy, 2.2, 2, C["muzzle"], only=(C["fur"],))
+            g.put(3, 15.5 + dy, C["blaze"]); g.put(4, 15.5 + dy, C["blaze"]); g.put(3, 16.5 + dy, C["blaze"])
+            return g
         g.ell(20.5 + st * 1.2, 23 + dy, 4.2 + st * .6, 1.4, C["fur2"])                       # hind foot
         g.ell(17 + st * .5, 16.5 + dy, 8 + st * .5, 6.8 - (1 if phase == "down" else 0), C["fur"])   # round, compact body
         g.ell(23.5 + st * .5, 14 + dy, 2, 2, C["fur"])                                         # rump / tail
@@ -254,7 +311,7 @@ def rabbit(name, C):
         g.ell(3.5, 13.5 + dy, 2.2, 2, C["muzzle"], only=(C["fur"],))
         g.put(3, 14 + dy, C["blaze"]); g.put(4, 14 + dy, C["blaze"]); g.put(3, 15 + dy, C["blaze"])   # the white spot on his nose
         return g
-    frames = {ph: body(ph) for ph in ("stand", "walk1", "walk2", "walk3", "walk4", "down", "jump")}
+    frames = {ph: body(ph) for ph in ("stand", "walk1", "walk2", "walk3", "walk4", "down", "jump", "lie", "sleep", "up")}
     return finish(name, frames, (7, 11), (1, 14), (2, 15), head=(10, 0), C=C, ground_fix=True)
 
 
@@ -264,19 +321,32 @@ def finish(name, frames, eye, nose, mouth, head, C, small=False, ground_fix=Fals
     for ph, g in frames.items():
         g = outline(g)
         # face details after the outline, so they stay crisp
-        dy = 0
+        dy, dx = 0, 0
         if ph == "down":
             dy = 3 if name in ("wifi", "snoet") else 4 if name in ("pippa", "pebbels") else 1
+        if ph in ("lie", "sleep"):
+            dy = 5 if ph == "lie" else 6
         if name == "dobby":
-            dy = 5 + {"walk2": -2, "walk3": -4, "walk4": -1, "jump": -5, "down": 1}.get(ph, 0)
-        ex, ey = eye[0], eye[1] + dy
+            dy = 5 + {"walk2": -2, "walk3": -4, "walk4": -1, "jump": -5, "down": 1, "lie": 2, "sleep": 2}.get(ph, 0)
+            if ph in ("lie", "sleep"):
+                dy = 6.5
+            if ph == "up":
+                dx, dy = 2.5, -3
+        ex, ey = int(eye[0] + dx), int(eye[1] + dy)
+        if ph == "sleep":   # eyes closed: a little dark line
+            for x in (ex - 1, ex, ex + 1):
+                g.put(x, ey + 1, shade(C["fur"], .4) if C["fur"] != C["eye"] else "#000000")
+            g.put(int(nose[0] + dx), int(nose[1] + dy), C["nose"]); g.put(int(nose[0] + dx) + 1, int(nose[1] + dy), C["nose"])
+            g = texture(g, seed + ph, skip=(C["nose"],))
+            out[ph] = g
+            continue
         if C.get("ring"):   # a brownish ring around a big dark eye (Dobby)
             for (x, y) in ((ex - 2, ey), (ex - 2, ey + 1), (ex + 1, ey), (ex + 1, ey + 1), (ex - 1, ey - 1), (ex, ey - 1), (ex - 1, ey + 2), (ex, ey + 2)):
                 g.put(x, y, C["ring"])
         g.put(ex, ey, C["eye"]); g.put(ex, ey + 1, C["eye"]); g.put(ex - 1, ey + 1, C["eye"]); g.put(ex - 1, ey, C["eye"])
         g.put(ex - 1, ey, "#ffffff")
-        g.put(nose[0], nose[1] + dy, C["nose"]); g.put(nose[0] + 1, nose[1] + dy, C["nose"])
-        g.put(mouth[0] + 1, mouth[1] + dy, shade(C["muzzle"], .55))
+        g.put(int(nose[0] + dx), int(nose[1] + dy), C["nose"]); g.put(int(nose[0] + dx) + 1, int(nose[1] + dy), C["nose"])
+        g.put(int(mouth[0] + dx) + 1, int(mouth[1] + dy), shade(C["muzzle"], .55))
         g = texture(g, seed + ph, skip=(C["eye"], "#ffffff", C["nose"]))
         out[ph] = g
     blink = out["stand"].copy()
@@ -314,7 +384,7 @@ with open(OUT_JS, "w") as f:
 
 # preview: every frame, big
 S = 6
-order = ["stand", "blink", "walk1", "walk2", "walk3", "walk4", "down", "jump"]
+order = ["stand", "blink", "walk1", "walk2", "walk3", "walk4", "down", "jump", "sit", "paw", "lie", "sleep", "up"]
 Wt = sum(max(p["w"] for p in PETS.values()) * S + 10 for _ in order)
 Ht = sum(p["h"] * S + 10 for p in PETS.values())
 im = Image.new("RGB", (Wt, Ht), (78, 130, 236))
@@ -322,6 +392,8 @@ y = 0
 for name, p in PETS.items():
     x = 0
     for ph in order:
+        if ph not in p["frames"]:
+            x += max(q["w"] for q in PETS.values()) * S + 10; continue
         fr = p["frames"][ph]
         for r, row in enumerate(fr["rows"]):
             for c, ch in enumerate(row):
