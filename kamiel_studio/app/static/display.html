@@ -1231,8 +1231,8 @@ function updateTimers() {
   if (ringing) f.dirty = true;
 }
 function tickSigns() {
-  if (board) { updateBoard(false); board.flap.tick(); }
-  if (timerSign) { updateTimers(); timerSign.flap.tick(); }
+  if (board) { updateBoard(false); if (board) board.flap.tick(); }   // updateBoard can take the board away (everything left)
+  if (timerSign) { updateTimers(); if (timerSign) timerSign.flap.tick(); }
 }
 // a soft ring where a tap started something
 function drawRing() {
