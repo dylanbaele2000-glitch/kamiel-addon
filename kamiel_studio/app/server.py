@@ -139,7 +139,8 @@ DEFAULT_SETTINGS = {
     "sun_script": "",
     "moon_script": "",
     "empty_tap": "vensters",
-    "media_player": "",
+    "media_player": "",   # the first of media_players (older versions had only this one)
+    "media_players": [],  # [{entity, name}]: every speaker/room Kamiel listens to; he follows the one that plays
     "departures": [],
     "board": [],
     "windows": {"weer": True, "vertrek": True, "knoppen": True, "kleerkast": True, "muziek": True, "wandel": True, "roepen": True},
@@ -218,6 +219,8 @@ def load_db():
         for part in ("dag", "nacht"):
             s["chances"][part]["kader"] = round(100 / r) if r > 0 else 0
     s["buttons"] = [b for b in (s.get("buttons") or []) if isinstance(b, dict) and (b.get("entity") or b.get("service"))]   # empty slots of the old 9-button grid
+    if not s.get("media_players") and s.get("media_player"):   # 0.16.4: one speaker became a list
+        s["media_players"] = [{"entity": s["media_player"], "name": ""}]
     if (stored.get("feest") or {}).get("v", 1) < 2:   # 0.16.2: your days as a couple join the list
         have = {d.get("date") for d in s["feest"].get("days", [])}
         for d in DEFAULT_SETTINGS["feest"]["days"]:
@@ -969,6 +972,14 @@ async def api_settings(request):
         for k in ("message_entity", "sun_script", "moon_script", "media_player", "departure_trigger"):
             if k in body:
                 s[k] = str(body[k]).strip()[:120]
+        if isinstance(body.get("media_players"), list):
+            mp, seen = [], set()
+            for m in body["media_players"][:12]:
+                ent = str((m or {}).get("entity") or "").strip()[:120] if isinstance(m, dict) else ""
+                if ent.startswith("media_player.") and ent not in seen:
+                    seen.add(ent); mp.append({"entity": ent, "name": str(m.get("name") or "").strip()[:30]})
+            s["media_players"] = mp
+            s["media_player"] = mp[0]["entity"] if mp else ""
         if "message_minutes" in body:
             s["message_minutes"] = max(1, min(24 * 60, int(body["message_minutes"])))
         if body.get("empty_tap") in ("url", "vertrek", "niets", "vensters"):
@@ -1083,8 +1094,8 @@ async def api_live(request):
         out["message"] = await current_message(db)
         if (s.get("motion") or {}).get("away_off"):
             out["away"] = await nobody_home(s)
-        if s.get("media_player"):
-            st = await ha_get("/states/" + s["media_player"])
+        ent, st, _ = await active_player(s)
+        if ent:
             if st:
                 a = st.get("attributes", {})
                 pic = a.get("entity_picture") or ""
@@ -1115,6 +1126,29 @@ async def api_live(request):
     return web.json_response(out)
 
 
+_active = {"ent": None}
+
+
+async def active_player(s):
+    """Which of the speakers Kamiel listens to right now: the one that is playing (stays with the same one while it
+    keeps playing; if several start, the newest), else the last one that played. Returns (entity, state, name)."""
+    players = s.get("media_players") or ([{"entity": s["media_player"], "name": ""}] if s.get("media_player") else [])
+    if not players:
+        return None, None, ""
+    states = await asyncio.gather(*(ha_get("/states/" + p["entity"]) for p in players), return_exceptions=True)
+    got = [(p, st) for p, st in zip(players, states) if isinstance(st, dict)]
+    if not got:
+        return None, None, ""
+    playing = [(p, st) for p, st in got if st.get("state") == "playing"]
+    cur = next(((p, st) for p, st in playing if p["entity"] == _active["ent"]), None)
+    if not cur and playing:
+        cur = max(playing, key=lambda x: x[1].get("last_changed") or "")
+    if not cur:
+        cur = next(((p, st) for p, st in got if p["entity"] == _active["ent"]), None) or got[0]
+    _active["ent"] = cur[0]["entity"]
+    return cur[0]["entity"], cur[1], cur[0].get("name") or ""
+
+
 _cover = {"key": None, "body": None}
 
 
@@ -1140,8 +1174,7 @@ def _png(im):
 
 async def api_cover(request):
     db = load_db()
-    ent = db["settings"].get("media_player")
-    st = await ha_get("/states/" + ent) if ent else None
+    ent, st, _ = await active_player(db["settings"])
     pic = (st or {}).get("attributes", {}).get("entity_picture")
     if not pic:
         raise web.HTTPNotFound()
@@ -1937,14 +1970,16 @@ async def api_desk(request):
                                    "icon": b.get("icon", ""), "kind": dom, "on": state in ("on", "open", "playing", "home", "unlocked", "heat", "cool", "cleaning"),
                                    "led": dom in TOGGLE or dom in ("media_player", "input_boolean"), "state": (show + (" " + unit if show and unit else ""))[:20],
                                    "ok": bool(st) or not b.get("entity")})
-        if s.get("media_player"):
-            st = await ha_get("/states/" + s["media_player"])
+        ent, st, room = await active_player(s)
+        if ent:
             if st:
                 a = st.get("attributes", {})
                 pic = a.get("entity_picture") or ""
-                out["media"] = {"state": st.get("state"), "title": a.get("media_title", ""), "artist": a.get("media_artist", ""),
+                out["media"] = {"room": room, "state": st.get("state"), "title": a.get("media_title", ""), "artist": a.get("media_artist", ""),
                                 "volume": a.get("volume_level"), "art": str(abs(hash(pic))) if pic else "",
-                                "name": a.get("friendly_name", "")}
+                                # the room name from the Studio; Spotify also says on which device it plays
+                                "name": " · ".join(x for x in (room or a.get("friendly_name", ""),
+                                                               a.get("source", "") if ent.startswith("media_player.spotify") else "") if x)}
     except Exception as e:
         out["error"] = str(e)
     return web.json_response(out)
@@ -2080,7 +2115,7 @@ MEDIA_CMDS = {"playpause": "media_play_pause", "next": "media_next_track", "prev
 
 async def api_media(request):
     cmd = MEDIA_CMDS.get(request.match_info["cmd"])
-    ent = load_db()["settings"].get("media_player")
+    ent, _, _ = await active_player(load_db()["settings"])
     if not cmd or not ent:
         return web.json_response({"ok": False})
     return web.json_response({"ok": await ha_service("media_player", cmd, {"entity_id": ent})})
