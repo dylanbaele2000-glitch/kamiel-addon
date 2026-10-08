@@ -95,6 +95,7 @@
     { id: 'vuurwerkfeest', name: 'Groot vuurwerk (Nieuwjaar)', cat: 'feest' },
     { id: 'verliefd', name: 'Verliefd (Valentijn)', cat: 'feest' },
     { id: 'pepernoten', name: 'Pepernoten (Sinterklaas)', cat: 'feest' },
+    { id: 'liefdesfeest', name: 'Een groot hart (jullie dagen, Valentijn)', cat: 'feest' },
   ];
 
   const CATS = { verhaal: 'Verhaaltjes', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
@@ -116,17 +117,19 @@
   }
   const num = (v, d) => (v === undefined || v === null || v === '') ? d : +v;
   function planFor(d, cfg, fest, boost) {
-    const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false, B = fest ? Math.max(1, boost || 3) : 1;
+    // on the day itself everything counts fully; in the days around a feast day about half as much extra
+    const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false, B = fest ? Math.max(1, fest.day === false ? Math.ceil((boost || 3) / 2) : (boost || 3)) : 1;
     // on a feast day (or a birthday) much more happens, and things of the day itself, mostly during the day and evening
     for (let k = 0; k < Math.round(num(cfg.lama_per_day, 1) * B); k++) out.push({ at: minuteOf(r, ev), cat: 'lama' });
     for (let k = 0; k < Math.round(num(cfg.common_per_day, 3) * B); k++) out.push({ at: minuteOf(r, ev), cat: 'vaak' });
     const pd = cfg.pets_per_day || {};
     for (const p of PETS) for (let k = 0; k < Math.round(num(pd[p], 2) * Math.min(B, 2)); k++) out.push({ at: minuteOf(r, ev), cat: 'dier', id: p });
-    if (fest) for (let k = 0; k < 2 + B; k++) out.push({ at: 480 + Math.floor(r() * 900), cat: 'feest' });
+    if (fest) for (let k = 0; k < (fest.day === false ? 1 : 2 + B); k++) out.push({ at: 480 + Math.floor(r() * 900), cat: 'feest' });
     // the little stories: a few times a week, the same plan all week
     const monS = new Date(d); monS.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const rs = seeded('verhaal ' + ymd(monS)), todayS = (d.getDay() + 6) % 7;
-    for (let k = 0; k < num(cfg.stories_per_week, 3) * (fest ? 2 : 1); k++) { const day = Math.floor(rs() * 7), at = 540 + Math.floor(rs() * 780); if (day === todayS || fest) out.push({ at: fest ? 480 + Math.floor(r() * 900) : at, cat: 'verhaal' }); }
+    const dayFest = fest && fest.day !== false;
+    for (let k = 0; k < num(cfg.stories_per_week, 3) * (dayFest ? 2 : 1); k++) { const day = Math.floor(rs() * 7), at = 540 + Math.floor(rs() * 780); if (day === todayS || dayFest) out.push({ at: dayFest ? 480 + Math.floor(r() * 900) : at, cat: 'verhaal' }); }
     // "a few times a week": spread over the week, the same plan all week long
     const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const rw = seeded('week ' + ymd(mon)), today = (d.getDay() + 6) % 7;
@@ -1277,8 +1280,34 @@
       } },
 
       /* ---------- feast days ---------- */
+      // your days as a couple (and Valentine): the gang gathers, a giant heart balloon rises, heart fireworks
+      liefdesfeest: { fest: ['liefde', 'valentijn'], long: true, run: function* () {
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((n, i) => pet(n, i % 2 ? -1 : 1));
+        yield* par(...gang.map((a, i) => petTo(a, kx() + (i - 2) * 70 + (i >= 2 ? 80 : -80), PET[a.pet].run)));
+        gang.forEach(a => { hold(a, a.pet === 'dobby' ? 'up' : 'sit'); a.face = a.cx < kx() ? 1 : -1; });
+        kam.blush = true; kam.eyes = 'blij';
+        const HB = { y: FEET + 60, s: 0 };
+        fx('back', 0, (g) => { if (HB.s <= 0) return; const x = kx() + kface() * -180, y = HB.y, s = HB.s * (1 + Math.sin(cur.t * 3) * .03);
+          g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y + 40 * s); g.quadraticCurveTo(x + 12, y + 90 * s, x - 4, FEET); g.stroke();
+          g.fillStyle = '#ff2f6e'; g.beginPath(); g.moveTo(x, y + 40 * s); g.bezierCurveTo(x - 70 * s, y - 5 * s, x - 45 * s, y - 60 * s, x, y - 30 * s); g.bezierCurveTo(x + 45 * s, y - 60 * s, x + 70 * s, y - 5 * s, x, y + 40 * s); g.fill();
+          g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.ellipse(x - 22 * s, y - 28 * s, 9 * s, 14 * s, -.5, 0, 7); g.fill(); });
+        yield* tween(4, p => { HB.s = ez(Math.min(1, p * 2)); HB.y = lerp(FEET + 40, 230, ez(p)); });
+        emote('hearts', 3); gang.forEach(a => emote('hearts', 3, a));
+        const bursts = [];
+        fx('screen', 0, (g) => {
+          if (rnd() < .05 && bursts.length < 5) bursts.push({ x: 120 + rnd() * (W - 240), y: 60 + rnd() * 140, t0: cur.t });
+          for (let i = bursts.length - 1; i >= 0; i--) { const b = bursts[i], a = cur.t - b.t0; if (a > 2.4) { bursts.splice(i, 1); continue; }
+            g.fillStyle = `rgba(255,${90 + (i * 40) % 120},${160 + (i * 30) % 80},${Math.max(0, 1 - a / 2.4)})`;
+            for (let k = 0; k < 32; k++) { const an = k / 32 * Math.PI * 2, dx = Math.pow(Math.sin(an), 3), dy = -(13 * Math.cos(an) - 5 * Math.cos(2 * an) - 2 * Math.cos(3 * an) - Math.cos(4 * an)) / 16, r = 24 + a * 80;
+              g.fillRect(b.x + dx * r - 2, b.y + dy * r + a * a * 12 - 2, 5, 5); } }
+        });
+        for (let k = 0; k < 4; k++) { yield* wait(2.5); yield* par(hop(24, .4), ...gang.map(a => petJump(a, 14, .35))); }
+        yield* tween(3, p => { HB.y = lerp(230, -120, ez(p)); });
+        HB.s = 0; kam.blush = false; kam.eyes = '';
+        yield* par(...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)));
+      } },
       // the birthday cake: everyone comes, Kamiel blows out the candles
-      taart: { fest: ['verjaardag'], long: true, run: function* () {
+      taart: { fest: ['verjaardag', 'liefde'], long: true, run: function* () {
         const f = kface(), cx = kx() + f * 110;
         let lit = 5, cakeOn = 0;
         fx('front', 0, (g) => {

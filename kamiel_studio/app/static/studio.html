@@ -762,12 +762,13 @@ details.fold.sub>summary{font-size:15px}
         <label class="field" for="eAurora">Noorderlicht<span>Kans per avond op noorderlicht in de lucht (bij helder weer, na zonsondergang).</span><label class="pct"><input type="number" id="eAurora" min="0" max="100" step="5"> %</label></label>
       </div>
       <details class="fold sub"><summary>Feestdagen en verjaardagen <small>veel meer gebeurtenissen, versiering, eigen feest-events</small></summary><div class="inner">
-        <p class="hint">Op deze dagen gebeurt er veel meer, Kamiel en de huisdieren kleden zich voor de gelegenheid, en er zijn eigen events: een verjaardagstaart met kaarsjes, een spook op Halloween, een slee door de lucht met Kerstmis, paaseieren om te zoeken (tik erop op de tablet), groot vuurwerk met Nieuwjaar, verliefd met Valentijn, pepernoten met Sinterklaas. Op verjaardagen hangen er slingers, zweven er ballonnen en dragen alle dieren een feesthoedje.</p>
+        <p class="hint">Het thema begint al in de dagen ervoor (Halloween vanaf 24/10, Kerstmis vanaf 15/12, Nieuwjaar vanaf 28/12 met af en toe 's avonds vuurwerk, Valentijn vanaf 10/2, Sinterklaas vanaf 28/11, Pasen de week ervoor); op de dag zelf gebeurt het meest. Op deze dagen gebeurt er veel meer, Kamiel en de huisdieren kleden zich voor de gelegenheid, en er zijn eigen events: een verjaardagstaart met kaarsjes, een spook op Halloween, een slee door de lucht met Kerstmis, paaseieren om te zoeken (tik erop op de tablet), groot vuurwerk met Nieuwjaar, verliefd met Valentijn, pepernoten met Sinterklaas. Op verjaardagen hangen er slingers, zweven er ballonnen en dragen alle dieren een feesthoedje.</p>
         <label class="sw"><input type="checkbox" id="fOn"><span><b>Feestdagen vieren</b></span></label>
         <div class="settings"><label class="field" for="fBoost">Hoeveel meer gebeurt er<select id="fBoost"><option value="2">Twee keer zoveel</option><option value="3">Drie keer zoveel</option><option value="4">Vier keer zoveel</option><option value="6">Zes keer zoveel</option></select></label></div>
-        <div><b style="font-size:14px">Verjaardagen</b>
+        <div><b style="font-size:14px">Verjaardagen en jullie dagen</b>
+          <p class="hint" style="margin-top:4px">🎂 Verjaardag: slingers, ballonnen, feesthoedjes en een taart. 💕 Jullie dag (zoals de dag dat jullie een koppel werden, of jullie eerste date): alles in roze en rood, hartjes, een groot hart dat opstijgt, en Kamiel stuurt die dag via Telegram een foto: een polaroid van een van jullie foto's, met Kamiel helemaal verliefd ernaast. Vul het jaar in, dan telt hij hoeveel jaar het is.</p>
           <div id="fDays" class="rems" style="gap:8px;margin-top:6px"></div>
-          <button type="button" id="fDayAdd" style="margin-top:8px">+ Verjaardag</button></div>
+          <div class="row" style="margin-top:8px"><button type="button" id="fDayAdd">+ Dag toevoegen</button><button type="button" id="loveTest">💕 Test: stuur de liefdesfoto nu</button><span class="status" id="loveStatus" role="status"></span></div></div>
         <div><b style="font-size:14px">Feestdagen</b><div class="days" id="fHol" style="margin-top:6px"></div></div>
         <p class="hint">Uitproberen: met <b>▶</b> in de lijst met gebeurtenissen hieronder. De versiering zie je op de tablet met <code>?feest=verjaardag</code> (of halloween, kerst, nieuwjaar, pasen, valentijn, sinterklaas) achter het adres.</p>
       </div></details>
@@ -1081,6 +1082,8 @@ function openEl(id) {
           ${a.kind === 'horizon' ? `<div class="opt"><span class="lbl">Zakt in de grond</span><span class="sub">Hoeveel van het object achter de grond verdwijnt.</span>
             ${seg('sink', [['', 'Standaard']].concat([0, 3, 5, 10, 15, 20, 30].map(v => [v, v + ' %'])), a.sink === null || a.sink === undefined ? '' : a.sink)}</div>` : ''}
           ${a.kind === 'grond' ? sw('grass_only', a.grass_only, 'Enkel op het gras', 'Steekt nooit boven de horizon uit. Handig voor bloemen, paddenstoelen, kleine dingen.') : ''}
+          ${a.kind === 'lucht' ? `<div class="opt"><span class="lbl">Wolken</span><span class="sub">Hangt het voor de wolken, ertussen (sommige wolken ervoor, andere erachter) of helemaal erachter?</span>
+            ${seg('clouds', [['voor', 'Voor de wolken'], ['tussen', 'Tussen de wolken'], ['achter', 'Achter de wolken']], a.clouds || 'tussen')}</div>` : ''}
           <div class="opt"><span class="lbl">Kijkt naar</span><span class="sub">Kijkt het element een kant op? Dan draait Kamiel het zo dat het naar hem kijkt.</span>
             ${seg('gaze', [['', 'Nergens'], ['links', '← Links'], ['rechts', 'Rechts →']], a.gaze || '')}</div>
         </section>`}
@@ -1669,16 +1672,23 @@ $('tab-huis').addEventListener('click', tabletStatus);
 let FDAYS = [];
 function renderFDays() {
   $('fDays').innerHTML = FDAYS.map((d, i) => { const [mm, dd] = (d.date || '01-01').split('-');
-    return `<div class="row" data-i="${i}"><input type="text" class="fdN" maxlength="30" value="${esc(d.name || '')}" placeholder="Naam (bv. van wie)" style="max-width:220px">
+    return `<div class="row" data-i="${i}"><select class="fdK" aria-label="Soort dag" style="max-width:150px"><option value="verjaardag">🎂 Verjaardag</option><option value="liefde" ${d.kind === 'liefde' ? 'selected' : ''}>💕 Jullie dag</option></select>
+      <input type="text" class="fdN" maxlength="30" value="${esc(d.name || '')}" placeholder="Naam (bv. van wie)" style="max-width:220px">
       <input type="number" class="fdD" min="1" max="31" value="${+dd}" style="width:5em" aria-label="Dag"> /
       <input type="number" class="fdM" min="1" max="12" value="${+mm}" style="width:5em" aria-label="Maand">
-      <button type="button" class="fdX danger">Weg</button></div>`; }).join('') || '<span class="hint">Nog geen verjaardagen.</span>';
+      <input type="number" class="fdY" min="1951" max="2099" value="${d.year || ''}" placeholder="jaar" style="width:6em" aria-label="Jaar (optioneel)">
+      <button type="button" class="fdX danger">Weg</button></div>`; }).join('') || '<span class="hint">Nog geen dagen.</span>';
 }
 function readFDays() {
-  return [...document.querySelectorAll('#fDays [data-i]')].map(r => ({ name: r.querySelector('.fdN').value,
+  return [...document.querySelectorAll('#fDays [data-i]')].map(r => ({ name: r.querySelector('.fdN').value, kind: r.querySelector('.fdK').value, year: r.querySelector('.fdY').value,
     date: String(Math.min(12, Math.max(1, +r.querySelector('.fdM').value || 1))).padStart(2, '0') + '-' + String(Math.min(31, Math.max(1, +r.querySelector('.fdD').value || 1))).padStart(2, '0') }));
 }
-$('fDayAdd').addEventListener('click', () => { FDAYS = readFDays(); FDAYS.push({ name: '', date: '01-01' }); renderFDays(); });
+$('fDayAdd').addEventListener('click', () => { FDAYS = readFDays(); FDAYS.push({ name: '', date: '01-01', kind: 'verjaardag' }); renderFDays(); });
+$('loveTest').addEventListener('click', async () => {
+  status($('loveStatus'), 'De tablet maakt de foto…');
+  const r = await fetch('api/love-test', { method: 'POST' }); const j = await r.json().catch(() => ({}));
+  status($('loveStatus'), j.ok ? 'Verstuurd via Telegram.' : (j.error || 'Lukte niet.'), j.ok ? 'ok' : 'err');
+});
 $('fDays').addEventListener('click', (e) => { const b = e.target.closest('.fdX'); if (!b) return; FDAYS = readFDays(); FDAYS.splice(+b.closest('[data-i]').dataset.i, 1); renderFDays(); });
 
 /* halls */

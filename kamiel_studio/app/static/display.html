@@ -217,7 +217,9 @@ const seasonOf = (d) => ['lente', 'zomer', 'herfst', 'winter'].find(n => inPerio
 
 /* ---------- festivals: the days themselves (the periods around them only change clothes and snow) ---------- */
 const FEST_DATES = { halloween: ['10-31', '10-31'], kerst: ['12-24', '12-26'], nieuwjaar: ['12-31', '01-01'], valentijn: ['02-14', '02-14'], sinterklaas: ['12-05', '12-06'] };
-const FEST_NL = { verjaardag: 'Verjaardag', halloween: 'Halloween', kerst: 'Kerstmis', nieuwjaar: 'Nieuwjaar', pasen: 'Pasen', valentijn: 'Valentijn', sinterklaas: 'Sinterklaas' };
+// the theme already shows in the days around it (less happens then than on the day itself)
+const FEST_AROUND = { halloween: ['10-24', '11-01'], kerst: ['12-15', '12-27'], nieuwjaar: ['12-28', '01-02'], valentijn: ['02-10', '02-15'], sinterklaas: ['11-28', '12-06'] };
+const FEST_NL = { liefde: 'Liefde', verjaardag: 'Verjaardag', halloween: 'Halloween', kerst: 'Kerstmis', nieuwjaar: 'Nieuwjaar', pasen: 'Pasen', valentijn: 'Valentijn', sinterklaas: 'Sinterklaas' };
 let festCache = { key: '', v: null };
 function festival(d) {
   d = d || now();
@@ -225,24 +227,28 @@ function festival(d) {
   if (festCache.key === key) return festCache.v;
   let v = null;
   const F = S.feest || {};
-  if (params.get('feest')) v = { kind: params.get('feest'), name: FEST_NL[params.get('feest')] || params.get('feest') };
+  if (params.get('feest')) v = { kind: params.get('feest'), name: FEST_NL[params.get('feest')] || params.get('feest'), day: true };
   else if (F.on !== false) {
     const x = md(d);
-    for (const b of F.days || []) if (b.date === x) { v = { kind: 'verjaardag', name: b.name || 'Verjaardag' }; break; }
-    if (!v) for (const k of ['nieuwjaar', 'halloween', 'kerst', 'valentijn', 'sinterklaas']) {
-      if ((F.holidays || {})[k] === false) continue;
-      const r = FEST_DATES[k]; if (between(x, r[0], r[1])) { v = { kind: k, name: FEST_NL[k] }; break; }
-    }
-    if (!v && (F.holidays || {}).pasen !== false) {
-      const e = easter(d.getFullYear()), m = new Date(e); m.setDate(e.getDate() + 1);
-      if ((d.getMonth() === e.getMonth() && d.getDate() === e.getDate()) || (d.getMonth() === m.getMonth() && d.getDate() === m.getDate())) v = { kind: 'pasen', name: 'Pasen' };
+    // your own days first: birthdays and your days as a couple
+    for (const b of F.days || []) if (b.date === x) { v = { kind: b.kind === 'liefde' ? 'liefde' : 'verjaardag', name: b.name || 'Verjaardag', day: true }; break; }
+    for (const around of [false, true]) {
+      if (v) break;
+      for (const k of ['nieuwjaar', 'halloween', 'kerst', 'valentijn', 'sinterklaas']) {
+        if ((F.holidays || {})[k] === false) continue;
+        const r = (around ? FEST_AROUND : FEST_DATES)[k]; if (between(x, r[0], r[1])) { v = { kind: k, name: FEST_NL[k], day: !around }; break; }
+      }
+      if (!v && (F.holidays || {}).pasen !== false) {
+        const e = easter(d.getFullYear()), day0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()), diff = Math.round((day0 - new Date(e.getFullYear(), e.getMonth(), e.getDate())) / 864e5);
+        if (around ? diff >= -7 && diff <= 1 : diff === 0 || diff === 1) v = { kind: 'pasen', name: 'Pasen', day: !around };
+      }
     }
   }
   festCache = { key, v };
   return v;
 }
 // Kamiel dresses for the occasion (one piece, on top of his own clothes)
-const FEST_HAT = { verjaardag: 'feesthoed', nieuwjaar: 'feesthoed', halloween: 'heksenhoed', kerst: 'kerstmuts', pasen: 'paasoren', valentijn: 'hartjesbril' };
+const FEST_HAT = { liefde: 'hartjesbril', verjaardag: 'feesthoed', nieuwjaar: 'feesthoed', halloween: 'heksenhoed', kerst: 'kerstmuts', pasen: 'paasoren', valentijn: 'hartjesbril' };
 function festOutfit(list) {
   const f = festival(); if (!f || !FEST_HAT[f.kind] || S.outfit_mode === 'uit') return list;
   const id = FEST_HAT[f.kind], O = KamielOutfits.OUTFITS, slot = (O.find(o => o.id === id) || {}).slot;
@@ -263,9 +269,9 @@ function petHat(g, o) {
 const festBalloons = [];
 function drawFestScreen() {
   const f = festival(); if (!f) return;
-  const party = f.kind === 'verjaardag' || f.kind === 'nieuwjaar';
+  const party = f.kind === 'verjaardag' || f.kind === 'nieuwjaar' || f.kind === 'liefde';
   if (party || f.kind === 'pasen') {   // bunting, swaying a little
-    const cols = f.kind === 'pasen' ? ['#f7c6d9', '#c6e8f7', '#f7f0b0', '#c9f2c4'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff'];
+    const cols = f.kind === 'pasen' ? ['#f7c6d9', '#c6e8f7', '#f7f0b0', '#c9f2c4'] : f.kind === 'liefde' ? ['#ff3d8b', '#ffffff', '#ff8ac1', '#d61f4e'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff'];
     for (let row = 0; row < 2; row++) {
       const y0 = 18 + row * 46, sag = 34 + row * 10;
       for (let k = 0; k < 22; k++) {
@@ -278,7 +284,7 @@ function drawFestScreen() {
     }
   }
   if (party) {   // balloons drifting up now and then
-    if (festBalloons.length < 6 && rnd() < .006) festBalloons.push({ x: 60 + rnd() * (W - 120), y: H + 40, c: ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0'][Math.floor(rnd() * 4)], s: .7 + rnd() * .5 });
+    if (festBalloons.length < 6 && rnd() < .006) festBalloons.push({ x: 60 + rnd() * (W - 120), y: H + 40, c: (f.kind === 'liefde' ? ['#ff3d8b', '#d61f4e', '#ff8ac1', '#ffffff'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0'])[Math.floor(rnd() * 4)], s: .7 + rnd() * .5 });
     for (let i = festBalloons.length - 1; i >= 0; i--) {
       const b = festBalloons[i]; b.y -= 22 * b.s / 60; const x = b.x + Math.sin(t * .9 + i) * 14;
       if (b.y < -80) { festBalloons.splice(i, 1); continue; }
@@ -296,7 +302,7 @@ function drawFestScreen() {
       ctx.lineTo(x + 8, y + 2); ctx.lineTo(x + 16, y + (fl ? -9 : 5)); ctx.lineTo(x + 3, y); ctx.fill();
     }
   }
-  if (f.kind === 'valentijn') {   // hearts floating up
+  if (f.kind === 'valentijn' || f.kind === 'liefde') {   // hearts floating up
     for (let k = 0; k < 12; k++) {
       const y = H - mod(t * (18 + k * 3) + k * 97, H + 60), x = mod(k * 151 - kx * .1, W) + Math.sin(t + k) * 12, s = 1 + (k % 3) * .4;
       ctx.fillStyle = `rgba(255,${80 + k * 8},${140 + k * 6},.55)`;
@@ -660,12 +666,13 @@ async function pollWorld() {
   } catch (e) { }
 }
 
-let seasonNow = '', halloweenNow = false, kerstNow = false, fireworksNow = false;
+let seasonNow = '', halloweenNow = false, kerstNow = false, fireworksNow = false, fireworksSome = false;
 function updateSeason() {
   const d = now();
   seasonNow = seasonOf(d); halloweenNow = inPeriod('halloween', d); kerstNow = inPeriod('kerst', d);
   const x = md(d), m = d.getHours() * 60 + d.getMinutes();
   fireworksNow = (x === '12-31' && m >= 23 * 60 + 30) || (x === '01-01' && m < 45);
+  const fz = festival(d); fireworksSome = !!fz && fz.kind === 'nieuwjaar' && (m >= 20 * 60 || m < 120);   // the evenings around New Year: now and then a rocket
 }
 updateSeason();
 const SEASON_TINT = { lente: 'rgba(255,170,215,.05)', zomer: 'rgba(255,225,140,.05)', herfst: 'rgba(255,135,40,.07)', winter: 'rgba(205,225,255,.08)' };
@@ -707,7 +714,7 @@ function makeClouds() {
     prev = c;
     const isBig = rnd() < (weather === 'helder' || weather === 'licht' ? .25 : .5);
     const w = isBig ? 380 + rnd() * 320 : 140 + rnd() * 160;
-    const cl = { c, x: (k + rnd() * .8) / n * PW, y: 40 + rnd() * (isBig ? 150 : 230), w, flip: rnd() < .5, sq: 0.8 + rnd() * .35 };
+    const cl = { c, x: (k + rnd() * .8) / n * PW, y: 40 + rnd() * (isBig ? 150 : 230), w, flip: rnd() < .5, sq: 0.8 + rnd() * .35, front: k % 2 === 1 };
     // a cloud that can carry sometimes has something standing on it (and that sometimes carries something too)
     const ST = S.stack || {};
     if (c.carry && cl.y > 110 && rnd() * 100 < (ST.chance === undefined ? 35 : +ST.chance)) {
@@ -739,7 +746,7 @@ function saveScene(why) {
       return x;
     };
     const pl = places.map(p => p ? { night: p.night, weather: p.weather, hills: p.hills, style: p.style, hall: p.hall || null, items: p.items.map(it => keepItem(it, p.items)) } : null);
-    const cl = clouds.map(c => ({ c: c.c.id, x: c.x, y: c.y, w: c.w, flip: c.flip, sq: c.sq, stack: c.stack ? c.stack.map(s2 => ({ o: s2.o.id, h: s2.h0 !== undefined ? s2.h0 : s2.h, ox: s2.ox, flip: s2.flip })) : null }));
+    const cl = clouds.map(c => ({ c: c.c.id, x: c.x, y: c.y, w: c.w, flip: c.flip, sq: c.sq, front: c.front, stack: c.stack ? c.stack.map(s2 => ({ o: s2.o.id, h: s2.h0 !== undefined ? s2.h0 : s2.h, ox: s2.ox, flip: s2.flip })) : null }));
     localStorage.setItem(SCENE_KEY, JSON.stringify({ t: Date.now(), why, PW, N, kx, dir, lastWalk, places: pl, clouds: cl, residents: EV.keepResidents ? EV.keepResidents() : [] }));
   } catch (e) { }
 }
@@ -1036,12 +1043,28 @@ function sendSelfie(id, o) {
   g.imageSmoothingEnabled = true; g.drawImage(sm, 0, 0, SW, SH);
   g.fillStyle = 'rgba(255,240,230,.08)'; g.fillRect(0, 0, SW, SH);
   const v = o.variant || 'neus', base = kamObj(), face = rnd() < .5 ? -1 : 1;
+  if (v === 'liefde' && !o._ph) {   // wait for the photo first
+    const im = load(PHOTOS[Math.floor(rnd() * PHOTOS.length)]); o._ph = im;
+    if (!ready(im)) { im.onload = im.onerror = () => sendSelfie(id, o); return; }
+  }
   const K = (s, hx, hy, extra) => {   // Kamiel at scale s with his head (frame point 230,330) at hx,hy
     const h = 225 * s, w = 128.3 * s, x = (-w / 2 + 230 * w / 780) * (face > 0 ? -1 : 1), d = h - 330 * h / 1370, r = (extra && extra.r) || 0;
     // he turns around his feet, far below the picture: keep his head where we want it
     return Object.assign({}, base, { s, face, cx: hx - x * Math.cos(r) - d * Math.sin(r), feet: hy + d * Math.cos(r) - x * Math.sin(r), pose: 'stand', head: 0, r: 0, sq: 1, sx: 1, alpha: 1, blur: 0, clipY: null, eyes: '' }, extra || {});
   };
-  if (v === 'dier' && o.pet && PETART[o.pet]) {
+  if (v === 'liefde') {   // your day as a couple: a pink card with one of your own photos as a polaroid, and Kamiel all in love
+    const pg = g.createLinearGradient(0, 0, 0, SH); pg.addColorStop(0, '#ffb3cf'); pg.addColorStop(1, '#ff6fa3'); g.fillStyle = pg; g.fillRect(0, 0, SW, SH);
+    for (let k = 0; k < 26; k++) { const x = rnd() * SW, y = rnd() * SH, sz = 10 + rnd() * 26; g.fillStyle = `rgba(255,255,255,${.25 + rnd() * .35})`;
+      g.beginPath(); g.moveTo(x, y + sz * .6); g.bezierCurveTo(x - sz, y - sz * .2, x - sz * .5, y - sz, x, y - sz * .4); g.bezierCurveTo(x + sz * .5, y - sz, x + sz, y - sz * .2, x, y + sz * .6); g.fill(); }
+    const ph = o._ph;
+    g.save(); g.translate(SW * .42, SH * .32); g.rotate(-.12); g.fillStyle = '#fffaf2'; g.shadowColor = 'rgba(0,0,0,.25)'; g.shadowBlur = 18; g.fillRect(-190, -170, 380, 420); g.shadowBlur = 0;
+    if (ready(ph)) { const r = Math.max(340 / ph.width, 330 / ph.height), sw = 340 / r, sh = 330 / r; g.drawImage(ph, (ph.width - sw) / 2, (ph.height - sh) / 2, sw, sh, -170, -150, 340, 330); }
+    else { g.fillStyle = '#f4c6d6'; g.fillRect(-170, -150, 340, 330); }
+    g.restore();
+    const O = KamielOutfits.OUTFITS, eyesSlot = (O.find(x => x.id === 'hartjesbril') || {}).slot;
+    const fitOut = (base.outfit || []).filter(id => (O.find(x => x.id === id) || {}).slot !== eyesSlot).concat(['hartjesbril']);
+    drawLlama(g, K(6.4, SW * .7, SH * .7, { eyes: 'blij', blush: true, r: face * -.1, outfit: fitOut }));
+  } else if (v === 'dier' && o.pet && PETART[o.pet]) {
     drawLlama(g, K(7.2, SW * .62, SH * .44, { eyes: 'blij', r: face * -.08 }));
     const pu = 7.5, art = PETART[o.pet];
     drawPet(g, { pet: o.pet, cx: SW * .3, feet: SH + art.h * PET_U * pu * .25, s: pu, face: 1, pose: 'stand', noShadow: true, r: -.06 });
@@ -1368,11 +1391,12 @@ function moonDisc(p, ang, r, col) {
   g.drawImage(lit, 0, 0);
   return moonCv;
 }
-function drawClouds(sun) {
+function drawClouds(sun, front) {
   const L = light(sun.alt), warm = tintFor(sun.alt), cam = kx * .25;
   const dark = rainy() ? .55 : weather === 'bewolkt' ? .3 : weather === 'sneeuw' ? .2 : 0;
   const prev = ctx; ctx = cctx; ctx.clearRect(0, 0, W, H);
   for (const cl of clouds) {
+    if (front !== undefined && !!cl.front !== front) continue;
     const img = cl.c.img; if (!ready(img)) continue;
     const w = cl.w, h = w * img.height / img.width * cl.sq;
     let x = mod(cl.x - cam + 400, Math.max(PW / 2, W + 800)) - 400, y = cl.y;
@@ -1497,10 +1521,11 @@ function itemPos(it, i, k) {
   if (it.flipY && !(off && off.r)) y += h * (f.y - 1) * .9;   // upside down after the big move: on its head on the ground
   return { sx, y, w, h, f, rot: off && off.r ? off.r : (it.flipY ? Math.PI : 0), rc: { x: sx + w / 2, y: y + h / 2 } };
 }
-function placeItems(layer, hill) {
+const skyPos = (it) => it.tv || it.cloud ? 'voor' : (it.o.clouds || 'tussen');
+function placeItems(layer, hill, sky) {
   // one order for all places: further back first, so something big up front is never covered by the next place
   const list = [];
-  for (let i = 0; i < N; i++) for (const it of places[i].items) if (it.layer === layer && !isHidden(it) && (hill === undefined || !!it.onHill === hill)) list.push([i, it]);
+  for (let i = 0; i < N; i++) for (const it of places[i].items) if (it.layer === layer && !isHidden(it) && (hill === undefined || !!it.onHill === hill) && (!sky || skyPos(it) === sky)) list.push([i, it]);
   list.sort((a, b) => ((a[1].onHill ? -1 : 0) - (b[1].onHill ? -1 : 0)) || ((a[1].depth || 0) - (b[1].depth || 0)));
   for (const [i, it] of list) {
     const o = it.o;
@@ -1772,8 +1797,8 @@ function drawAurora(sun, d) {
   ctx.restore();
 }
 let rockets = [], flash = null;
-function drawFireworks() {
-  if (rockets.length < 4 && rnd() < .03) rockets.push({ x: 120 + rnd() * (W - 240), y: 80 + rnd() * 160, t0: t, hue: Math.floor(rnd() * 360) });
+function drawFireworks(rate) {
+  if (rockets.length < 4 && rnd() < .03 * (rate || 1)) rockets.push({ x: 120 + rnd() * (W - 240), y: 80 + rnd() * 160, t0: t, hue: Math.floor(rnd() * 360) });
   rockets = rockets.filter(r => t - r.t0 < 2.2);
   for (const r of rockets) {
     const a = t - r.t0, rad = 20 + a * 60, fade = Math.max(0, 1 - a / 2.2);
@@ -1807,7 +1832,7 @@ function drawWeather(sun) {
       ctx.beginPath(); ctx.arc(x, y, 1 + (i % 3) * .7, 0, 7); ctx.fill();
     }
   }
-  if (fireworksNow) drawFireworks();
+  if (fireworksNow) drawFireworks(); else if (fireworksSome || (festival() || {}).kind === 'liefde' && isNightTime(now())) drawFireworks(.2);
   if (weather === 'mist') {
     const g = ctx.createLinearGradient(0, HOR0 - 140, 0, H);
     g.addColorStop(0, 'rgba(225,230,235,0)'); g.addColorStop(.35, `rgba(225,230,235,${.55 * (0.4 + .6 * L)})`); g.addColorStop(1, `rgba(225,230,235,${.25 * (0.4 + .6 * L)})`);
@@ -1847,7 +1872,9 @@ function frame() {
   EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
   frameNo++;
-  if (!hide) { placeItems(0); drawClouds(sun); drawHills(false); placeItems(1, true); drawHills(true); }
+  // sky things in front of, between or behind the clouds (set per element); half of the clouds are 'front' clouds
+  if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); drawClouds(sun, true); placeItems(0, undefined, 'voor');
+    drawHills(false); placeItems(1, true); drawHills(true); }
   if (kam.layer === 'far') drawKamiel();
   if (!hide) { placeItems(1, false); drawGround(); drawHalls(); drawFestGround(); }
   EV.draw('ground', ctx);

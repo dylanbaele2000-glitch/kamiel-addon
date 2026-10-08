@@ -122,7 +122,9 @@ DEFAULT_SETTINGS = {
                "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20,
                "aurora_chance": 15, "stories_per_week": 3},
     # feast days and birthdays: much more happens, with decorations and events of their own
-    "feest": {"on": True, "boost": 3, "days": [{"name": "Verjaardag", "date": "01-01"}, {"name": "Verjaardag", "date": "01-01"}],
+    "feest": {"on": True, "boost": 3, "v": 2,
+              "days": [{"name": "Verjaardag", "date": "01-01", "kind": "verjaardag"}, {"name": "Verjaardag", "date": "01-01", "kind": "verjaardag"},
+                       {"name": "We werden een koppel", "date": "01-01", "kind": "liefde"}, {"name": "Onze eerste date", "date": "01-01", "kind": "liefde"}],
               "holidays": {"halloween": True, "kerst": True, "nieuwjaar": True, "pasen": True, "valentijn": True, "sinterklaas": True}},
     # halls: now and then a place is a room (museum, disco, observatory, or one of your own)
     "halls": {"chance": 12, "off": [], "custom": []},
@@ -216,6 +218,12 @@ def load_db():
         for part in ("dag", "nacht"):
             s["chances"][part]["kader"] = round(100 / r) if r > 0 else 0
     s["buttons"] = [b for b in (s.get("buttons") or []) if isinstance(b, dict) and (b.get("entity") or b.get("service"))]   # empty slots of the old 9-button grid
+    if (stored.get("feest") or {}).get("v", 1) < 2:   # 0.16.2: your days as a couple join the list
+        have = {d.get("date") for d in s["feest"].get("days", [])}
+        for d in DEFAULT_SETTINGS["feest"]["days"]:
+            if d["kind"] == "liefde" and d["date"] not in have:
+                s["feest"]["days"].append(dict(d))
+        s["feest"]["v"] = 2
     if s.get("lamps"):   # 0.11.0 had a separate Lampen window; since 0.12.0 they are ordinary buttons
         have = {b.get("entity") for b in s.get("buttons", [])}
         s["buttons"] = (s.get("buttons") or []) + [{"label": "", "icon": "", "entity": e, "service": "", "data": {}} for e in s["lamps"] if e not in have]
@@ -668,6 +676,8 @@ async def api_edit_asset(request):
                         a[k] = bool(body[k])
                 if body.get("gaze") in ("", "links", "rechts"):   # which way it looks (it then looks toward Kamiel)
                     a["gaze"] = body["gaze"]
+                if body.get("clouds") in ("voor", "tussen", "achter"):   # sky objects: in front of, between or behind the clouds
+                    a["clouds"] = body["clouds"]
                 save_db(db)
                 return web.json_response(a)
     raise web.HTTPNotFound()
@@ -877,7 +887,9 @@ async def api_settings(request):
             if "boost" in b:
                 f["boost"] = max(1, min(6, int(b["boost"] or 3)))
             if isinstance(b.get("days"), list):
-                f["days"] = [{"name": str(x.get("name", "")).strip()[:30] or "Verjaardag", "date": str(x.get("date", ""))[:5]}
+                f["days"] = [{"name": str(x.get("name", "")).strip()[:30] or "Verjaardag", "date": str(x.get("date", ""))[:5],
+                              "kind": "liefde" if x.get("kind") == "liefde" else "verjaardag",
+                              **({"year": int(x["year"])} if str(x.get("year", "")).isdigit() and 1950 < int(x["year"]) < 2100 else {})}
                              for x in b["days"][:20] if isinstance(x, dict) and re.match(r"^\d\d-\d\d$", str(x.get("date", "")))]
             if isinstance(b.get("holidays"), dict):
                 for k in f["holidays"]:
@@ -1612,12 +1624,27 @@ async def selfie_loop():
             db = load_db()
             s = db["settings"].get("selfie") or {}
             conf = tg_conf(db)
-            if not s.get("on") or not conf.get("token") or not conf.get("chats"):
+            if not conf.get("token") or not conf.get("chats"):
                 continue
             now, hour = time.time(), time.localtime().tm_hour
             st = db.get("selfie_state") or {}
             all_chats = [c["id"] for c in conf["chats"]]
             changed = False
+            # your days as a couple: a photo from Kamiel, once that day, at a moment of its own between 10 and 20 h
+            fe = db["settings"].get("feest") or {}
+            today = time.strftime("%m-%d")
+            for d in fe.get("days", []) if fe.get("on", True) else []:
+                key = time.strftime("%Y-") + d.get("date", "")
+                if d.get("kind") == "liefde" and d.get("date") == today and (st.get("love") or {}).get(d["date"]) != key:
+                    import random
+                    at = random.Random(key).randint(10 * 60, 19 * 60)
+                    if time.localtime().tm_hour * 60 + time.localtime().tm_min >= at and await send_love(d):
+                        st.setdefault("love", {})[d["date"]] = key; changed = True
+            if not s.get("on"):
+                if changed:
+                    async with lock:
+                        db = load_db(); db["selfie_state"] = st; save_db(db, bump=False)
+                continue
             # someone away for days
             for p in s.get("people", []):
                 ent = p.get("entity")
@@ -1655,16 +1682,54 @@ async def selfie_loop():
 
 SELFIE_STATE = {"started": False}
 
+def love_texts(naam, years):
+    n = naam[0].lower() + naam[1:] if naam[:1].isupper() and not naam[:2].isupper() else naam
+    when = f"precies {years} jaar geleden" if years > 0 else "een speciale dag"
+    return [
+        f"Vandaag {when}: {n}. 💕 Heel Kamielland is er roze van. Ik ook een beetje.",
+        (f"{years} jaar sinds {n}! " if years > 0 else "") + "Ik heb taart geregeld. (Wifi heeft ervan gegeten.) 💕",
+        "Gelukkige dag, jullie twee. Heidi is jaloers. Ik niet. Ik ben gewoon blij. 💕",
+        "Op deze dag begon het. Vandaag vieren Wifi, Snoet, Pippa, Pebbels, Dobby en ik mee. 💕",
+    ]
+
+
+async def send_love(day):
+    import random
+    conf = tg_conf()
+    if not conf.get("token") or not conf.get("chats"):
+        return False
+    naam = (day.get("name") or "jullie dag").strip()
+    years = time.localtime().tm_year - int(day["year"]) if day.get("year") else 0
+    text = random.choice(love_texts(naam, years))
+    data = await take_picture({"kind": "selfie", "variant": "liefde", "pet": ""}, wait=35)
+    if not data:
+        log("fout", "Liefdesfoto: de tablet antwoordde niet.")
+        return False
+    for c in conf["chats"]:
+        try:
+            await tg_call(conf["token"], "sendPhoto", {"chat_id": c["id"], "caption": text}, files={"photo": ("kamiel-liefde.jpg", data, "image/jpeg")})
+        except Exception as e:
+            log("fout", "Liefdesfoto versturen mislukt: " + str(e))
+    log("selfie", f"Liefdesfoto gestuurd voor {naam}: “{text}”")
+    return True
+
 
 async def api_selfie_preview(request):
     """Studio: show a selfie (not sent)."""
     v = request.query.get("variant", "")
     pet = request.query.get("pet", "")
-    data = await take_picture({"kind": "selfie", "variant": v if v in ("neus", "schuin", "boven", "wazig", "dier") else "neus",
+    data = await take_picture({"kind": "selfie", "variant": v if v in ("neus", "schuin", "boven", "wazig", "dier", "liefde") else "neus",
                                "pet": pet if pet in PET_NAMES else ""}, wait=20)
     if not data:
         return web.json_response({"ok": False, "error": "De tablet antwoordt niet. Staat hij aan?"}, status=504)
     return web.Response(body=data, content_type="image/jpeg")
+
+
+async def api_love_test(request):
+    """Studio: send the love photo now (for the first of your days as a couple)."""
+    days = [d for d in (load_db()["settings"].get("feest") or {}).get("days", []) if d.get("kind") == "liefde"]
+    ok = await send_love(days[0] if days else {"name": "Jullie dag"})
+    return web.json_response({"ok": ok, "error": "" if ok else "Lukte niet: is Telegram ingesteld en staat de tablet aan?"})
 
 
 async def api_selfie_send(request):
@@ -2604,6 +2669,7 @@ def make_studio():
     app.router.add_post("/api/restore/chunk", api_restore_chunk)
     app.router.add_post("/api/restore/finish", api_restore_finish)
     app.router.add_post("/api/selfie-send", api_selfie_send)
+    app.router.add_post("/api/love-test", api_love_test)
     app.router.add_delete("/api/logboek", api_log_clear)
     app.router.add_post("/api/call-test", api_call_test)
     return app
