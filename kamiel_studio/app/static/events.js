@@ -1931,6 +1931,9 @@
       get active() { return !!cur; },
       check, pump, walkNow, tick, draw, post, request, arrived, placeNew, tapPet,
       residents: () => residents.map(a => ({ pet: a.pet, pose: a.pose, x: Math.round(a.cx), busy: !!a.busy })),
+      // over a reload of the page: who lies where
+      keepResidents: () => residents.filter(a => !a.gone).map(a => ({ pet: a.pet, wx: a.wx, feet: a.feet, face: a.face, pose: ['sleep', 'lie', 'sit', 'up'].includes(a.pose) ? a.pose : 'lie', place: a.place, until: a.until, home: a.home })),
+      restoreResidents: (list) => { for (const r of list || []) if (PET[r.pet] && !isRes(r.pet)) makeResident(r.pet, r.wx, r.feet, { face: r.face, pose: r.pose, place: r.place, until: r.until, home: r.home }); },
       itemOff: (it, layer, sx, y, w, h) => cur && cur.itemOff ? cur.itemOff(it, layer, sx, y, w, h) : null,
       cloudOff: (cl, x, y, w, h) => cur && cur.cloudOff ? cur.cloudOff(cl, x, y, w, h) : null,
       hideWorld: () => !!(cur && cur.hide),

@@ -290,7 +290,7 @@ async function pollState() {
 async function pollWorld() {
   try {
     const w = await (await fetch('api/world', { cache: 'no-store' })).json();
-    if (w.version !== world.version) location.reload();
+    if (w.version !== world.version) { saveScene('studio'); tlog('tablet', 'Opnieuw geladen: er veranderde iets in Kamiel Studio (de scène blijft dezelfde).'); location.reload(); }
   } catch (e) { }
 }
 
@@ -354,6 +354,47 @@ function makeClouds() {
   }
 }
 makeClouds();
+
+/* ---------- keeping the scene over a reload ----------
+   When something changes in the Studio the page loads again; without this Kamiel would suddenly stand somewhere else.
+   The places, the clouds and where Kamiel is are kept for a few minutes (in the tablet's own storage). */
+const SCENE_KEY = 'kamiel-scene';
+function saveScene(why) {
+  try {
+    const keepItem = (it, list) => {
+      if (!it.o || !it.o.id || it.board || it.timer || it.door || it.spot) return null;
+      const x = {};
+      for (const k in it) { const v = it[k]; if (['cache', 'cacheKey', '_fk', '_off', 'born', 'fit', 'o', 'on', 'cloud'].includes(k) || typeof v === 'function' || (v && typeof v === 'object')) continue; x[k] = v; }
+      x.o = it.o.id; if (it.on) x.on = list.indexOf(it.on); if (it.cloud) x.cloud = it.cloud.id; if (it.h0 !== undefined) x.h = it.h0;
+      if (!it.onHill) delete x.base;
+      return x;
+    };
+    const pl = places.map(p => p ? { night: p.night, weather: p.weather, hills: p.hills, style: p.style, items: p.items.map(it => keepItem(it, p.items)) } : null);
+    const cl = clouds.map(c => ({ c: c.c.id, x: c.x, y: c.y, w: c.w, flip: c.flip, sq: c.sq, stack: c.stack ? c.stack.map(s2 => ({ o: s2.o.id, h: s2.h0 !== undefined ? s2.h0 : s2.h, ox: s2.ox, flip: s2.flip })) : null }));
+    localStorage.setItem(SCENE_KEY, JSON.stringify({ t: Date.now(), why, PW, N, kx, dir, lastWalk, places: pl, clouds: cl, residents: EV.keepResidents ? EV.keepResidents() : [] }));
+  } catch (e) { }
+}
+function restoreScene() {
+  let sv = null;
+  try { sv = JSON.parse(localStorage.getItem(SCENE_KEY) || 'null'); localStorage.removeItem(SCENE_KEY); } catch (e) { return false; }
+  if (!sv || Date.now() - sv.t > 5 * 60000 || sv.PW !== PW || sv.N !== N || params.get('stijl')) return false;
+  const byId = {}; OBJ.forEach(o => { byId[o.id] = o; }); const clId = {}; CL.forEach(c => { clId[c.id] = c; });
+  sv.places.forEach((p, i) => {
+    if (!p || !places[i]) return;
+    const items = p.items.map(x => x && byId[x.o] ? Object.assign({}, x, { o: byId[x.o], cloud: x.cloud ? clId[x.cloud] || null : undefined }) : null);
+    items.forEach((it, k) => { if (it && p.items[k].on !== undefined) it.on = items[p.items[k].on] || null; });
+    const ok = items.filter(it => it && (it.on === undefined || it.on));
+    if (!ok.length && p.items.length) return;   // its elements are gone: keep the new scene
+    ok.forEach(it => { if (it.on === undefined) delete it.on; if (it.cloud === undefined) delete it.cloud; });
+    places[i] = { items: ok, night: p.night, weather: p.weather, hills: p.hills, style: p.style, seen: true };
+  });
+  if (sv.clouds && sv.clouds.every(c => clId[c.c])) clouds = sv.clouds.map(c => Object.assign({}, c, { c: clId[c.c],
+    stack: c.stack ? c.stack.filter(s2 => byId[s2.o]).map(s2 => Object.assign({}, s2, { o: byId[s2.o] })) : undefined }));
+  kx = target = sv.kx; dir = sv.dir || dir; lastWalk = sv.lastWalk || lastWalk;
+  if (EV.restoreResidents) EV.restoreResidents(sv.residents);
+  if (musicOn) for (let i = 0; i < N; i++) addMusic(i);
+  return true;
+}
 
 /* ---------- Kamiel ---------- */
 let kx = PLACE / 2, target = kx, dir = -1, walking = false, t = 0, blinkT = 2, last = performance.now();
@@ -1449,10 +1490,11 @@ EV = KamielEvents.create({
   now, doorPets: () => doorPets, beat: beatNow, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
   onStart: (id, name, cat) => { if (cat !== 'intern' || id === 'deurbel') tlog(cat === 'dier' ? 'dier' : 'event', name); },
 });
-for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
-if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk };
+const restored = restoreScene();
+if (!restored) for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
+if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene };
 requestAnimationFrame(loop);
-if (!params.get('ev') && !params.get('t')) tlog('tablet', 'Kamiel gestart op de tablet (' + innerWidth + '×' + innerHeight + ').');
+if (!params.get('ev') && !params.get('t') && !restored) tlog('tablet', 'Kamiel gestart ' + (FK() ? 'op de tablet' : 'in een browser') + ' (' + innerWidth + '×' + innerHeight + ').');
 pollState(); setInterval(pollState, 60000);
 if (document.fonts) document.fonts.load("40px 'Titan One'").then(() => places.forEach(p => p && p.items.forEach(it => { it.cache = null; }))).catch(() => {});
 setInterval(pollWorld, 120000);
