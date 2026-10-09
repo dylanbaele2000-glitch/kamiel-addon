@@ -123,8 +123,7 @@ DEFAULT_SETTINGS = {
                "aurora_chance": 15, "stories_per_week": 3, "films_per_week": 2},
     # feast days and birthdays: much more happens, with decorations and events of their own
     "feest": {"on": True, "boost": 3, "v": 2,
-              "days": [{"name": "Verjaardag", "date": "01-01", "kind": "verjaardag"}, {"name": "Verjaardag", "date": "01-01", "kind": "verjaardag"},
-                       {"name": "We werden een koppel", "date": "01-01", "kind": "liefde"}, {"name": "Onze eerste date", "date": "01-01", "kind": "liefde"}],
+              "days": [],   # your own days (birthdays, your days as a couple) are filled in in the Studio and live only in /data
               "holidays": {"halloween": True, "kerst": True, "nieuwjaar": True, "pasen": True, "valentijn": True, "sinterklaas": True}},
     # halls: now and then a place is a room (museum, disco, observatory, or one of your own)
     "halls": {"chance": 12, "off": [], "custom": []},
@@ -221,12 +220,7 @@ def load_db():
     s["buttons"] = [b for b in (s.get("buttons") or []) if isinstance(b, dict) and (b.get("entity") or b.get("service"))]   # empty slots of the old 9-button grid
     if not s.get("media_players") and s.get("media_player"):   # 0.16.4: one speaker became a list
         s["media_players"] = [{"entity": s["media_player"], "name": ""}]
-    if (stored.get("feest") or {}).get("v", 1) < 2:   # 0.16.2: your days as a couple join the list
-        have = {d.get("date") for d in s["feest"].get("days", [])}
-        for d in DEFAULT_SETTINGS["feest"]["days"]:
-            if d["kind"] == "liefde" and d["date"] not in have:
-                s["feest"]["days"].append(dict(d))
-        s["feest"]["v"] = 2
+    s["feest"]["v"] = 2
     if s.get("lamps"):   # 0.11.0 had a separate Lampen window; since 0.12.0 they are ordinary buttons
         have = {b.get("entity") for b in s.get("buttons", [])}
         s["buttons"] = (s.get("buttons") or []) + [{"label": "", "icon": "", "entity": e, "service": "", "data": {}} for e in s["lamps"] if e not in have]
