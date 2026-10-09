@@ -120,7 +120,7 @@ DEFAULT_SETTINGS = {
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
                "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25,
                "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20,
-               "aurora_chance": 15, "stories_per_week": 3},
+               "aurora_chance": 15, "stories_per_week": 3, "films_per_week": 2},
     # feast days and birthdays: much more happens, with decorations and events of their own
     "feest": {"on": True, "boost": 3, "v": 2,
               "days": [{"name": "Verjaardag", "date": "01-01", "kind": "verjaardag"}, {"name": "Verjaardag", "date": "01-01", "kind": "verjaardag"},
@@ -956,7 +956,7 @@ async def api_settings(request):
                 e["pets_per_day"] = {k: max(0, min(12, int(v or 0))) for k, v in b["pets_per_day"].items() if k in EVENT_IDS}
             if "pets_together" in b:
                 e["pets_together"] = max(0, min(100, int(b["pets_together"])))
-            for k, top in (("pets_stay", 100), ("pets_lying", 100), ("pets_stay_min", 240), ("dance_chance", 500), ("aurora_chance", 100), ("stories_per_week", 30)):
+            for k, top in (("pets_stay", 100), ("pets_lying", 100), ("pets_stay_min", 240), ("dance_chance", 500), ("aurora_chance", 100), ("stories_per_week", 30), ("films_per_week", 14)):
                 if k in b:
                     e[k] = max(0, min(top, int(b[k] or 0)))
             if isinstance(b.get("off"), list):
@@ -1414,7 +1414,7 @@ async def tg_handle(token, upd):
     if cmd == "/event":
         rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
         if rest.lower() in ("lijst", "list", "alle"):
-            groups = {"lama": "Elke dag", "dier": "Huisdieren", "muziek": "Op muziek", "verhaal": "Verhaaltjes", "feest": "Op feestdagen", "vaak": "Vaak", "soms": "Soms"}
+            groups = {"film": "Films", "lama": "Elke dag", "dier": "Huisdieren", "muziek": "Op muziek", "verhaal": "Verhaaltjes", "feest": "Op feestdagen", "vaak": "Vaak", "soms": "Soms"}
             out = []
             for cat, title in groups.items():
                 out.append(title + ":\n" + "\n".join(f"• {name} ({eid})" for eid, name, c in EVENTS if c == cat))

@@ -78,7 +78,7 @@
     { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
     { id: 'begroeten', name: 'Een huisdier komt Kamiel begroeten', cat: 'intern' },
     { id: 'dansfeest', name: 'Dansfeest: iedereen danst op het nummer', cat: 'muziek' },
-    { id: 'heidiwraak', name: 'Heidi\u2019s wraak: ze kaapt het scherm', cat: 'verhaal' },
+    { id: 'heidiwraak', name: 'Heidi’s wraak: ze kaapt het scherm', cat: 'verhaal' },
     { id: 'ufo', name: 'Dobby wordt ontvoerd door een ufo', cat: 'verhaal' },
     { id: 'verhuis', name: 'De grote verhuis', cat: 'verhaal' },
     { id: 'ogen', name: 'Ogen in het donker', cat: 'verhaal' },
@@ -88,6 +88,18 @@
     { id: 'sprint', name: 'Een wilde achtervolging door de scène', cat: 'verhaal' },
     { id: 'toren', name: 'Een toren van huisdieren', cat: 'verhaal' },
     { id: 'sluipen', name: 'Sluipen achter Kamiel', cat: 'verhaal' },
+    { id: 'film-spook', name: 'Film: Het spook (wie zit eronder?)', cat: 'film' },
+    { id: 'film-duivel', name: 'Film: Pippa is bezeten (de uitdrijving)', cat: 'film' },
+    { id: 'film-wolk', name: 'Film: Dobby op de hoge wolk', cat: 'film' },
+    { id: 'film-bal', name: 'Film: De bal van Wifi is weg', cat: 'film' },
+    { id: 'film-snoet', name: 'Film: Snoet is verloren gelopen', cat: 'film' },
+    { id: 'film-tv', name: 'Film: Pebbels zit in de tv', cat: 'film' },
+    { id: 'film-revolutie', name: 'Film: De dictatuur van Heidi en de revolutie', cat: 'film' },
+    { id: 'film-dubbel', name: 'Film: De dubbelgangers (horror)', cat: 'film' },
+    { id: 'film-magie', name: 'Film: De toverschool', cat: 'film' },
+    { id: 'film-ninja', name: 'Film: De ninja-grootmeester', cat: 'film' },
+    { id: 'film-ruimte', name: 'Film: Naar de ruimte', cat: 'film' },
+    { id: 'film-apocalyps', name: 'Film: Na het einde van de wereld', cat: 'film' },
     { id: 'taart', name: 'Verjaardagstaart', cat: 'feest' },
     { id: 'spook', name: 'Het spook (Halloween)', cat: 'feest' },
     { id: 'slee', name: 'De slee door de lucht (Kerstmis)', cat: 'feest' },
@@ -98,7 +110,7 @@
     { id: 'liefdesfeest', name: 'Een groot hart (jullie dagen, Valentijn)', cat: 'feest' },
   ];
 
-  const CATS = { verhaal: 'Verhaaltjes', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+  const CATS = { film: 'Films (5 tot 10 minuten)', verhaal: 'Verhaaltjes', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
   const PETS = ['wifi', 'snoet', 'pippa', 'pebbels', 'dobby'];
 
   /* ---------- the plan: when today's events happen ---------- */
@@ -130,6 +142,9 @@
     const rs = seeded('verhaal ' + ymd(monS)), todayS = (d.getDay() + 6) % 7;
     const dayFest = fest && fest.day !== false;
     for (let k = 0; k < num(cfg.stories_per_week, 3) * (dayFest ? 2 : 1); k++) { const day = Math.floor(rs() * 7), at = 540 + Math.floor(rs() * 780); if (day === todayS || dayFest) out.push({ at: dayFest ? 480 + Math.floor(r() * 900) : at, cat: 'verhaal' }); }
+    // the films: 5 to 10 minutes, a few times a week, between 10:00 and 21:00 (more often in the evening)
+    const rf = seeded('film ' + ymd(monS));
+    for (let k = 0; k < num(cfg.films_per_week, 2); k++) { const day = Math.floor(rf() * 7), at = rf() < .5 ? 1080 + Math.floor(rf() * 180) : 600 + Math.floor(rf() * 480); if (day === todayS) out.push({ at, cat: 'film' }); }
     // "a few times a week": spread over the week, the same plan all week long
     const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const rw = seeded('week ' + ymd(mon)), today = (d.getDay() + 6) % 7;
@@ -818,6 +833,7 @@
     }
     let greetFor = null;
     function arrived() {
+      if (filming()) return;
       for (const a of residents) if (!a.busy && onScreen(a)) a.brain = notice(a);
     }
     // a new scene is made somewhere out of sight: whoever lay there has gone home; sometimes someone lies there already
@@ -2327,19 +2343,230 @@
       } },
     };
 
+    /* ---------- cinema: the long films (films_*.js) ----------
+       A film is a generator like any event, but it may run up to 12 minutes and it gets a film set: letterbox bars,
+       a colour grade, a camera (the lens), darkness with lights, title cards, weather and its own decors.
+       Films live in their own files and register in window.KamielFilms[id] = { run: function* (K) { ... }, can: (K) => true };
+       K (below) holds every building block they may use. */
+    const FILM_MAX = 720;
+    // colour grades: a list of [blend mode, colour, strength], laid over the whole picture
+    const GRADES = {
+      noir: [['saturation', '#808080', 1], ['multiply', '#b4b4b4', .45], ['overlay', '#000000', .2]],
+      horror: [['saturation', '#808080', .75], ['multiply', '#6f9a9a', .55], ['overlay', '#0a2030', .35]],
+      sepia: [['saturation', '#808080', .9], ['color', '#a5784a', .45]],
+      warm: [['overlay', '#ff9a40', .28], ['multiply', '#fff0d8', .4]],
+      koud: [['overlay', '#3a6aff', .3], ['multiply', '#cfe0ff', .35]],
+      apocalyps: [['saturation', '#808080', .55], ['multiply', '#d8925a', .55], ['overlay', '#ff7a20', .22]],
+      magie: [['overlay', '#8a4cff', .32], ['screen', '#2a1040', .25]],
+      rood: [['multiply', '#ff5050', .5], ['overlay', '#600010', .3]],
+      neon: [['overlay', '#ff2fd0', .2], ['overlay', '#20e0ff', .18]],
+      nacht: [['multiply', '#4a5aa0', .65], ['saturation', '#808080', .4]],
+      groen: [['saturation', '#808080', .9], ['multiply', '#60ff80', .5]],
+      ruimte: [['multiply', '#9ab0ff', .3], ['overlay', '#101040', .25]],
+      goud: [['overlay', '#ffc040', .3], ['screen', '#301800', .2]],
+    };
+    function cineNew() {
+      return { v: { bars: 0, vig: 0, grain: 0, black: 0, dark: 0, flash: 0, ab: 0 }, anim: {}, grades: {}, lens: { z: 1, cx: W / 2, cy: H / 2, rot: 0, shake: 0 }, lensAnim: null,
+        lights: [], over: [], card: null, flashCol: '255,255,255', flashFade: 2 };
+    }
+    function cineTick(C, dt) {
+      for (const k in C.anim) { const a = C.anim[k]; a.t += dt; const p = a.dur > 0 ? Math.min(1, a.t / a.dur) : 1; C.v[k] = a.from + (a.to - a.from) * ez(p); if (p >= 1) delete C.anim[k]; }
+      for (const n in C.grades) { const gr = C.grades[n], step = dt / Math.max(.01, gr.dur); gr.a = gr.a < gr.to ? Math.min(gr.to, gr.a + step) : Math.max(gr.to, gr.a - step); if (gr.a <= 0 && gr.to <= 0) delete C.grades[n]; }
+      if (C.v.flash > 0) C.v.flash = Math.max(0, C.v.flash - dt * C.flashFade);
+      const la = C.lensAnim;
+      if (la) { la.t += dt; const p = la.dur > 0 ? Math.min(1, la.t / la.dur) : 1, e = la.ease ? la.ease(p) : ez(p);
+        for (const k in la.to) C.lens[k] = la.from[k] + (la.to[k] - la.from[k]) * e; if (p >= 1) C.lensAnim = null; }
+      if (C.card) C.card.t += dt;
+    }
+    // where a point of the world ends up on the screen through the lens
+    // the camera never looks past the edge of the picture: the centre stays far enough from the sides for the zoom
+    const lensC = (L) => { const z = Math.max(1, L.z), hw = W / 2 / z, hh = H / 2 / z; return { x: clamp(L.cx, hw, W - hw), y: clamp(L.cy, hh, H - hh) }; };
+    function lensPt(C, p) {
+      const L = C.lens, lc = lensC(L), c = Math.cos(L.rot), s = Math.sin(L.rot), x = (p.x - lc.x) * L.z, y = (p.y - lc.y) * L.z;
+      return { x: W / 2 + x * c - y * s + (L.sx || 0), y: H / 2 + x * s + y * c + (L.sy || 0) };
+    }
+    const darkCv = document.createElement('canvas'); darkCv.width = W; darkCv.height = H;
+    const grainCv = document.createElement('canvas'); grainCv.width = 192; grainCv.height = 120;
+    let grainN = 0;
+    function cineDraw(g, cv, C, pg) {
+      const L = C.lens, v = C.v;
+      L.sx = L.shake > 0 ? (rnd() - .5) * 2 * L.shake : 0; L.sy = L.shake > 0 ? (rnd() - .5) * 2 * L.shake : 0;
+      if (!cur.post && (L.z !== 1 || L.cx !== W / 2 || L.cy !== H / 2 || L.rot || L.shake > 0)) {   // the camera moves: draw the picture again through the lens
+        pg.clearRect(0, 0, W, H); pg.drawImage(cv, 0, 0);
+        g.save(); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+        const lc = lensC(L); g.translate(W / 2 + L.sx, H / 2 + L.sy); g.rotate(L.rot); g.scale(L.z, L.z); g.translate(-lc.x, -lc.y);
+        g.drawImage(pc, 0, 0); g.restore();
+      }
+      if (v.ab > 0) {   // chromatic aberration: the red and blue drift apart
+        pg.clearRect(0, 0, W, H); pg.drawImage(cv, 0, 0);
+        g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = .18 * v.ab; g.drawImage(pc, 5 * v.ab, 0); g.drawImage(pc, -5 * v.ab, 0); g.restore();
+      }
+      if (v.dark > 0) {   // darkness, with holes of light
+        const d = darkCv.getContext('2d'); d.globalCompositeOperation = 'source-over'; d.clearRect(0, 0, W, H);
+        d.fillStyle = `rgba(2,2,10,${Math.min(1, v.dark)})`; d.fillRect(0, 0, W, H);
+        d.globalCompositeOperation = 'destination-out';
+        for (const l of C.lights) {
+          if (l.off) continue; let p; try { p = l.at(); } catch (e) { continue; } if (!p) continue;
+          const q = lensPt(C, p), r = (l.r || 120) * L.z * (l.flicker ? 1 + (rnd() - .5) * l.flicker : 1), gr = d.createRadialGradient(q.x, q.y, r * (l.hard || .35), q.x, q.y, r);
+          gr.addColorStop(0, `rgba(0,0,0,${l.a === undefined ? 1 : l.a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); d.fillStyle = gr; d.beginPath(); d.arc(q.x, q.y, r, 0, 7); d.fill();
+        }
+        g.drawImage(darkCv, 0, 0);
+        for (const l of C.lights) { if (l.off || !l.col) continue; const p = l.at(); if (!p) continue; const q = lensPt(C, p), r = (l.r || 120) * L.z;   // a coloured glow
+          const gr = g.createRadialGradient(q.x, q.y, 0, q.x, q.y, r); gr.addColorStop(0, `rgba(${l.col},.22)`); gr.addColorStop(1, `rgba(${l.col},0)`);
+          g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = gr; g.fillRect(q.x - r, q.y - r, r * 2, r * 2); g.restore(); }
+      }
+      for (const n in C.grades) {
+        const gr = C.grades[n]; if (gr.a <= 0) continue;
+        g.save(); for (const [op, col, k] of GRADES[n] || []) { g.globalCompositeOperation = op; g.globalAlpha = k * gr.a; g.fillStyle = col; g.fillRect(0, 0, W, H); } g.restore();
+      }
+      for (const o of C.over.slice()) { g.save(); try { o.draw(g, cur.t - o.born, (p) => lensPt(C, p)); } catch (e) { console.error(e); C.over.splice(C.over.indexOf(o), 1); } g.restore(); }
+      if (v.vig > 0) { const gr = g.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, W * .62); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${.85 * v.vig})`); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+      if (v.grain > 0) {
+        if (grainN++ % 2 === 0) { const c = grainCv.getContext('2d'), im = c.createImageData(192, 120), a = im.data; for (let i = 0; i < a.length; i += 4) { const k = rnd() * 255; a[i] = a[i + 1] = a[i + 2] = k; a[i + 3] = 255; } c.putImageData(im, 0, 0); }
+        g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = .35 * v.grain; g.imageSmoothingEnabled = false; g.drawImage(grainCv, 0, 0, W, H);
+        if (rnd() < .04 * v.grain) { g.globalCompositeOperation = 'source-over'; g.globalAlpha = .5; g.fillStyle = '#ddd'; g.fillRect(rnd() * W, 0, 1.5, H); }   // a scratch on the film
+        g.restore();
+      }
+      if (v.flash > 0) { g.fillStyle = `rgba(${C.flashCol},${Math.min(1, v.flash)})`; g.fillRect(0, 0, W, H); }
+      if (v.black > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, v.black)})`; g.fillRect(0, 0, W, H); }
+      if (C.card && C.card.a > 0) drawCard(g, C.card);
+      if (v.bars > 0) { const bh = Math.round(H * .115 * v.bars); g.fillStyle = '#000'; g.fillRect(0, 0, W, bh); g.fillRect(0, H - bh, W, bh); }
+    }
+    // a title card, like an old film: the title big, a line under it
+    function drawCard(g, c) {
+      g.save(); g.globalAlpha = c.a; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const y = H / 2 - (c.sub ? 18 : 0), jit = (rnd() - .5) * 1.2;
+      g.font = (c.size || 58) + "px 'Titan One', VT323, sans-serif";
+      g.fillStyle = 'rgba(255,40,80,.55)'; g.fillText(c.title, W / 2 - 2 + jit, y);
+      g.fillStyle = 'rgba(40,220,255,.55)'; g.fillText(c.title, W / 2 + 2 + jit, y);
+      g.fillStyle = c.col || '#f4ead6'; g.fillText(c.title, W / 2 + jit, y);
+      if (c.sub) { g.font = '30px VT323, monospace'; g.fillStyle = '#c9bea4'; g.fillText(c.sub.split('').join(' '), W / 2, y + 56); }
+      if (c.line !== false) { g.fillStyle = 'rgba(244,234,214,.5)'; const lw = Math.min(380, 40 + c.t * 260); g.fillRect(W / 2 - lw / 2, y + (c.sub ? 32 : 42), lw, 2); }
+      g.restore();
+    }
+
+    // the building blocks a film gets
+    function filmKit() {
+      const C = () => cur.cine;
+      const setv = (k, to, secs) => { const c = C(); if (!secs) { c.v[k] = to; delete c.anim[k]; return; } c.anim[k] = { from: c.v[k], to, t: 0, dur: secs }; };
+      function* setvW(k, to, secs) { setv(k, to, secs); yield* wait(secs || 0); }
+      const grade = (name, strength, secs) => { const c = C(); secs = secs === undefined ? 2 : secs;
+        for (const n in c.grades) if (n !== name) { c.grades[n].to = 0; c.grades[n].dur = secs; }
+        if (name) { const gr = c.grades[name] || (c.grades[name] = { a: 0 }); gr.to = strength === undefined ? 1 : strength; gr.dur = secs; } };
+      const lens = (to, secs, ease) => { const c = C(); const from = {}; for (const k in to) from[k] = c.lens[k]; c.lensAnim = { from, to, t: 0, dur: secs || 0, ease }; if (!secs) Object.assign(c.lens, to); };
+      function* lensW(to, secs, ease) { lens(to, secs, ease); yield* wait(secs || 0); }
+      // aim the camera at a point (x, y on the screen) with zoom z
+      const aim = (x, y, z, secs) => lens({ cx: x, cy: y, z: z || C().lens.z }, secs);
+      const lensReset = (secs) => lens({ z: 1, cx: W / 2, cy: H / 2, rot: 0, shake: 0 }, secs);
+      const light = (at, r, o) => { const l = Object.assign({ at, r }, o || {}); C().lights.push(l); return l; };
+      const unlight = (l) => { const c = C(); const k = c.lights.indexOf(l); if (k >= 0) c.lights.splice(k, 1); };
+      const over = (draw) => { const o = { draw, born: cur.t }; C().over.push(o); return o; };
+      const unover = (o) => { const c = C(); const k = c.over.indexOf(o); if (k >= 0) c.over.splice(k, 1); };
+      const flash = (strength, col, fade) => { const c = C(); c.v.flash = strength === undefined ? 1 : strength; c.flashCol = col || '255,255,255'; c.flashFade = fade || 2; };
+      function* card(title, sub, secs, o) {
+        const c = C(); yield* setvW('black', 1, .9);
+        c.card = Object.assign({ title, sub, a: 0, t: 0 }, o || {});
+        yield* tween(1.1, p => { c.card.a = p; }); yield* wait(secs === undefined ? 3.5 : secs);
+        yield* tween(.9, p => { c.card.a = 1 - p; }); c.card = null;
+      }
+      // the opening: bars in, the title on black, then the picture fades in with the film's look
+      function* opening(title, sub, look) {
+        setv('bars', 1, 1.6); setv('vig', .55, 2); setv('grain', .6, 2); yield* wait(1.2);
+        yield* card(title, sub, 3.6);
+        if (look) grade(look, 1, .01);
+        yield* setvW('black', 0, 2.2);
+      }
+      function* ending(title) {
+        yield* setvW('black', 1, 2.2);
+        yield* card(title || 'EINDE', null, 2.6, { size: 46 });
+        const c = C(); grade(null, 0, .01); c.lights.length = 0; c.over.length = 0; setv('dark', 0); lensReset(0); unstage(); c.v.ab = 0;
+        // behind the black: everyone goes home, the effects stop, Kamiel is himself again
+        cur.actors.forEach(a => { a.alpha = 0; }); cur.fx.length = 0; cur.itemOff = null; cur.cloudOff = null; stageFx = null;
+        const f = kam.face || -1; A.kamReset(); kam.face = f;
+        yield* wait(.4); setv('bars', 0, 1.6); setv('vig', 0, 1.6); setv('grain', 0, 1.6); yield* setvW('black', 0, 1.8);
+      }
+      function* fadeOut(secs) { yield* setvW('black', 1, secs || 1.2); }
+      function* fadeIn(secs) { yield* setvW('black', 0, secs || 1.2); }
+      // a hard cut: a moment of black while things change
+      function* cut(change, secs) { setv('black', 1); if (change) change(); yield* wait(secs || .35); setv('black', 0); }
+      // a whole new decor: the world goes away and draw(g) paints the background (sky and ground) behind the actors
+      let stageFx = null;
+      const stage = (draw) => { unstage(); cur.hide = true; stageFx = fx('sky', 0, draw); return stageFx; };
+      const unstage = () => { if (stageFx) { stop(stageFx); stageFx = null; } cur.hide = false; };
+      // weather: rain, ash, embers, snow, dust, sparks, confetti, leaves
+      function weather(kind, amount) {
+        amount = amount === undefined ? 1 : amount;
+        const emit = {
+          rain: (ps) => { for (let k = 0; k < 6 * amount; k++) ps.push(P({ x: rnd() * (W + 200) - 100, y: -20, vx: -120, vy: 900 + rnd() * 300, life: .9, kind })); },
+          ash: (ps) => { if (rnd() < .8 * amount) ps.push(P({ x: rnd() * W, y: -10, vx: 20 + rnd() * 30, vy: 30 + rnd() * 30, life: 14, sz: 2 + rnd() * 3, ph: rnd() * 6, kind })); },
+          embers: (ps) => { if (rnd() < .5 * amount) ps.push(P({ x: rnd() * W, y: H + 10, vx: (rnd() - .5) * 30, vy: -40 - rnd() * 60, life: 9, sz: 2 + rnd() * 2, ph: rnd() * 6, kind })); },
+          snow: (ps) => { if (rnd() < 1.2 * amount) ps.push(P({ x: rnd() * W, y: -10, vx: (rnd() - .5) * 20, vy: 40 + rnd() * 40, life: 16, sz: 2 + rnd() * 3, ph: rnd() * 6, kind })); },
+          dust: (ps) => { if (rnd() < .6 * amount) ps.push(P({ x: -20, y: 100 + rnd() * (H - 120), vx: 80 + rnd() * 120, vy: (rnd() - .5) * 10, life: 12, sz: 1 + rnd() * 2, ph: rnd() * 6, kind })); },
+          sparks: (ps) => { if (rnd() < .7 * amount) ps.push(P({ x: rnd() * W, y: rnd() * H * .8, vx: 0, vy: -10, life: 1.5 + rnd(), sz: 2 + rnd() * 2, ph: rnd() * 6, kind })); },
+          confetti: (ps) => { if (rnd() < 2 * amount) ps.push(P({ x: rnd() * W, y: -10, vx: (rnd() - .5) * 60, vy: 80 + rnd() * 60, life: 9, sz: 3 + rnd() * 3, ph: rnd() * 6, col: pick(['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff']), kind })); },
+          leaves: (ps) => { if (rnd() < .3 * amount) ps.push(P({ x: W + 10, y: rnd() * H * .7, vx: -60 - rnd() * 80, vy: 20 + rnd() * 20, life: 18, sz: 4, ph: rnd() * 6, col: pick(['#d98a2b', '#b8561a', '#e0b030']), kind })); },
+        }[kind];
+        return particles('screen', { emit, draw: (g, p, k) => {
+          const wob = Math.sin(cur.t * 2 + (p.ph || 0));
+          if (p.kind === 'rain') { g.strokeStyle = 'rgba(190,210,255,.45)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - 3, p.y + 16); g.stroke(); }
+          else if (p.kind === 'ash') { g.fillStyle = `rgba(200,195,190,${.7 * Math.min(1, (1 - k) * 4)})`; g.fillRect(p.x + wob * 8, p.y, p.sz, p.sz); }
+          else if (p.kind === 'embers') { g.fillStyle = `rgba(255,${120 + Math.floor(80 * wob)},40,${.9 * (1 - k)})`; g.fillRect(p.x + wob * 10, p.y, p.sz, p.sz); }
+          else if (p.kind === 'snow') { g.fillStyle = `rgba(255,255,255,${.85 * Math.min(1, (1 - k) * 4)})`; g.fillRect(p.x + wob * 10, p.y, p.sz, p.sz); }
+          else if (p.kind === 'dust') { g.fillStyle = `rgba(210,170,120,${.5 * (1 - k)})`; g.fillRect(p.x, p.y + wob * 6, p.sz * 3, p.sz); }
+          else if (p.kind === 'sparks') { const a = Math.sin(k * Math.PI); g.fillStyle = `rgba(255,240,180,${a})`; g.fillRect(p.x - p.sz, p.y, p.sz * 3, 1.5); g.fillRect(p.x, p.y - p.sz, 1.5, p.sz * 3); }
+          else if (p.kind === 'confetti' || p.kind === 'leaves') { g.save(); g.translate(p.x + wob * 12, p.y); g.rotate(cur.t * 3 + p.ph); g.fillStyle = p.col; g.fillRect(-p.sz / 2, -p.sz / 3, p.sz, p.sz * (p.kind === 'leaves' ? .6 : .5) * (1 + Math.abs(wob))); g.restore(); }
+        } });
+      }
+      // everyone walks on to the next scene together (they keep their places on the screen, the world slides by)
+      function* journey(d, speed, walkers, o) {
+        o = o || {}; walkers = (walkers || []).filter(a => a && a.alpha > 0);
+        walkers.forEach(a => { a.face = d; hold(a, 'walk'); a.rate = a.pet ? 9 * Math.max(.7, speed / 70) : 6 * Math.max(.6, speed / 70); });
+        yield* travel(d, speed, { pose: o.kamiel === false ? kam.pose : 'walk', face: o.kamiel === false ? kam.face : d, each: o.each });
+        walkers.forEach(a => hold(a, null));
+      }
+      // the cast: the housemates that are switched on, and Heidi
+      const castNames = (names) => (names || PETS).filter(p => !(cfg.off || []).includes(p));
+      const heidi = (side, o) => actor(Object.assign({ cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, rate: 6 }, o || {}));
+      // a llama that looks like Kamiel (a double, a twin, a memory)
+      const llama = (o) => actor(Object.assign({ cx: W / 2, feet: FEET, s: 1, set: 'kamiel', face: -1, outfit: [] }, o || {}));
+      return {
+        W, H, FEET, kam, A, cfg, SP, PET, PETS, DOGS, CATS: CATS2, NAMES: { wifi: 'Wifi', snoet: 'Snoet', pippa: 'Pippa', pebbels: 'Pebbels', dobby: 'Dobby' },
+        get t() { return cur ? cur.t : 0; }, get dt() { return st.dt; }, get lensNow() { return C().lens; },
+        rnd, pick, lerp, clamp, ez, sprC, spr,
+        wait, tween, until, par, walkTo, actorTo, travel, hop, shiver, approach, backOff, withOutfit, shake,
+        actor, pet, petTo, petJump, petLeave: function* (a, side, speed) { yield* petTo(a, W / 2 + side * (W / 2 + 90), speed || PET[a.pet].run); a.alpha = 0; },
+        hold, emote, fx, stop, particles, P, ballFx,
+        kx, kface, kp, kfeet, groundHits, photoHits, skyThings, hitsOf,
+        setItemOff: (f) => { cur.itemOff = f; }, setCloudOff: (f) => { cur.cloudOff = f; },
+        toScreen: (wx) => W / 2 + wrapD(wx - A.cam()), toWorld: (sx) => A.cam() + sx - W / 2,   // world coordinates: things that stay behind when the camera moves on
+        get actors() { return cur.actors; },
+        // cinema
+        setv, setvW, grade, lens, lensW, aim, lensReset, lensPt: (p) => lensPt(C(), p), light, unlight, over, unover, flash,
+        card, opening, ending, fadeOut, fadeIn, cut, stage, unstage, weather, journey, castNames, heidi, llama,
+      };
+    }
+    // the films register themselves in window.KamielFilms (films_*.js); they become events with film: true
+    let KIT = null;
+    const FILMS = window.KamielFilms || {};
+    for (const id in FILMS) {
+      const F = FILMS[id];
+      DEF[id] = { film: true, long: true, can: () => { try { return !F.can || F.can(KIT || (KIT = filmKit())); } catch (e) { return false; } },
+        run: function* () { if (!KIT) KIT = filmKit(); yield* F.run(KIT); } };
+    }
+
     /* ---------- the engine ---------- */
     const offList = () => (cfg.off || []);
     const can = (id) => { const d = DEF[id]; try { return !!d && (!d.can || d.can()); } catch (e) { return false; } };
     function choose(cat, forced) {
       const fk = A.festival ? (A.festival() || {}).kind : null;
-      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern' && e.cat !== 'muziek') && (e.cat !== 'feest' || (DEF[e.id] && (DEF[e.id].fest || []).includes(fk))) && (forced || !offList().includes(e.id)) && can(e.id));
+      const pool = LIST.filter(e => (cat ? e.cat === cat : e.cat !== 'intern' && e.cat !== 'muziek' && e.cat !== 'film') && (e.cat !== 'feest' || (DEF[e.id] && (DEF[e.id].fest || []).includes(fk))) && (forced || !offList().includes(e.id)) && can(e.id));
       return pool.length ? pick(pool).id : null;
     }
     function start(id) {
       const def = DEF[id]; if (!def) return false;
       const face = A.dir();
       A.kamReset(); kam.face = face;
-      cur = { id, t: 0, fx: [], actors: [], post: null, itemOff: null, cloudOff: null, hide: false, cleanup: [] };
+      cur = { id, t: 0, fx: [], actors: [], post: null, itemOff: null, cloudOff: null, hide: false, cleanup: [], cine: def.film ? cineNew() : null };
       cur.gen = def.run();
       const e = LIST.find(x => x.id === id); if (A.onStart && e) A.onStart(id, e.name, e.cat);
       return true;
@@ -2352,12 +2579,15 @@
       if (Math.abs(A.cam() - center) > 1) { A.setCam(center); A.arrive(); }
       const f = kam.face; A.kamReset(); if (f) A.setDir(f);
     }
+    const SPEED = A.params && +A.params.get('snel') > 0 ? +A.params.get('snel') : 1;   // ?snel=8 plays the events (and films) eight times faster, for testing
+    const filming = () => !!(cur && cur.cine);
     function tick(dt) {
+      dt *= SPEED;
       st.dt = dt; clock += dt;
       for (const a of residents.slice()) {
         a.cx = scrX(a.wx); a.s = PET[a.pet].s * depthS(a.feet); ballStep(a, dt);
         if (a.pose === 'walk') a.wt += a.rate * dt;
-        if (!a.busy && a.brain) { let done = false; try { done = a.brain.next().done; } catch (e) { console.error('huisdier', a.pet, e); done = true; } if (done) a.gone = true; }
+        if (!a.busy && a.brain && !filming()) { let done = false; try { done = a.brain.next().done; } catch (e) { console.error('huisdier', a.pet, e); done = true; } if (done) a.gone = true; }
         // when Kamiel walks on, those that are awake watch him go
         if (A.walking() && !a.busy && onScreen(a) && (a.pose === 'sit' || a.pose === 'up' || a.pose === 'stand')) a.face = a.cx < W / 2 ? 1 : -1;
       }
@@ -2372,10 +2602,11 @@
       }
       let done = false;
       try { done = cur.gen.next().done; } catch (e) { console.error('event', cur.id, e); done = true; }
-      if (done || cur.t > (DEF[cur.id] && DEF[cur.id].long ? 150 : 66)) finish();
+      if (!done && cur.cine) cineTick(cur.cine, dt);
+      if (done || cur.t > (DEF[cur.id] && DEF[cur.id].film ? FILM_MAX : DEF[cur.id] && DEF[cur.id].long ? 150 : 66)) finish();
     }
     function draw(layer, g) {
-      if (layer === 'back' || layer === 'front') for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) { A.drawPet(g, a); if (a.ball) drawBall(g, a); }
+      if ((layer === 'back' || layer === 'front') && !filming()) for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) { A.drawPet(g, a); if (a.ball) drawBall(g, a); }
       for (const f of rfx.slice()) {
         if (f.layer !== layer) continue;
         const age = clock - f.born;
@@ -2393,9 +2624,10 @@
     }
     const pc = document.createElement('canvas'); pc.width = W; pc.height = H;
     function post(g, cv) {
-      if (!cur || !cur.post) return;
-      const pg = pc.getContext('2d'); pg.clearRect(0, 0, W, H); pg.drawImage(cv, 0, 0);
-      cur.post(g, pc);
+      if (!cur || (!cur.post && !cur.cine)) return;
+      const pg = pc.getContext('2d');
+      if (cur.post) { pg.clearRect(0, 0, W, H); pg.drawImage(cv, 0, 0); cur.post(g, pc); }
+      if (cur.cine) cineDraw(g, cv, cur.cine, pg);
     }
     function check(d) {
       if (cfg.on === false) return;
@@ -2441,6 +2673,9 @@
       hideWorld: () => !!(cur && cur.hide),
       walkPending: () => !!walkEvent,
       current: () => cur && cur.id,
+      time: () => cur ? cur.t : 0,
+      // during a film the film makes its own night: the world's night tint goes down (and away in a film's own decor)
+      nightK: () => !cur || !cur.cine ? 1 : cur.hide ? 0 : .45,
       plan: () => plan,
     };
   }

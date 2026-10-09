@@ -21,6 +21,13 @@
 </script>
 <script src="static/reminder.js"></script>
 <script src="static/outfits.js"></script>
+<script>window.KamielFilms = {};</script>
+<script src="static/films_1.js"></script>
+<script src="static/films_2.js"></script>
+<script src="static/films_3.js"></script>
+<script src="static/films_4.js"></script>
+<script src="static/films_5.js"></script>
+<script src="static/films_6.js"></script>
 <script src="static/events.js"></script>
 <script src="static/compose.js"></script>
 <script src="static/pets.js"></script>
@@ -1611,7 +1618,7 @@ function nodAngle() {
 /* ---------- drawing a llama: Kamiel himself, and the visitors of the world events ---------- */
 // what Kamiel does right now; the world events change this, outside events it stays as it is here
 const KAM0 = { x: 0, y: 0, s: 1, r: 0, sq: 1, sx: 1, face: 0, pose: '', wt: 0, rate: 6, head: 0, eyes: '', eyeT: 0, mouth: 0,
-  outfit: null, alpha: 1, blur: 0, tint: '', layer: 'front', feet: null, clipY: null, hide: false, cold: 0, blush: false };
+  outfit: null, alpha: 1, blur: 0, tint: '', layer: 'front', feet: null, clipY: null, hide: false, cold: 0, blush: false, filter: '', deco: null };
 const kam = Object.assign({}, KAM0);
 const kamReset = () => { Object.assign(kam, KAM0); };
 // a recoloured copy of a Kamiel frame: the white lama, the twin, a cold Kamiel
@@ -1713,7 +1720,9 @@ function drawLlama(g, o) {
   g.translate(o.cx, o.feet); g.rotate(o.r || 0);
   g.scale((o.face > 0 ? -1 : 1) * (o.sx || 1), o.sq || 1);
   g.imageSmoothingEnabled = !!(o.blur > 0);
-  g.drawImage(src, -w / 2 - mx, -h - my, cw, ch);
+  if (o.filter) g.filter = o.filter;
+  g.drawImage(src, -w / 2 - mx, -h - my, cw, ch); g.filter = 'none';
+  if (o.deco) o.deco(g, w, h);   // something extra for the films, in the llama's own frame (feet at 0,0)
   g.restore();
 }
 /* ---------- the housemates: Wifi, Snoet, Pippa, Pebbels, Dobby (pixel grids in pets.js) ---------- */
@@ -1737,7 +1746,11 @@ function drawPet(g, o) {
     g.fillStyle = `rgba(0,0,0,${.18 * k})`; g.beginPath(); g.ellipse(o.cx, o.feet, w * .3 * k, Math.max(2, u * .7) * k, 0, 0, 7); g.fill();
   }
   g.translate(o.cx, o.feet - (o.lift || 0) + u); g.rotate(o.r || 0); g.scale((o.face > 0 ? -1 : 1) * (o.sx || 1), o.sq || 1);
-  g.imageSmoothingEnabled = false; g.drawImage(petFrame(o.pet, ph), -w / 2, -h, w, h);
+  g.imageSmoothingEnabled = false;
+  if (o.filter) g.filter = o.filter;   // the films: a silhouette, a possessed colour, a double
+  g.drawImage(petFrame(o.pet, ph), -w / 2, -h, w, h); g.filter = 'none';
+  // a costume for the films, drawn in the pet's own frame (so it turns and flips along); at(which) = a point of the art
+  if (o.deco) o.deco(g, (which) => { const q = art[which] || art.head; return { x: -w / 2 + (q[0] + .5) * u, y: -h + (q[1] + .5) * u }; }, u, w, h);
   if (o.eyes === 'hart' || o.eyes === 'groot') {
     const ex = -w / 2 + art.eye[0] * u, ey = -h + art.eye[1] * u;
     if (o.eyes === 'hart') { g.fillStyle = '#ff3d8b'; g.fillRect(ex - u, ey - u * .5, u * 3, u * 2); }
@@ -1765,7 +1778,7 @@ function kamObj() {
     pose: ev ? (kam.pose || (blinkT < 0 ? 'blink' : 'stand')) : (walking ? 'walk' : (blinkT < 0 ? 'blink' : 'stand')),
     wt: ev ? kam.wt : t * 6 * airWalk(), r: kam.r, sq: kam.sq, sx: kam.sx, head: ev ? kam.head : (calm() ? .14 : nodAngle() + airHead()),
     eyes: !ev && calm() ? 'dicht' : (!ev && airEyes() !== null ? airEyes() : kam.eyes), eyeT: kam.eyeT, mouth: kam.mouth,
-    outfit: kam.outfit || festOutfit(Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush };
+    outfit: kam.outfit || festOutfit(Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush, filter: kam.filter, deco: kam.deco };
 }
 function drawKamiel() { if (!kam.hide) drawLlama(ctx, kamObj()); }
 /* the northern lights: some evenings (a chance per evening, set in the Studio), green and violet curtains in the sky */
@@ -1885,7 +1898,8 @@ function frame() {
   EV.draw('front', ctx);
   ctx.globalCompositeOperation = 'source-atop';
   if (S.season_colors !== false && SEASON_TINT[seasonNow]) { ctx.fillStyle = SEASON_TINT[seasonNow]; ctx.fillRect(0, 0, W, H); }
-  if (L < 1) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68})`; ctx.fillRect(0, 0, W, H); }
+  const nk = EV.nightK ? EV.nightK() : 1;
+  if (L < 1 && nk > 0) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68 * nk})`; ctx.fillRect(0, 0, W, H); }
   if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);

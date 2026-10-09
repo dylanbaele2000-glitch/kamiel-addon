@@ -107,6 +107,48 @@
         g.fillStyle = '#d9a514'; for (let y = 470; y < 1240; y += 100) g.fillRect(X(0), Y(y), X(780), Y(20));
         g.fillStyle = '#5a3d0c'; [600, 740, 880, 1020].forEach(y => g.fillRect(X(200), Y(y), X(30), Y(30)));
       }) },
+    // for the films (and the wardrobe)
+    { id: 'ninjaband', name: 'Ninjaband', slot: 'hoofd', x: 0, y: 150, pal: { R: '#d7262e', r: '#8e141b', G: '#b9c0c9', g: '#7d858f' },
+      rows: ['RRRRRRRRRRRRRRRRRRR....', 'RGGGRRRRRRRRRRRRRRRRr..', 'RgggRRRRRRRRRRRRRRRRRr.', 'rrrrrrrrrrrrrrrrrr.rRRr', '...................r.rR', '....................r.r'] },
+    { id: 'tovenaarshoed', name: 'Tovenaarshoed', slot: 'hoofd', x: -20, y: -170, pal: { B: '#27306e', b: '#18204a', Y: '#ffd23f', y: '#c99a12' },
+      rows: ['..............BB......', '.............BBB......', '............BBB.......', '...........BBBB.......', '..........BBBBB.......', '.........BBBYBBB......',
+             '.........BBBBBBB......', '........BBBBBBBBB.....', '........BBYBBBBBBB....', '.......BBBBBBBBYBB....', '.......BBBBBBBBBBBB...', '......bbbbbbbbbbbbb...',
+             '......YYyYYyYYyYYyY...', 'BBBBBBBBBBBBBBBBBBBBBB', '.bbbbbbbbbbbbbbbbbbbb.'] },
+    { id: 'baret', name: 'Rode baret', slot: 'hoofd', x: 10, y: 40, pal: { R: '#c3202b', r: '#8a1520', Y: '#ffd23f', k: '#3a0a10' },
+      rows: ['......RRRRRRRR......', '...RRRRRRRRRRRRRR...', '.RRRRRRYRRRRRRRRRRR.', 'RRRRRRYYYRRRRRRRRRRr', 'RRRRRRRYRRRRRRRRRRrr', '.kkkkkkkkkkkkkkkkkk.'] },
+    { id: 'gasmasker', name: 'Gasmasker', slot: 'neus', x: -30, y: 290, pal: { G: '#4b5148', g: '#6d7468', K: '#1d201c', C: '#8a8f86', c: '#5f645c', k: '#2a2a2a' },
+      rows: ['...GGGGGGGG..........', '..GGggggggGG.........', '.GGgKKgKKggGkkkkkkkkk', 'CCGggggggggGG........', 'CcCGgKgKgKgGG........', 'CcCGgggggggGG........', 'CCCGGGGGGGGG.........'] },
+    { id: 'stofbril', name: 'Stofbril', slot: 'ogen', x: 140, y: 240, pal: { Y: '#b8862b', y: '#7a5518', g: 'rgba(120,210,170,.55)', W: 'rgba(255,255,255,.8)', K: '#3a2a14' },
+      rows: ['..YYYY.............', '.YggggY............', 'YgWgggYKKKKKKKKKKKK', 'YgggggYy...........', '.YggggY............', '..YYYY.............'] },
+    { id: 'boord', name: 'Priesterboord', slot: 'nek', x: 70, y: 450, pal: { K: '#16131a', W: '#ffffff' },
+      rows: ['KKKKKKKKKKKKKKK', 'KWWKKKKKKKKKKKK', 'KWWKKKKKKKKKKKK'] },
+    { id: 'roodpak', name: 'Rode overall', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
+        g.fillStyle = '#b3121b'; g.fillRect(X(0), Y(440), X(780), Y(930));
+        g.fillStyle = '#860c14'; for (let y = 560; y < 1300; y += 160) g.fillRect(X(0), Y(y), X(780), Y(14));
+        g.fillStyle = '#e0c060'; g.fillRect(X(150), Y(470), X(16), Y(420));
+        g.fillStyle = '#3a2a20'; g.fillRect(X(0), Y(1250), X(780), Y(120));
+      }) },
+    { id: 'ninjapak', name: 'Ninjapak', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
+        g.fillStyle = '#1c1c24'; g.fillRect(X(0), Y(440), X(780), Y(930));
+        g.fillStyle = '#2e2e3a'; g.fillRect(X(100), Y(470), X(30), Y(300)); g.fillRect(X(200), Y(470), X(30), Y(260));
+        g.fillStyle = '#d7262e'; g.fillRect(X(0), Y(860), X(780), Y(50)); g.fillRect(X(560), Y(900), X(30), Y(110));
+        g.fillStyle = '#111116'; g.fillRect(X(0), Y(1250), X(780), Y(120));
+      }) },
+    { id: 'mantel', name: 'Tovenaarsmantel', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
+        g.fillStyle = '#1e2a6e'; g.fillRect(X(0), Y(440), X(780), Y(820));
+        g.fillStyle = '#ffd23f'; [[120, 560], [300, 700], [520, 640], [660, 820], [220, 900], [440, 980], [620, 1080], [100, 1100]].forEach(([x, y]) => { g.fillRect(X(x), Y(y), X(20), Y(20)); g.fillRect(X(x - 20), Y(y + 20), X(60), Y(20)); g.fillRect(X(x), Y(y + 40), X(20), Y(20)); });
+        g.fillStyle = '#c99a12'; g.fillRect(X(0), Y(1180), X(780), Y(30));
+      }) },
+    { id: 'legerjas', name: 'Legerjas', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
+        g.fillStyle = '#4f5a2a'; g.fillRect(X(0), Y(440), X(780), Y(800));
+        g.fillStyle = '#3c4520'; g.fillRect(X(260), Y(700), X(120), Y(90)); g.fillRect(X(480), Y(700), X(120), Y(90)); g.fillRect(X(0), Y(900), X(780), Y(24));
+        g.fillStyle = '#d4a017'; [560, 660, 760].forEach(y => g.fillRect(X(150), Y(y), X(24), Y(24)));
+        g.fillStyle = '#c3202b'; g.fillRect(X(330), Y(600), X(30), Y(30));
+      }) },
+    { id: 'toog', name: 'Zwarte toog', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
+        g.fillStyle = '#18151c'; g.fillRect(X(0), Y(440), X(780), Y(860));
+        g.fillStyle = '#2a2530'; [520, 600, 680, 760, 840, 920].forEach(y => g.fillRect(X(140), Y(y), X(16), Y(16)));
+      }) },
   ];
   const SLOTS = [['hoofd', 'Hoofd'], ['ogen', 'Ogen'], ['nek', 'Nek'], ['neus', 'Neus'], ['lijf', 'Lijf']];
 
