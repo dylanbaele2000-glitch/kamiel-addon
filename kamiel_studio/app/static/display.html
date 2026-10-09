@@ -35,7 +35,12 @@
 html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;-webkit-user-select:none;user-select:none}
 .stage{position:fixed;inset:0;overflow:hidden;background:#000}
 canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:url(#vhs) saturate(1.08) contrast(1.04)}
-.scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px)}
+.scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px);transition:opacity 1.5s}
+/* during a film: cinema instead of VHS (no scanlines, colour fringes, camcorder stamp or tracking noise) */
+.osd,.vig{transition:opacity 1.5s}
+body.cine canvas{filter:saturate(1.04) contrast(1.05)}
+body.cine .scan,body.cine .osd{opacity:0}
+body.cine .vig{opacity:.45}
 .vig{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 18vmin rgba(0,0,0,.7)}
 .osd{position:absolute;left:3.2vw;top:4.2vh;font-family:'VT323',ui-monospace,monospace;color:#fff;font-size:6vh;line-height:.95;text-shadow:0 0 4px rgba(255,255,255,.6),2px 2px 0 rgba(0,0,0,.35);pointer-events:none;letter-spacing:1px}
 /* old-school windows */
@@ -1868,7 +1873,11 @@ function drawWeather(sun) {
 const noise = document.createElement('canvas'); noise.width = 240; noise.height = 150;
 const nctx = noise.getContext('2d'), nimg = nctx.createImageData(240, 150);
 let track = -1;
+let cineOn = false;
 function drawVHS() {
+  const film = !!(EV.filming && EV.filming());
+  if (film !== cineOn) { cineOn = film; document.body.classList.toggle('cine', film); }
+  if (film) return;   // the film has its own (finer) grain
   const d = nimg.data;
   for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
   nctx.putImageData(nimg, 0, 0);

@@ -39,6 +39,7 @@
     { id: 'ijsberen', name: 'IJsberen', cat: 'vaak' },
     { id: 'wegrennen', name: 'Verschieten en wegrennen', cat: 'vaak' },
     { id: 'wolk', name: 'Een wolk volgen', cat: 'vaak' },
+    { id: 'wolkdier', name: 'Een huisdier zoeft voorbij op een wolk', cat: 'vaak' },
     { id: 'moonwalk-weg', name: 'Moonwalk naar de volgende scene', cat: 'vaak' },
     { id: 'moonwalk', name: 'Moonwalk ter plekke', cat: 'vaak' },
     { id: 'zoom', name: 'De camera zoomt in', cat: 'vaak' },
@@ -2168,6 +2169,30 @@
         if (kam.x !== 0) yield* walkTo(0, 50);
         yield* tween(1.5, p => { hole.r = 1 - ez(p); }); hole.r = 0;
       } },
+      // a housemate (sometimes two) whizzes past on a little cloud, casually, high in the sky
+      wolkdier: { can: () => PETS.some(p => !(cfg.off || []).includes(p)), run: function* () {
+        const on = PETS.filter(p => !(cfg.off || []).includes(p)); if (!on.length) return;
+        const d = rnd() < .5 ? -1 : 1, riders = [pick(on)];
+        if (on.length > 1 && rnd() < .35) riders.push(pick(on.filter(p => p !== riders[0])));
+        const flights = riders.map((n, i) => {
+          const a = pet(n, -d); hold(a, i === 0 && rnd() < .5 ? 'lie' : 'sit'); a.face = d; a.layer = 'back'; a.noShadow = true;
+          const fl = { a, x: W / 2 - d * (W / 2 + 160), y: 120 + rnd() * 110, delay: i * (.6 + rnd() * .6), secs: 2.6 + rnd() * 1.2, puffs: [] };
+          a.cx = fl.x; a.feet = fl.y - 6;
+          fx('back', 0, (g) => { const x = fl.x, y = fl.y;
+            for (const pf of fl.puffs) { const k = Math.min(1, (cur.t - pf.t) / .7); g.fillStyle = `rgba(255,255,255,${.6 * (1 - k)})`; const z = Math.round(6 + 10 * k); g.fillRect(Math.round(pf.x - z / 2), Math.round(pf.y - z / 2), z, z); }
+            sprC(g, SP.cloud, x, y + 12, 8.5, d > 0); });
+          return fl;
+        });
+        kam.head = -.2; kam.face = d * -1;
+        yield* par(...flights.map(fl => (function* () {
+          yield* wait(fl.delay); const x0 = fl.x, x1 = W / 2 + d * (W / 2 + 180); let lastPuff = 0;
+          yield* tween(fl.secs, p => { fl.x = lerp(x0, x1, p); const bob = Math.sin(cur.t * 5 + fl.delay) * 4; fl.a.cx = fl.x; fl.a.feet = fl.y - 6 + bob;
+            if (cur.t - lastPuff > .12) { lastPuff = cur.t; fl.puffs.push({ x: fl.x - d * 88, y: fl.y + 12 + bob, t: cur.t }); if (fl.puffs.length > 12) fl.puffs.shift(); }
+            if (Math.abs(fl.x - kx()) < 60) kam.face = d; });
+          fl.a.alpha = 0;
+        })()), (function* () { yield* wait(1.2); kam.eyes = 'groot'; emote('!?', 1.6); yield* wait(2.4); kam.eyes = ''; })());
+        kam.head = 0; emote('dots', 1.5); yield* wait(1.6);
+      } },
       wolkrit: { walk: true, run: function* () {
         const d = rnd() < .5 ? -1 : 1, img = A.CL.length ? pick(A.CL).img : null;
         const cl = { x: kx(), y: -120, w: 300 };
@@ -2430,7 +2455,8 @@
       if (v.flash > 0) { g.fillStyle = `rgba(${C.flashCol},${Math.min(1, v.flash)})`; g.fillRect(0, 0, W, H); }
       if (v.black > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, v.black)})`; g.fillRect(0, 0, W, H); }
       if (C.card && C.card.a > 0) drawCard(g, C.card);
-      if (v.bars > 0) { const bh = Math.round(H * .115 * v.bars); g.fillStyle = '#000'; g.fillRect(0, 0, W, bh); g.fillRect(0, H - bh, W, bh); }
+      // thin bars: a touch of cinema, without cutting the scene off
+      if (v.bars > 0) { const bh = Math.round(H * .045 * v.bars); g.fillStyle = '#000'; g.fillRect(0, 0, W, bh); g.fillRect(0, H - bh, W, bh); }
     }
     // a title card, like an old film: the title big, a line under it
     function drawCard(g, c) {
@@ -2471,7 +2497,7 @@
       }
       // the opening: bars in, the title on black, then the picture fades in with the film's look
       function* opening(title, sub, look) {
-        setv('bars', 1, 1.6); setv('vig', .55, 2); setv('grain', .6, 2); yield* wait(1.2);
+        setv('bars', 1, 1.6); setv('vig', .45, 2); setv('grain', .3, 2); yield* wait(1.2);
         yield* card(title, sub, 3.6);
         if (look) grade(look, 1, .01);
         yield* setvW('black', 0, 2.2);
@@ -2675,6 +2701,7 @@
       current: () => cur && cur.id,
       time: () => cur ? cur.t : 0,
       // during a film the film makes its own night: the world's night tint goes down (and away in a film's own decor)
+      filming: () => filming(),
       nightK: () => !cur || !cur.cine ? 1 : cur.hide ? 0 : .45,
       plan: () => plan,
     };
