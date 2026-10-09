@@ -71,7 +71,7 @@ legend{font-weight:600;margin-bottom:6px;padding:0}
 .pano img{display:block;height:180px;max-width:none}
 label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width:420px}
 label.field span{font-weight:400;color:var(--muted);font-size:13px}
-input[type=number],input[type=time],input[type=date],input[type=text],input[type=search],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+input[type=number],input[type=time],input[type=date],input[type=text],input[type=password],input[type=search],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
 table.chances{border-collapse:collapse;width:auto}
 table.chances th,table.chances td{text-align:left;padding:6px 14px 6px 0}
@@ -537,6 +537,10 @@ details.fold.sub>summary{font-size:15px}
           <select id="mAwayEnt"></select></label>
       </div>
       <label class="sw"><input type="checkbox" id="mToHa"><span><b>Batterij, scherm en beweging doorgeven aan Home Assistant</b><span>Dan heb je in Home Assistant <code>sensor.kamiel_tablet_batterij</code>, <code>binary_sensor.kamiel_tablet_lader</code>, <code>binary_sensor.kamiel_tablet_scherm</code> en <code>binary_sensor.kamiel_tablet_beweging</code>, voor je eigen automatiseringen. Daarvoor is de Fully Kiosk-integratie niet nodig.</span></span></label>
+      <div style="margin-top:14px"><b style="font-size:14px">Extra zekerheid: het scherm 's ochtends wekken vanuit Home Assistant</b>
+        <p class="hint" style="margin:4px 0 8px">De tablet zet zijn scherm zelf weer aan als de nacht voorbij is. Slaapt de tablet zo diep dat dat niet lukt, dan kan Kamiel hem van hieruit wekken (ook als er weer iemand thuiskomt). Zet daarvoor in Fully Kiosk op de tablet <b>Remote Administration</b> aan (Instellingen → Remote Administration → Enable Remote Administration, en "Remote Admin from Local Network" aan), kies daar een wachtwoord en vul hetzelfde wachtwoord hier in. Leeg laten mag: dan doet de tablet het alleen zelf.</p>
+        <label class="field" for="mPw" style="max-width:340px">Wachtwoord van Remote Administration<input type="password" id="mPw" maxlength="80" autocomplete="off"></label>
+        <div class="row" style="margin-top:8px"><button type="button" id="mWakeTest">Test: scherm nu aanzetten via Fully</button><span class="status" id="mWakeStatus" role="status"></span></div></div>
       <div class="row"><button type="button" class="primary" id="mSave">Opslaan</button><span class="status" id="mStatus" role="status"></span></div>
     </div>
 
@@ -1608,7 +1612,7 @@ $('dbTest').addEventListener('click', async () => {
 });
 $('mSave').addEventListener('click', async () => {
   const b = { motion: { on: $('mOn').checked, look: $('mLook').checked, wake: $('mWake').checked, screen_off: $('mOff').value, off_after: +$('mAfter').value || 10, entity: $('mEnt').value,
-    away_off: $('mAway').checked, away_entity: $('mAwayEnt').value || 'zone.home', to_ha: $('mToHa').checked } };
+    away_off: $('mAway').checked, away_entity: $('mAwayEnt').value || 'zone.home', to_ha: $('mToHa').checked, fully_pw: $('mPw').value } };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
   status($('mStatus'), r.ok ? 'Bewaard. Herlaad de tablet om het te laten werken.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
@@ -1622,7 +1626,7 @@ async function renderHuis() {
   $('dbOn').checked = !!D.on; $('dbTrigger').value = D.trigger || ''; $('dbMode').value = D.mode || 'auto';
   $('dbCam').innerHTML = entOpts(['camera'], D.camera || '', 'Geen camera'); $('dbMin').value = D.minutes || 10;
   $('dbPets').checked = D.pets !== false; $('dbTg').checked = D.telegram !== false; $('dbKeep').checked = !!D.keep;
-  $('mAway').checked = !!M.away_off; $('mToHa').checked = M.to_ha !== false;
+  $('mAway').checked = !!M.away_off; $('mToHa').checked = M.to_ha !== false; $('mPw').value = M.fully_pw || '';
   $('mAwayEnt').innerHTML = entOpts(['zone', 'group', 'person', 'binary_sensor', 'input_boolean'], M.away_entity || 'zone.home', 'zone.home (standaard)');
   if (!M.away_entity || M.away_entity === 'zone.home') $('mAwayEnt').value = ENTMAP['zone.home'] ? 'zone.home' : '';
   $('mOn').checked = !!M.on; $('mLook').checked = M.look !== false; $('mWake').checked = M.wake !== false; $('mOff').value = M.screen_off || 'nooit'; $('mAfter').value = M.off_after || 10;
@@ -1715,6 +1719,11 @@ function mpAddRow(m) {
 }
 $('mpAdd').addEventListener('click', () => { if (document.querySelectorAll('#mpList .mpRow').length < 12) mpAddRow({ entity: '', name: '' }); });
 
+$('mWakeTest').addEventListener('click', async () => {
+  const st = $('mWakeStatus'); st.textContent = 'Even proberen… (eerst Opslaan als je het wachtwoord net invulde)';
+  try { const j = await (await fetch('api/screen-wake', { method: 'POST' })).json(); st.textContent = j.ok ? 'Gelukt: het scherm van de tablet ging aan.' : j.error; }
+  catch { st.textContent = 'Dat lukte niet.'; }
+});
 $('loveTest').addEventListener('click', async () => {
   status($('loveStatus'), 'De tablet maakt de foto…');
   const r = await fetch('api/love-test', { method: 'POST' }); const j = await r.json().catch(() => ({}));

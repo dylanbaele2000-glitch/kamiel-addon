@@ -1002,9 +1002,11 @@ function sawSomeone(report) {
 }
 window.__kamielMotion = () => sawSomeone(true);
 if (MOT.on) fk(f => f.bind('onMotion', 'window.__kamielMotion && window.__kamielMotion();'));
+let offByUs = false;   // did Kamiel turn the screen off himself? then he turns it on again when that reason is over
 function screen(on, why) {
   const isOn = fk(f => f.getScreenOn(), null);
   if (isOn === null || isOn === on) return;
+  offByUs = !on;
   fk(f => on ? f.turnScreenOn() : f.turnScreenOff(true));   // true: keep running, so it can wake up again
   if (why !== screenWhy) { screenWhy = why; tlog('tablet', on ? 'Scherm aan (' + why + ').' : 'Scherm uit (' + why + ').'); }
 }
@@ -1016,8 +1018,16 @@ function screenPlan() {
     return ['uit', MOT.screen_off === 'nacht' ? "'s nachts, geen beweging" : 'geen beweging'];
   return ['aan', ''];
 }
-function applyScreen() { const [w, why] = screenPlan(); if (w === 'uit') screen(false, why); }
+// every 30 s: off when the plan says so; on again when Kamiel turned it off and the reason is over (the night ended,
+// someone came home). Turned off by hand during the day? Then it stays off.
+function applyScreen() {
+  if (fk(f => f.getScreenOn(), null) === true) offByUs = false;
+  const [w, why] = screenPlan();
+  if (w === 'uit') screen(false, why);
+  else if (offByUs) screen(true, isNightTime(now()) ? 'weer iemand' : 'de nacht is voorbij');
+}
 setInterval(applyScreen, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(applyScreen, 500); });
 function setAway(a) {
   if (a === undefined || a === null || a === awayNow) return;
   awayNow = a;

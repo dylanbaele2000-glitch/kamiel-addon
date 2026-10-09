@@ -110,7 +110,7 @@ DEFAULT_SETTINGS = {
     "rules": [],
     # the tablet's own camera (Fully Kiosk PLUS: motion detection + JavaScript interface)
     "motion": {"on": False, "look": True, "wake": True, "screen_off": "nooit", "off_after": 10, "entity": "",
-               "away_off": False, "away_entity": "zone.home", "to_ha": True},
+               "away_off": False, "away_entity": "zone.home", "to_ha": True, "fully_pw": ""},
     # lights and sockets to switch from the Lampen window on the tablet
     "lamps": [],
     # selfies on Telegram: when someone is away for days, and once a month out of the blue
@@ -431,7 +431,7 @@ async def api_entities(request):
 async def api_world(request):
     db = load_db()
     if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
-        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); db["settings"] = st
+        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
         "assets": db["assets"],
@@ -878,6 +878,8 @@ async def api_settings(request):
                 m["off_after"] = max(1, min(240, int(b["off_after"])))
             if "entity" in b:
                 m["entity"] = str(b["entity"]).strip()[:120]
+            if "fully_pw" in b:   # Fully's Remote Administration password: only the add-on uses it, never the tablet page
+                m["fully_pw"] = str(b["fully_pw"] or "")[:80]
             for k in ("away_off", "to_ha"):
                 if k in b:
                     m[k] = bool(b[k])
@@ -2609,6 +2611,57 @@ async def api_tablet_status_post(request):
     return web.json_response({"ok": True})
 
 
+async def fully_screen_on(why):
+    """Wake the tablet's screen from here, through Fully Kiosk's Remote Administration (works even when the page sleeps)."""
+    m = load_db()["settings"].get("motion") or {}
+    ip, pw = (TABLET["info"].get("ip") or TABLET.get("ip") or ""), m.get("fully_pw") or ""
+    if not pw:
+        return False, "Er is geen Fully-wachtwoord ingevuld."
+    if not ip:
+        return False, "Kamiel weet het adres van de tablet nog niet (de tablet moet één keer aan geweest zijn)."
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=8)) as sess:
+            async with sess.get(f"http://{ip}:2323/", params={"cmd": "screenOn", "type": "json", "password": pw}) as r:
+                txt = await r.text()
+        try:
+            j = json.loads(txt)
+        except ValueError:
+            j = {}
+        if r.status >= 300 or (isinstance(j, dict) and j.get("status") and str(j["status"]).lower() != "ok"):
+            return False, "Fully antwoordde: " + str((j or {}).get("statustext") or r.status) + " (klopt het wachtwoord?)."
+        log("tablet", "Scherm aan via Fully (" + why + ").")
+        return True, ""
+    except Exception as e:
+        return False, "De tablet was niet bereikbaar op " + ip + ":2323 (" + type(e).__name__ + ")."
+
+
+async def screen_guard_loop():
+    """A safety net for the screen: when the night is over (or someone comes home), wake the tablet from here too,
+    in case the tablet's own page was asleep. Needs Fully's Remote Administration password in the Studio."""
+    was_night, was_away = None, None
+    while True:
+        await asyncio.sleep(60)
+        try:
+            s = load_db()["settings"]; m = s.get("motion") or {}
+            if TABLET["info"].get("ip"):
+                TABLET["ip"] = TABLET["info"]["ip"]
+            night = is_night(s) if m.get("screen_off") == "nacht" else False
+            away = (await nobody_home(s)) if m.get("away_off") else False
+            wake = (was_night is True and night is False and not away) or (was_away is True and away is False)
+            was_night, was_away = night, away
+            if wake and m.get("fully_pw"):
+                ok, why = await fully_screen_on("de nacht is voorbij" if not night else "iemand thuis")
+                if not ok:
+                    log("fout", "Scherm aanzetten via Fully lukte niet: " + why)
+        except Exception as e:
+            log("fout", "Schermwacht: " + str(e), quiet=True)
+
+
+async def api_screen_wake(request):
+    ok, why = await fully_screen_on("test vanuit de Studio")
+    return web.json_response({"ok": ok, "error": why})
+
+
 async def api_tablet_status_get(request):
     s = load_db()["settings"]
     m = s.get("motion") or {}
@@ -2696,6 +2749,7 @@ def make_studio():
     app.router.add_get("/api/logboek", api_log_get)
     app.router.add_get("/api/tablet-status", api_tablet_status_get)
     app.router.add_post("/api/screen-test", api_screen_test)
+    app.router.add_post("/api/screen-wake", api_screen_wake)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
     app.router.add_post("/api/halls", api_hall_upload)
     app.router.add_delete("/api/halls/{id}", api_hall_delete)
@@ -2759,6 +2813,7 @@ async def main():
     asyncio.ensure_future(watch_loop())
     asyncio.ensure_future(log_writer())
     asyncio.ensure_future(selfie_loop())
+    asyncio.ensure_future(screen_guard_loop())
     await asyncio.Event().wait()
 
 
