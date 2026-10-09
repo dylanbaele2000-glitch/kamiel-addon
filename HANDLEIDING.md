@@ -475,6 +475,8 @@ Elk van deze problemen is echt gebeurd; de oplossing zit in de code. Lees dit vo
 
 ## Beslissingen en openstaande ideeën
 
+- **Privacy (9 oktober 2026):** de repo is publiek (Home Assistant haalt de add-on zonder wachtwoord op), dus er staat geen persoonlijke info in: geen adres, namen van mensen, eigen datums, wachtwoorden, tokens of chat-ids. Alles wat persoonlijk is, staat alleen in `/data` (de instellingen in Home Assistant). De git-geschiedenis is die dag herschreven (`git filter-repo`) om oudere vermeldingen te wissen; commits van de eigenaar gebruiken zijn GitHub-noreply-adres. Nieuwe code en deze handleiding: hou het zo.
+
 **Bewuste keuzes (niet terugdraaien zonder te vragen):**
 
 - Objecten bewegen nooit en verschijnen niet zomaar; verandering gebeurt buiten beeld (bij het wandelen). Uitzonderingen zijn live dingen die de eigenaar zelf oproept of die nieuws brengen (tv, borden, foto, berichten).
