@@ -201,6 +201,9 @@ function now() {
   return d;
 }
 const minutesOf = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+// the night of the world (night elements, the night look) follows the sun: from sunset to sunrise
+const isDark = (d) => sunPos(d).alt < -0.8;
+// the tablet's quiet hours (Studio → Huis → De tablet): only for the screen, nothing else
 function isNightTime(d) {
   const m = d.getHours() * 60 + d.getMinutes(), a = minutesOf(S.night_start), b = minutesOf(S.night_end);
   return a > b ? (m >= a || m < b) : (m >= a && m < b);
@@ -333,7 +336,7 @@ const sr = (i, k) => { const v = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; r
 function drawFestGround() {
   festHits = [];
   const f = festival(); if (!f) return;
-  const cam = kx - W / 2, night = isNightTime(now());
+  const cam = kx - W / 2, night = isDark(now());
   for (let i = 0; i < N; i++) for (let k = -1; k <= 1; k++) {
     const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0 || (places[i] && places[i].hall)) continue;
     if (f.kind === 'halloween') for (let n = 0; n < 2; n++) {
@@ -698,7 +701,7 @@ const places = [];
 // how a scene is arranged lives in compose.js (styles, scoring, hills, stacks)
 const COMP = KamielCompose.create({ S, OBJ, PLACE, H, FEET, horY, baseY, words: WORDS, photos: PHOTOS });
 function compose(i, forceHall) {
-  const night = isNightTime(now()), today = now(), wb = WEATHER_BUCKET[weather] || 'zon';
+  const night = isDark(now()), today = now(), wb = WEATHER_BUCKET[weather] || 'zon';
   const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv
     && (!o.weather || !o.weather.length || o.weather.includes(wb));
   const r = COMP.compose(i, { night, ok, style: params.get('stijl') });
@@ -730,7 +733,7 @@ function makeClouds() {
     // a cloud that can carry sometimes has something standing on it (and that sometimes carries something too)
     const ST = S.stack || {};
     if (c.carry && cl.y > 110 && rnd() * 100 < (ST.chance === undefined ? 35 : +ST.chance)) {
-      const night = isNightTime(now()), pool = OBJ.filter(o => o.stack && !o.tv && o.kind !== 'wolk' && (o.moment === 'altijd' || (o.moment === 'nacht') === night));
+      const night = isDark(now()), pool = OBJ.filter(o => o.stack && !o.tv && o.kind !== 'wolk' && (o.moment === 'altijd' || (o.moment === 'nacht') === night));
       cl.stack = []; let pw = w * .9;
       for (let lv = 1; lv < Math.max(2, Math.min(4, +ST.max || 3)) && pool.length; lv++) {
         const o = COMP.pickFrom(pool), sw = pw * (.25 + rnd() * .3);
@@ -1020,7 +1023,7 @@ function screenPlan() {
   const idle = (Date.now() - lastMotion) / 60000, recent = Date.now() - seenMotion < 120000;
   if (MOT.away_off && awayNow && !recent) return ['uit', 'niemand thuis'];
   if (MOT.on && MOT.screen_off && MOT.screen_off !== 'nooit' && (MOT.screen_off === 'altijd' || isNightTime(now())) && idle > (MOT.off_after || 10))
-    return ['uit', MOT.screen_off === 'nacht' ? "'s nachts, geen beweging" : 'geen beweging'];
+    return ['uit', MOT.screen_off === 'nacht' ? 'rusttijd, geen beweging' : 'geen beweging'];
   return ['aan', ''];
 }
 // every 30 s: off when the plan says so; on again when Kamiel turned it off and the reason is over (the night ended,
@@ -1029,7 +1032,7 @@ function applyScreen() {
   if (fk(f => f.getScreenOn(), null) === true) offByUs = false;
   const [w, why] = screenPlan();
   if (w === 'uit') screen(false, why);
-  else if (offByUs) screen(true, isNightTime(now()) ? 'weer iemand' : 'de nacht is voorbij');
+  else if (offByUs) screen(true, isNightTime(now()) ? 'weer iemand' : 'de rusttijd is voorbij');
 }
 setInterval(applyScreen, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(applyScreen, 500); });
@@ -1278,7 +1281,7 @@ function step(dt) {
   if (message && message.until * 1000 < Date.now()) message = null;
   msgAlpha += Math.sign((message ? 1 : 0) - msgAlpha) * Math.min(Math.abs((message ? 1 : 0) - msgAlpha), dt / 1);
   remAlpha += Math.sign(want - remAlpha) * Math.min(Math.abs(want - remAlpha), dt / 1.2);
-  const night = isNightTime(now());
+  const night = isDark(now());
   for (let i = 0; i < N; i++) {
     const v = visible(i);
     if (!v && (places[i].seen || places[i].night !== night || places[i].weather !== weather)) compose(i);
@@ -1860,7 +1863,7 @@ function drawWeather(sun) {
       ctx.beginPath(); ctx.arc(x, y, 1 + (i % 3) * .7, 0, 7); ctx.fill();
     }
   }
-  if (fireworksNow) drawFireworks(); else if (fireworksSome || (festival() || {}).kind === 'liefde' && isNightTime(now())) drawFireworks(.2);
+  if (fireworksNow) drawFireworks(); else if (fireworksSome || (festival() || {}).kind === 'liefde' && isDark(now())) drawFireworks(.2);
   if (weather === 'mist') {
     const g = ctx.createLinearGradient(0, HOR0 - 140, 0, H);
     g.addColorStop(0, 'rgba(225,230,235,0)'); g.addColorStop(.35, `rgba(225,230,235,${.55 * (0.4 + .6 * L)})`); g.addColorStop(1, `rgba(225,230,235,${.25 * (0.4 + .6 * L)})`);
@@ -1949,7 +1952,7 @@ EV = KamielEvents.create({
   center: (d) => (Math.round((kx - PLACE / 2) / PLACE) + d) * PLACE + PLACE / 2,
   arrive: () => { lastWalk = Date.now(); arrived(); },
   sky: () => lastSun || lastMoon,
-  night: () => isNightTime(now()),
+  night: () => isDark(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
   now, doorPets: () => doorPets, festival: (d) => festival(d), festBoost: () => ((S.feest || {}).boost === undefined ? 3 : +(S.feest || {}).boost), beat: beatNow, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),

@@ -2473,7 +2473,19 @@ def doorbell_rule(s):
 
 
 def is_night(s):
+    """The tablet's quiet hours (night_start-night_end): only for the screen."""
     return not _in_window(s.get("night_end", "06:00"), s.get("night_start", "22:00"))
+
+
+SUN = {"at": 0, "down": None}
+
+
+async def sun_down(s):
+    """Day and night in Kamiel's world (and in the rules): the sun, from Home Assistant's sun.sun. Falls back to the quiet hours."""
+    if time.time() - SUN["at"] > 60:
+        st = await ha_get("/states/sun.sun")
+        SUN["at"] = time.time(); SUN["down"] = (st.get("state") == "below_horizon") if st else None
+    return SUN["down"] if SUN["down"] is not None else is_night(s)
 
 
 async def watch_loop():
@@ -2510,7 +2522,8 @@ async def watch_loop():
                     continue
                 if not _in_window(r.get("from"), r.get("to")):
                     continue
-                if r.get("when") == "dag" and is_night(s) or r.get("when") == "nacht" and not is_night(s):
+                dark = await sun_down(s) if r.get("when") in ("dag", "nacht") else False
+                if r.get("when") == "dag" and dark or r.get("when") == "nacht" and not dark:
                     continue
                 key = r["id"]
                 if time.time() - WATCH["fired"].get(key, 0) < 60 * float(r.get("cooldown", 0)):
