@@ -662,7 +662,7 @@ const tintFor = (alt) => Math.max(0, 1 - Math.abs(alt - 2) / 10);
 async function pollState() {
   try {
     const s = await (await fetch('api/state', { cache: 'no-store' })).json();
-    if (s.sun) haSun = s.sun;
+    haSun = s.sun && typeof s.sun.alt === 'number' ? s.sun : null;   // no sun from Home Assistant: compute it ourselves (never a stale one)
     setAir(s.air);
     osdLines = s.osd || [];
     const cov = typeof s.clouds === 'number' ? s.clouds : null;
@@ -814,6 +814,10 @@ function schedule() {
   airTick();
   EV.check(d);
   if (walking || EV.active) return;
+  // the sun went down (or came up) while he stands in a place made for the other half of the day: walk on within a minute,
+  // so the night elements (or the day ones) come right away instead of after the full walking time
+  const here = places[placeIndex()];
+  if (here && !here.hall && here.night !== isDark(d) && msToWalk() > 45000) lastWalk = Date.now() - walkMs() + 45000;
   if (msToWalk() <= 0) { lastWalk = Date.now(); if (!EV.walkNow()) go(rnd() < .5 ? -1 : 1); }
 }
 if (params.get('demo')) setInterval(() => go(rnd() < .5 ? -1 : 1), +params.get('demo') * 1000);
@@ -1962,7 +1966,7 @@ const restored = restoreScene();
 if (params.get('zaal')) compose(placeIndex(), params.get('zaal'));   // ?zaal=museum (or disco, sterren) to try a hall
 if (params.get('lucht')) setInterval(() => setAir({ level: +params.get('lucht') }), 1000);   // ?lucht=2 to try bad air
 if (!restored) for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
-if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene };
+if (params.get('debug')) window.__kamiel = { places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene, dark: () => isDark(now()), msToWalk: () => msToWalk(), walking: () => walking };
 requestAnimationFrame(loop);
 if (!params.get('ev') && !params.get('t') && !restored) tlog('tablet', 'Kamiel gestart ' + (FK() ? 'op de tablet' : 'in een browser') + ' (' + innerWidth + '×' + innerHeight + ').');
 pollState(); setInterval(pollState, 60000);
