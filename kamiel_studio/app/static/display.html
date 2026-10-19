@@ -118,7 +118,15 @@ const wc = document.createElement('canvas'); wc.width = W; wc.height = H; const 
 const cc = document.createElement('canvas'); cc.width = W; cc.height = H; const cctx = cc.getContext('2d');
 const mod = (a, n) => ((a % n) + n) % n;
 const rnd = Math.random;
-const load = (src) => { const i = new Image(); i.src = src; return i; };
+// an image that doesn't load (the add-on restarting, a hiccup on the network) is tried again, and again:
+// otherwise everything that uses it would stay invisible until the tablet restarts
+const RETRY = [4, 15, 45, 120, 300];
+const load = (src) => {
+  const i = new Image(); let n = 0;
+  i.onerror = () => { const wait = RETRY[Math.min(n, RETRY.length - 1)] * 1000; n++;
+    setTimeout(() => { i.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + 'r=' + n; }, wait); };
+  i.src = src; return i;
+};
 const ready = (i) => !!i && (i instanceof HTMLCanvasElement || (i.complete && i.naturalWidth > 0));
 
 /* ---------- data from the add-on ---------- */
@@ -2022,21 +2030,23 @@ function spots(keys) {
     ? [3 + (n % 3) * 32.5, 4 + Math.floor(n / 3) * 46]
     : [base[k][0] + (rnd() * 6 - 3), base[k][1] + (rnd() * 6 - 3)]);
 }
+let deskGen = 0;   // every opening gets a number: an older one that is still busy stops as soon as a newer one (or closing) came
 async function openDesk(only) {
   const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player));
   if (!keys.length) return;
   closeDesk(true);
+  const gen = ++deskGen;
   deskOpen = true; touchDesk();
   await Promise.all([loadDesk(), keys.includes('vertrek') ? loadRows() : null]);
-  if (!deskOpen) return;
+  if (!deskOpen || gen !== deskGen) return;
   const pos = spots(keys);
   clearInterval(walkTimer); walkTimer = setInterval(() => { if (deskOpen && wins.wandel) tickWandel(); }, 500);
   // all windows are made first (invisible), measured and laid out; then they pop up one by one
-  keys.forEach((k, n) => { makeWin(k, pos[n]); wins[k].style.visibility = 'hidden'; });
+  keys.forEach((k, n) => { try { makeWin(k, pos[n]); wins[k].style.visibility = 'hidden'; } catch (e) { console.error('venster', k, e); if (wins[k]) { wins[k].remove(); delete wins[k]; } } });
   await new Promise(r => setTimeout(r, 120));   // let pictures and fonts settle before measuring
-  if (!deskOpen) return;
-  arrange(keys);
-  keys.slice().sort((a, b) => wins[a].offsetTop - wins[b].offsetTop).forEach((k, n) => setTimeout(() => { if (deskOpen && wins[k]) { wins[k].style.visibility = ''; front(wins[k]); } }, 90 * n));
+  if (!deskOpen || gen !== deskGen) return;
+  arrange(keys.filter(k => wins[k]));
+  keys.filter(k => wins[k]).sort((a, b) => wins[a].offsetTop - wins[b].offsetTop).forEach((k, n) => setTimeout(() => { if (deskOpen && wins[k]) { wins[k].style.visibility = ''; front(wins[k]); } }, 90 * n));
   setTimeout(() => { if (deskOpen) renderTaskbar(); }, 90 * keys.length);
   clearInterval(deskTimer);
   deskTimer = setInterval(async () => {
@@ -2047,7 +2057,7 @@ async function openDesk(only) {
   }, 5000);
 }
 function closeDesk(quiet) {
-  deskOpen = false; clearInterval(deskTimer); clearInterval(walkTimer);
+  deskOpen = false; deskGen++; clearInterval(deskTimer); clearInterval(walkTimer);
   for (const k in wins) delete wins[k];
   deskEl.innerHTML = '';
 }
