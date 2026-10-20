@@ -686,6 +686,7 @@ async function pollState() {
 async function pollWorld() {
   try {
     const w = await (await fetch('api/world', { cache: 'no-store' })).json();
+    if (w.build && world.build && w.build !== world.build) { saveScene('update'); tlog('tablet', 'Opnieuw geladen: Kamiel Studio is bijgewerkt (de scène blijft dezelfde).'); location.reload(); return; }
     if (w.version !== world.version) { saveScene('studio'); tlog('tablet', 'Opnieuw geladen: er veranderde iets in Kamiel Studio (de scène blijft dezelfde).'); location.reload(); }
   } catch (e) { }
 }

@@ -422,12 +422,22 @@ async def api_entities(request):
 
 
 # ----------------------------------------------------------------- world (read only)
+def _build_id():
+    """Changes with every update of the add-on (the files of the tablet page), so the tablet knows to reload."""
+    d = os.path.join(APP, "static")
+    return str(max(int(os.path.getmtime(os.path.join(d, f))) for f in os.listdir(d) if f.endswith((".js", ".html"))))
+
+
+BUILD = _build_id()
+
+
 async def api_world(request):
     db = load_db()
     if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
         st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
+        "build": BUILD,
         "assets": db["assets"],
         "photos": db["photos"],
         "panorama": db.get("panorama"),
@@ -2822,6 +2832,12 @@ async def main():
     asyncio.ensure_future(watch_loop())
     asyncio.ensure_future(log_writer())
     asyncio.ensure_future(selfie_loop())
+    try:   # after an update of the add-on: tell every tablet to reload once, so it runs the new code (also tablets with older code)
+        db = load_db()
+        if db.get("build") != BUILD:
+            db["build"] = BUILD; save_db(db, bump=True)
+    except Exception as e:
+        log("fout", "Versie bijhouden mislukt: " + str(e), quiet=True)
     asyncio.ensure_future(screen_guard_loop())
     await asyncio.Event().wait()
 
