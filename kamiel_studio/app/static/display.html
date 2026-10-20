@@ -123,6 +123,7 @@ const rnd = Math.random;
 const RETRY = [4, 15, 45, 120, 300];
 const load = (src) => {
   const i = new Image(); let n = 0;
+  if (!src || typeof src !== 'string') return i;   // nothing to load (a frame without a photo yet): an empty image, never an error
   i.onerror = () => { const wait = RETRY[Math.min(n, RETRY.length - 1)] * 1000; n++;
     setTimeout(() => { i.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + 'r=' + n; }, wait); };
   i.src = src; return i;
@@ -857,7 +858,15 @@ function setMessage(m) {
   if (m && dismissed.has(m.id)) m = null;
   if ((m && m.id) === (message && message.id)) return;
   message = m;
-  if (m) msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign: m.sign });
+  if (m) {
+    // a message that talks about the time ("time", "tijd") gets the time it was sent, small underneath: — 19:51
+    let sign = m.sign || '';
+    if (/(^|[^a-zà-ÿ])(time|tijd)([^a-zà-ÿ]|$)/i.test(m.text || '')) {
+      const d = new Date((m.since || Date.now() / 1000) * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      sign = sign ? sign + ' · ' + hm : hm;
+    }
+    msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign });
+  }
 }
 // music: on the ground the album cover shows in a frame (one that's already there, or an added one);
 // sometimes instead a tv floats on a cloud or stands on something that can carry it
@@ -1967,7 +1976,7 @@ EV = KamielEvents.create({
   night: () => isDark(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
-  now, doorPets: () => doorPets, festival: (d) => festival(d), festBoost: () => ((S.feest || {}).boost === undefined ? 3 : +(S.feest || {}).boost), beat: beatNow, PW, PLACE, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
+  now, doorPets: () => doorPets, festival: (d) => festival(d), festBoost: () => ((S.feest || {}).boost === undefined ? 3 : +(S.feest || {}).boost), beat: beatNow, PW, placeAt: (wx) => mod(Math.round((wx - PLACE / 2) / PLACE), N), placeCenter: (i) => i * PLACE + PLACE / 2, log: (k, t) => tlog(k, t),
   onStart: (id, name, cat) => { if (cat !== 'intern' || id === 'deurbel') tlog(cat === 'dier' ? 'dier' : 'event', name); },
 });
 const restored = restoreScene();

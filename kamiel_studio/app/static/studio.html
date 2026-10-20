@@ -637,6 +637,9 @@ details.fold.sub>summary{font-size:15px}
       <h2 style="margin-top:18px">Compositie</h2>
       <p class="hint">Elke plek krijgt één "kijkwijze", zoals een fotograaf die soms zo en soms anders werkt. Kamiel probeert telkens een hoop opstellingen en houdt de mooiste. Vink uit wat je nooit wilt zien.</p>
       <div class="choices" id="compStyles"></div>
+      <label class="field" for="compBusy" style="max-width:420px;margin-top:8px">Drukte
+        <span>Hoe vol de scènes zijn. Het blijft altijd een mix (soms meer, soms minder), en met de kijkwijze "Leegte" hierboven aangevinkt komt er af en toe een (bijna) lege scène; hoe rustiger, hoe vaker. De aantallen in de tabel hieronder worden met deze drukte vermenigvuldigd.</span>
+        <select id="compBusy"><option value="0">Heel rustig</option><option value="1">Rustig</option><option value="2">Normaal (de aantallen zoals in de tabel)</option><option value="3">Druk</option><option value="4">Heel druk</option></select></label>
       <label class="sw" style="margin-top:6px"><input type="checkbox" id="compColor"><span><b>Kleurharmonie</b><span>Op ongeveer de helft van de plekken kiest Kamiel opstellingen waarvan de kleuren bij elkaar passen, met hooguit één felle uitschieter.</span></span></label>
 
       <h2 style="margin-top:18px">Heuvels</h2>
@@ -1222,7 +1225,7 @@ async function renderSettings() {
   const CS = (s.compose && s.compose.styles) || {};
   $('compStyles').innerHTML = KamielCompose.STYLES.map(([id, , txt]) => { const [n, d] = txt.split(': ');
     return `<label class="choice"><input type="checkbox" class="cStyle" data-s="${id}" ${CS[id] !== false ? 'checked' : ''}><span><b>${esc(n)}</b><span>${esc(d)}</span></span></label>`; }).join('');
-  $('compColor').checked = !(s.compose && s.compose.color === false);
+  $('compColor').checked = !(s.compose && s.compose.color === false); $('compBusy').value = String(s.compose && s.compose.busy !== undefined ? s.compose.busy : 2);
   $('hChance').value = (s.hills || {}).chance === undefined ? 40 : s.hills.chance; $('hHeight').value = (s.hills || {}).height || 18;
   $('stChance').value = (s.stack || {}).chance === undefined ? 35 : s.stack.chance; $('stMax').value = String((s.stack || {}).max || 3);
   renderSongs(world.songs || []);
@@ -1300,7 +1303,7 @@ $('setForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { weather_entity: $('sWeather').value, walk_minutes: +$('sWalk').value,
     max_objects: +$('sMax').value, spacing: +$('sSpacing').value || 0, lane: +$('sLane').value || 94,
-    compose: { styles: Object.fromEntries([...document.querySelectorAll('.cStyle')].map(e => [e.dataset.s, e.checked])), color: $('compColor').checked },
+    compose: { styles: Object.fromEntries([...document.querySelectorAll('.cStyle')].map(e => [e.dataset.s, e.checked])), color: $('compColor').checked, busy: +$('compBusy').value },
     hills: { chance: +$('hChance').value || 0, height: +$('hHeight').value || 18 }, stack: { chance: +$('stChance').value || 0, max: +$('stMax').value || 3 },
     counts: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`n_${part}_${k}_0`).value || 0, +$(`n_${part}_${k}_1`).value || 0]]))])),
     events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0, pets_together: +$('ePetTogether').value || 0, dance_chance: +$('eDance').value || 0, stories_per_week: +$('eStories').value || 0, films_per_week: +$('eFilms').value || 0, aurora_chance: +$('eAurora').value || 0,

@@ -31,9 +31,12 @@
       for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
       return list[list.length - 1];
     }
+    // how busy the scenes are (Studio: Drukte): 0 very calm … 4 very busy
+    const BUSY = () => { const b = S.compose && S.compose.busy; return b === undefined || b === null ? 2 : clamp(Math.round(+b), 0, 4); };
     function chooseStyle(force) {
       const on = (S.compose && S.compose.styles) || {};
-      const list = STYLES.filter(s => on[s[0]] !== false);
+      const lw = [4, 2, 1, .6, .35][BUSY()];   // calmer = more often (almost) empty
+      const list = STYLES.filter(s => on[s[0]] !== false).map(s => s[0] === 'leegte' ? [s[0], s[1] * lw, s[2]] : s);
       if (force && list.some(s => s[0] === force)) return force;
       if (!list.length) return 'vrij';
       let r = rnd() * list.reduce((a, s) => a + s[1], 0);
@@ -76,12 +79,14 @@
       // how many of each kind: "at least" to "at most", by day and by night (Studio)
       const DEFC = { grond: [2, 4], horizon: [1, 3], lucht: [1, 2], kader: [0, 1] };
       const cnt = (S.counts && S.counts[night ? 'nacht' : 'dag']) || {};
-      const num = (k) => { const r = cnt[k] || DEFC[k], lo = Math.max(0, +r[0] || 0), hi = Math.max(lo, +r[1] || 0); return lo + Math.floor(rnd() * (hi - lo + 1)); };
+      const mult = [.35, .65, 1, 1.45, 1.9][BUSY()];
+      const num = (k) => { const r = cnt[k] || DEFC[k], lo0 = Math.max(0, +r[0] || 0), hi0 = Math.max(lo0, +r[1] || 0);
+        const lo = Math.round(lo0 * mult), hi = Math.max(lo, Math.round(hi0 * mult)); return lo + Math.floor(rnd() * (hi - lo + 1)); };
       let nH = num('horizon'), nS = num('lucht'), nG = num('grond'), nF = num('kader');
-      if (style === 'leegte') { nG = rnd() < .5 ? Math.min(nG, 1) : 0; nH = Math.min(Math.max(nH, 1), 1); nS = Math.min(nS, 1); nF = 0; }
+      if (style === 'leegte') { nG = rnd() < .5 ? Math.min(nG, 1) : 0; nH = rnd() < .3 ? 0 : 1; nS = Math.min(nS, 1); nF = 0; if (!nH && rnd() < .5) { nG = 0; nS = 0; } }   // sometimes really empty
       if (style === 'verhouding' && sub === 'lucht') { nS += 1; nG = Math.max(0, nG - 1); }
       if (style === 'verhouding' && sub === 'grond') { nS = Math.max(0, nS - 1); nG += 1; }
-      if (style === 'groepje') nG = Math.max(nG, 3);
+      if (style === 'groepje') nG = Math.max(nG, BUSY() <= 1 ? 2 : 3);
       const maxO = Math.max(1, +(S.max_objects || 12));
       while (nH + nS + nG + nF > maxO) {
         const opts = []; if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF) opts.push('f');
@@ -139,7 +144,7 @@
       const maxW = HALF - LANE - EDGE - 10;
       const sizeFor = (o, t, noGiant) => {
         const [lo, hi] = SZ[o.kind] || DEFSZ.grond;
-        let h = (lo + (hi - lo) * t) * H / 100;
+        let h = (lo + (hi - lo) * t) * H / 100 * [1.12, 1.05, 1, .93, .86][BUSY()];
         if (!noGiant && rnd() < giantP) h = hi * H / 100 * (1.4 + rnd() * .4);
         return h * (o.scale || 1);
       };
@@ -178,6 +183,14 @@
       const rh = cs.filter(c => c.rhythm !== undefined);
       if (rh.length) { const h0 = sizeFor(rh[0].o, .7 + rnd() * .3, true); rh.forEach(c => { c.h = h0 * [1, .72, .52][c.rhythm]; c.depth = [.92, .62, .34][c.rhythm]; }); }
       for (const c of cs) { if (c.crop) { c.h = Math.min(c.h, H * .9); c.w = c.h * asp(c.o); } else fit(c); }
+      // ground and horizon things share one row next to Kamiel: when more is asked than fits, everything gets a bit
+      // smaller (down to about half) instead of things being left out
+      const row = cs.filter(c => c.layer > 0 && !c.crop), avail = 2 * (HALF - LANE - EDGE) - (cs.some(c => c.crop) ? 140 : 0);
+      const need = row.reduce((a, c) => a + c.w, 0) + Math.max(0, GAP + 6) * row.length;
+      if (row.length && need > avail) {
+        const k = clamp((avail - Math.max(0, GAP + 6) * row.length) / row.reduce((a, c) => a + c.w, 0), .5, 1);
+        for (const c of row) { c.h *= k; c.w *= k; }
+      }
 
       const items = [], taken = [], takenSky = [], rects = [];
       let missing = 0;
@@ -221,6 +234,7 @@
       };
       // biggest and special pieces first, sky last
       const order = cs.slice().sort((p, q) => ((p.layer === 0) - (q.layer === 0)) || ((q.crop || q.hero ? 1 : 0) - (p.crop || p.hero ? 1 : 0))
+        || ((q.o.kind === 'kader') - (p.o.kind === 'kader'))
         || ((p.rhythm === undefined) - (q.rhythm === undefined)) || ((p.group === undefined) - (q.group === undefined)) || (q.w - p.w));
       let rSide = sgn(), rOut = 0, gSide = sgn(), gNext = null, lineSide = sgn();
       for (const c of order) {

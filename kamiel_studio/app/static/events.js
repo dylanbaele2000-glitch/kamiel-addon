@@ -106,7 +106,7 @@
     { id: 'slee', name: 'De slee door de lucht (Kerstmis)', cat: 'feest' },
     { id: 'eieren', name: 'Dobby verstopt eieren (Pasen)', cat: 'feest' },
     { id: 'vuurwerkfeest', name: 'Groot vuurwerk (Nieuwjaar)', cat: 'feest' },
-    { id: 'verliefd', name: 'Verliefd (Valentijn)', cat: 'feest' },
+    { id: 'valentijn', name: 'Verliefd (Valentijn)', cat: 'feest' },
     { id: 'pepernoten', name: 'Pepernoten (Sinterklaas)', cat: 'feest' },
     { id: 'liefdesfeest', name: 'Een groot hart (jullie dagen, Valentijn)', cat: 'feest' },
   ];
@@ -1424,7 +1424,7 @@
         kam.eyes = '';
       } },
       // Valentine: Kamiel is in love with Heidi. Heidi is not.
-      verliefd: { fest: ['valentijn'], run: function* () {
+      valentijn: { fest: ['valentijn'], run: function* () {
         const side = rnd() < .5 ? -1 : 1, h = actor({ cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: '' });
         yield* actorTo(h, kx() + side * 170, 55); h.face = -side;
         kam.face = side; kam.eyes = 'groot'; kam.blush = true; emote('hearts', 3); yield* wait(2.5);

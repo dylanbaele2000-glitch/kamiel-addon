@@ -103,7 +103,7 @@ DEFAULT_SETTINGS = {
     "mix_layers": False,    # (no longer used: ground objects never stand in front of horizon objects)
     # composing a scene like a photographer: which ways of looking may be used, and colour harmony
     "compose": {"styles": {"vrij": True, "held": True, "diepte": True, "leegte": True, "groepje": True, "ritme": True,
-                           "verhouding": True, "lijn": True}, "color": True},
+                           "verhouding": True, "lijn": True}, "color": True, "busy": 2},
     # a doorbell with a camera: when it rings, a still from the camera hangs in a frame next to Kamiel
     "doorbell": {"on": False, "trigger": "", "mode": "auto", "camera": "", "minutes": 10, "keep": False, "telegram": True, "pets": True},
     # "if this happens, then Kamiel does that": a list of rules (see RULES below)
@@ -207,7 +207,7 @@ def load_db():
     for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
-    cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); s["compose"] = cp
+    cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); cp["busy"] = sc.get("busy", cp["busy"]); s["compose"] = cp
     for k in ("windows", "window_titles"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); merged.pop("lampen", None); s[k] = merged
     if "songs" not in db:
@@ -849,6 +849,8 @@ async def api_settings(request):
                         s["compose"]["styles"][k] = bool(c["styles"][k])
             if "color" in c:
                 s["compose"]["color"] = bool(c["color"])
+            if "busy" in c:
+                s["compose"]["busy"] = max(0, min(4, int(c["busy"])))
         if isinstance(body.get("doorbell"), dict):
             d, b = s["doorbell"], body["doorbell"]
             for k in ("on", "keep", "telegram", "pets"):
