@@ -861,12 +861,15 @@ function setMessage(m) {
   message = m;
   if (m) {
     // a message that talks about the time ("time", "tijd") gets the time it was sent, small underneath: — 19:51
-    let sign = m.sign || '';
-    if (/(^|[^a-zà-ÿ])(time|tijd)([^a-zà-ÿ]|$)/i.test(m.text || '')) {
+    // "tijd"/"time" at the start or end is only the signal: it disappears from the text (in the middle of a sentence it stays)
+    let sign = m.sign || '', text = m.text || '';
+    if (/(^|[^a-zà-ÿ])(time|tijd)([^a-zà-ÿ]|$)/i.test(text)) {
       const d = new Date((m.since || Date.now() / 1000) * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      sign = sign ? sign + ' · ' + hm : hm;
+      text = text.replace(/^\s*(time|tijd)(?![a-zà-ÿ])[\s,.:;!?-]*/i, '').replace(/[\s,.:;-]*(?<![a-zà-ÿ])(time|tijd)[\s.!?]*$/i, '').trim();
+      if (text) sign = sign ? sign + ' · ' + hm : hm;
+      else text = hm;   // only "tijd": the time itself, big
     }
-    msgCanvas = KamielReminder.render(m.text, { width: W, height: H, color: '#c8202a', position: 'midden', sign });
+    msgCanvas = KamielReminder.render(text, { width: W, height: H, color: '#c8202a', position: 'midden', sign });
   }
 }
 // music: on the ground the album cover shows in a frame (one that's already there, or an added one);

@@ -1308,7 +1308,9 @@ TG_HELP = ("Stuur me gewoon een tekst en hij verschijnt op het scherm thuis.\n"
            "Een foto komt in een kader in de scène.\n\n"
            "/bus  de volgende trams en bussen\n/kijk  een foto van het scherm nu\n/wis  het bericht weghalen\n"
            "/muziek Titel 127  Kamiel knikt mee op dat nummer (127 = tempo)\n/muziek  de lijst met nummers\n"
-           "/event  er gebeurt iets in Kamielland\n/event lijst  alle events\n/selfie  Kamiel stuurt een selfie")
+           "/event  er gebeurt iets in Kamielland\n/event lijst  alle events\n/selfie  Kamiel stuurt een selfie\n"
+           "/logboek  wat er de voorbije 24 uur gebeurde (/logboek 6 = de voorbije 6 uur)\n\n"
+           "Zet \"tijd\" voor of achter je bericht, dan komt het uur waarop je het stuurde eronder.")
 
 
 def tg_conf(db=None):
@@ -1398,6 +1400,36 @@ async def tg_handle(token, upd):
         if not data:
             return await tg_say(chat, "De tablet antwoordt niet. Staat hij aan?")
         return await tg_call(token, "sendPhoto", {"chat_id": chat}, files={"photo": ("kamiel.jpg", data, "image/jpeg")})
+    if cmd == "/logboek":
+        try:
+            hours = max(1, min(168, int(text.split()[1]))) if len(text.split()) > 1 else 24
+        except ValueError:
+            hours = 24
+        since = time.time() - hours * 3600
+        icon = {"event": "✨", "dier": "🐾", "weer": "🌦", "huis": "🏠", "deurbel": "🔔", "telegram": "💬", "selfie": "🤳",
+                "tablet": "📟", "systeem": "⚙️", "fout": "⚠️"}
+        lines, day = [], None
+        for it in _log_items():
+            if it["t"] < since or (it["kind"] == "telegram" and ": /logboek" in it["text"]):
+                continue
+            lt = time.localtime(it["t"]); d = ["ma", "di", "wo", "do", "vr", "za", "zo"][lt.tm_wday] + time.strftime(" %d/%m", lt)
+            if d != day:
+                day = d; lines.append("— " + d + " —")
+            lines.append(f"{_hm(it['t'])} {icon.get(it['kind'], '·')} {it['text']}")
+        span = "het voorbije uur" if hours == 1 else f"de voorbije {hours} uur"
+        if not lines:
+            return await tg_say(chat, f"Er staat niets in het logboek van {span}.")
+        chunks, cur = [], f"📖 Logboek, {span}:\n"
+        for ln in lines:
+            if len(cur) + len(ln) > 3800:
+                chunks.append(cur); cur = ""
+            cur += ln + "\n"
+        chunks.append(cur)
+        if len(chunks) > 5:   # Telegram stays readable: only the newest part, and where to find the rest
+            chunks = ["(Het begin laat ik weg, het is veel. Alles staat in Kamiel Studio → Logboek.)\n"] + chunks[-5:]
+        for c in chunks:
+            await tg_say(chat, c.strip())
+        return None
     if cmd == "/selfie":
         if SNAP.get("id"):
             return await tg_say(chat, "Even geduld, ik ben al een foto aan het maken.")
