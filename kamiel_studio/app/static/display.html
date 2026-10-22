@@ -121,11 +121,14 @@ const rnd = Math.random;
 // an image that doesn't load (the add-on restarting, a hiccup on the network) is tried again, and again:
 // otherwise everything that uses it would stay invisible until the tablet restarts
 const RETRY = [4, 15, 45, 120, 300];
-const load = (src) => {
+const brokenImgs = new Set();   // labels of images that keep failing: shown in the Studio (De tablet) and the logbook
+const load = (src, label) => {
   const i = new Image(); let n = 0;
   if (!src || typeof src !== 'string') return i;   // nothing to load (a frame without a photo yet): an empty image, never an error
-  i.onerror = () => { const wait = RETRY[Math.min(n, RETRY.length - 1)] * 1000; n++;
+  i.onerror = () => { const wait = RETRY[Math.min(n, RETRY.length - 1)] * 1000; n++; i.failed = n;
+    if (n === 3 && label) { brokenImgs.add(label); if (window.tlog) window.tlog('fout', 'Het beeld van "' + label + '" laadt niet (al 3 keer geprobeerd, ik blijf het proberen).'); }
     setTimeout(() => { i.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + 'r=' + n; }, wait); };
+  i.onload = () => { if (!i.naturalWidth) i.onerror(); else { i.failed = 0; if (label) brokenImgs.delete(label); } };   // "loaded" but nothing to show: also try again
   i.src = src; return i;
 };
 const ready = (i) => !!i && (i instanceof HTMLCanvasElement || (i.complete && i.naturalWidth > 0));
@@ -151,11 +154,14 @@ const horY = (wx) => HZ ? HZ[mod(Math.round(wx / 8), HZ.length)] : HOR0;
 const baseY = (wxc, w) => { let m = -1; for (let x = wxc - w / 2; x <= wxc + w / 2; x += 8) m = Math.max(m, horY(x)); return m < 0 ? horY(wxc) : m; };
 const K = {}; ['stand', 'blink', 'walk1', 'walk2', 'walk3', 'walk4'].forEach(k => K[k] = load('static/kamiel/' + k + '.webp'));
 // images load only when an element is actually placed somewhere, so a big library stays light on the tablet
-const lazy = (obj, key, src) => { let im = null; Object.defineProperty(obj, key, { enumerable: true, get: () => im || (im = load(src)) }); };
-const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false).map(a => {
+const lazy = (obj, key, src, label) => { let im = null; Object.defineProperty(obj, key, { enumerable: true, get: () => im || (im = load(src, label)) }); };
+// an element without a proper size can't be placed: it is left out (the add-on repairs it at its next start)
+const sizeOk = (a) => Array.isArray(a.size) && a.size[0] > 0 && a.size[1] > 0;
+world.assets.filter(a => a.active !== false && !sizeOk(a)).forEach(a => setTimeout(() => window.tlog && window.tlog('fout', 'Element "' + (a.label || a.id) + '" heeft geen geldige maat en wordt overgeslagen.'), 3000));
+const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false && sizeOk(a)).map(a => {
   const o = Object.assign({}, a, { vimg: {}, maskImg: null });
   (a.colors || []).forEach(c => { if (a.files['kleur_' + c]) lazy(o.vimg, c, 'media/' + a.files['kleur_' + c]); });
-  lazy(o, 'img', 'media/' + a.files.main);
+  lazy(o, 'img', 'media/' + a.files.main, a.label || a.id);
   if (a.files.mask) { delete o.maskImg; lazy(o, 'maskImg', 'media/' + a.files.mask); }
   return o;
 });
@@ -193,7 +199,7 @@ let spotlight = null;
 const TVS = OBJ.filter(o => o.tv && o.kind === 'kader' && o.hole);
 const TV = () => TVS.length ? TVS[Math.floor(rnd() * TVS.length)] : (TV.builtin || (TV.builtin = builtinTV()));
 let musicOn = false, coverImg = null, coverKey = '';
-const CL = world.assets.filter(a => a.kind === 'wolk' && a.active !== false).map(a => Object.assign({}, a, { img: load('media/' + a.files.main) }));
+const CL = world.assets.filter(a => a.kind === 'wolk' && a.active !== false && sizeOk(a)).map(a => Object.assign({}, a, { img: load('media/' + a.files.main, a.label || a.id) }));
 const PHOTOS = world.photos.length ? world.photos.map(p => 'media/' + p.file) : ['static/voorbeeldfoto.webp'];
 const photoCache = {};
 const photoImg = (url) => photoCache[url] || (photoCache[url] = load(url));
@@ -1066,10 +1072,17 @@ function setAway(a) {
   awayNow = a;
   if (!a && MOT.away_off) screen(true, 'iemand thuis'); else applyScreen();
 }
+// what the current place holds and how much of it can really be shown (for the Studio: De tablet)
+function sceneNow() {
+  const p = places[placeIndex()]; if (!p) return null;
+  const c = { lucht: 0, horizon: 0, grond: 0, zichtbaar: 0, totaal: 0, kapot: [...brokenImgs].slice(0, 6), hall: !!p.hall };
+  for (const it of p.items) { if (it.on || it.board || it.timer || it.door) continue; c[['lucht', 'horizon', 'grond'][it.layer]]++; c.totaal++; if (ready(it.o.img)) c.zichtbaar++; }
+  return c;
+}
 function reportTablet() {
   const st = { fully: !!FK() || /fully/i.test(navigator.userAgent), js: !!FK(), version: fk(f => f.getFullyVersion(), ''), battery: fk(f => f.getBatteryLevel(), null), plugged: fk(f => f.isPlugged(), null),
     screen: fk(f => f.getScreenOn(), null), motion_detect: fk(f => f.getBooleanSetting('motionDetection'), null), ip: fk(f => f.getIp4Address(), ''),
-    w: innerWidth, h: innerHeight, last_motion: (Date.now() - lastMotion) / 1000, plan: screenPlan().join(': ') };
+    w: innerWidth, h: innerHeight, last_motion: (Date.now() - lastMotion) / 1000, plan: screenPlan().join(': '), scene: sceneNow() };
   fetch('api/tablet-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) }).catch(() => {});
 }
 setTimeout(reportTablet, 4000); setInterval(reportTablet, 60000);
@@ -1582,6 +1595,7 @@ function placeItems(layer, hill, sky) {
     for (let k = -1; k <= 1; k++) {
       const p = itemPos(it, i, k); if (!p) continue;
       const { sx, y, w, h, f } = p;
+      if (!(isFinite(sx) && isFinite(y) && w > 0 && h > 0)) continue;
       if (sx > W || sx + w < 0) continue;
       ctx.save();
       if (p.rot) { ctx.translate(p.rc.x, p.rc.y); ctx.rotate(p.rot); ctx.translate(-p.rc.x, -p.rc.y); }

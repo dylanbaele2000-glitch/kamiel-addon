@@ -21,6 +21,7 @@
     const recent = [];
     let curWx0 = 0;
     const asp = (o) => o.size[0] / o.size[1];
+    const sane = (o) => !!o && Array.isArray(o.size) && o.size[0] > 0 && o.size[1] > 0 && isFinite(o.size[0] / o.size[1]);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const sgn = () => rnd() < .5 ? -1 : 1;
 
@@ -96,10 +97,10 @@
 
       const used = new Set();
       const take = (kinds) => {
-        let pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o) && !recent.includes(o.id));
-        if (!pool.length) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o) && !used.has(o));
+        let pool = OBJ.filter(o => kinds.includes(o.kind) && sane(o) && ok(o) && !used.has(o) && !recent.includes(o.id));
+        if (!pool.length) pool = OBJ.filter(o => kinds.includes(o.kind) && sane(o) && ok(o) && !used.has(o));
         // asked for more than there are: a ground or horizon element may come twice (never in the sky)
-        if (!pool.length && !kinds.includes('lucht')) pool = OBJ.filter(o => kinds.includes(o.kind) && ok(o));
+        if (!pool.length && !kinds.includes('lucht')) pool = OBJ.filter(o => kinds.includes(o.kind) && sane(o) && ok(o));
         if (!pool.length) return null;
         const o = pickFrom(pool); used.add(o); recent.push(o.id); if (recent.length > 6) recent.shift(); return o;
       };
@@ -183,13 +184,15 @@
       const rh = cs.filter(c => c.rhythm !== undefined);
       if (rh.length) { const h0 = sizeFor(rh[0].o, .7 + rnd() * .3, true); rh.forEach(c => { c.h = h0 * [1, .72, .52][c.rhythm]; c.depth = [.92, .62, .34][c.rhythm]; }); }
       for (const c of cs) { if (c.crop) { c.h = Math.min(c.h, H * .9); c.w = c.h * asp(c.o); } else fit(c); }
+      // an element with a broken size (no width or height) is left out, never the rest of the scene with it
+      for (let n = cs.length - 1; n >= 0; n--) if (!(isFinite(cs[n].h) && isFinite(cs[n].w) && cs[n].h > 0 && cs[n].w > 0)) cs.splice(n, 1);
       // ground and horizon things share one row next to Kamiel: when more is asked than fits, everything gets a bit
       // smaller (down to about half) instead of things being left out
       const row = cs.filter(c => c.layer > 0 && !c.crop), avail = 2 * (HALF - LANE - EDGE) - (cs.some(c => c.crop) ? 140 : 0);
       const need = row.reduce((a, c) => a + c.w, 0) + Math.max(0, GAP + 6) * row.length;
       if (row.length && need > avail) {
         const k = clamp((avail - Math.max(0, GAP + 6) * row.length) / row.reduce((a, c) => a + c.w, 0), .5, 1);
-        for (const c of row) { c.h *= k; c.w *= k; }
+        if (isFinite(k)) for (const c of row) { c.h *= k; c.w *= k; }
       }
 
       const items = [], taken = [], takenSky = [], rects = [];

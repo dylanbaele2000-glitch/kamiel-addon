@@ -501,15 +501,32 @@ def _asset_from_upload(data, kind, moment, rare, is_sign, label):
     }
 
 
+def _size_ok(a):
+    sz = a.get("size")
+    return isinstance(sz, list) and len(sz) == 2 and all(isinstance(v, (int, float)) and v > 0 for v in sz)
+
+
 def _measure_old_assets():
-    """Elements from before 0.9.0 have no weight and colour yet: measure them once, in the background."""
+    """Elements from before 0.9.0 have no weight and colour yet: measure them once, in the background.
+    And an element whose size got lost or broken is measured again from its own image (without a size the tablet
+    can't place it, and before 0.18.0 one broken element could empty a whole row of the scene)."""
     db = load_db()
-    todo = [a for a in db["assets"] if "wt" not in a]
     found = {}
+    from PIL import Image
+    for a in db["assets"]:
+        if _size_ok(a):
+            continue
+        try:
+            with Image.open(os.path.join(MEDIA, a["files"]["main"])) as im:
+                found[a["id"]] = {"size": [int(im.width), int(im.height)]}
+            log("systeem", "Maat hersteld van element " + a.get("label", a["id"]) + ".")
+        except Exception as e:
+            log("fout", "Element " + a.get("label", a["id"]) + " heeft geen geldige maat en het beeld kan niet geopend worden: " + str(e))
+    todo = [a for a in db["assets"] if "wt" not in a]
     for a in todo:
         try:
             with open(os.path.join(MEDIA, a["files"]["main"]), "rb") as f:
-                found[a["id"]] = process.metrics(process.load_rgba(f.read()))
+                found.setdefault(a["id"], {}).update(process.metrics(process.load_rgba(f.read())))
         except Exception as e:
             log("fout", "Meten mislukt voor " + a.get("label", a["id"]) + ": " + str(e))
     return found
@@ -2657,6 +2674,11 @@ async def api_tablet_status_post(request):
     for k in ("version", "ip", "plan"):
         if b.get(k):
             keep[k] = str(b[k])[:60]
+    sc = b.get("scene")
+    if isinstance(sc, dict):   # what the current place holds and how much of it can be shown
+        keep["scene"] = {k: int(sc.get(k) or 0) for k in ("lucht", "horizon", "grond", "zichtbaar", "totaal")}
+        keep["scene"]["hall"] = bool(sc.get("hall"))
+        keep["scene"]["kapot"] = [str(x)[:60] for x in (sc.get("kapot") or [])][:6]
     TABLET["seen"] = time.time(); TABLET["info"] = keep
     asyncio.ensure_future(tablet_to_ha())
     return web.json_response({"ok": True})
