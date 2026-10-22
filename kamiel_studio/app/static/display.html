@@ -6,6 +6,17 @@
 <title>Kamiel</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Titan+One&family=Arimo:wght@700&display=swap">
 <script>
+  // a request that never gets an answer (wifi hiccup, a half-dead connection) is given up after 25 s:
+  // otherwise those stuck requests pile up and the browser has no room left to fetch new images
+  (function () {
+    var f0 = window.fetch; if (!f0 || !window.AbortController) return;
+    window.fetch = function (u, o) {
+      o = o || {}; if (o.signal) return f0.call(window, u, o);
+      var ac = new AbortController(), t = setTimeout(function () { ac.abort(); }, 25000);
+      var o2 = {}; for (var k in o) o2[k] = o[k]; o2.signal = ac.signal;
+      return f0.call(window, u, o2).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
+    };
+  })();
   // if Kamiel can't start, say why on the screen instead of staying black
   window.onerror = function (msg, src, line) {
     var d = document.getElementById('kerr');
@@ -127,10 +138,16 @@ const load = (src, label) => {
   if (!src || typeof src !== 'string') return i;   // nothing to load (a frame without a photo yet): an empty image, never an error
   i.onerror = () => { const wait = RETRY[Math.min(n, RETRY.length - 1)] * 1000; n++; i.failed = n;
     if (n === 3 && label) { brokenImgs.add(label); if (window.tlog) window.tlog('fout', 'Het beeld van "' + label + '" laadt niet (al 3 keer geprobeerd, ik blijf het proberen).'); }
-    setTimeout(() => { i.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + 'r=' + n; }, wait); };
-  i.onload = () => { if (!i.naturalWidth) i.onerror(); else { i.failed = 0; if (label) brokenImgs.delete(label); } };   // "loaded" but nothing to show: also try again
-  i.src = src; return i;
+    setTimeout(() => { i.retry(src + (src.indexOf('?') >= 0 ? '&' : '?') + 'r=' + n); }, wait); };
+  i.onload = () => { pending.delete(i); if (!i.naturalWidth) i.onerror(); else { i.failed = 0; if (label) brokenImgs.delete(label); } };   // "loaded" but nothing to show: also try again
+  const set = i.onerror; i.onerror = () => { pending.delete(i); set(); };
+  const go = (u) => { i.t0 = Date.now(); pending.add(i); i.src = u; };
+  i.retry = go; i.src0 = src; go(src); return i;
 };
+// an image request that hangs (no answer, no error) never retries by itself: after 30 s it counts as failed and is asked again
+const pending = new Set();
+setInterval(() => { const t = Date.now();
+  pending.forEach(i => { if (i.complete) { pending.delete(i); return; } if (t - i.t0 > 30000) { pending.delete(i); i.onerror(); } }); }, 10000);
 const ready = (i) => !!i && (i instanceof HTMLCanvasElement || (i.complete && i.naturalWidth > 0));
 
 /* ---------- data from the add-on ---------- */
@@ -1086,6 +1103,27 @@ function reportTablet() {
   fetch('api/tablet-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) }).catch(() => {});
 }
 setTimeout(reportTablet, 4000); setInterval(reportTablet, 60000);
+// self-heal: when the place on screen has elements but not one of them could be shown for 3 minutes,
+// every image is asked again; if that doesn't help either, the page starts over (the scene stays the same)
+let emptyFor = 0, healed = 0;
+setInterval(() => {
+  if (document.hidden || walking) return;
+  const c = sceneNow(); if (!c || c.totaal < 2 || c.zichtbaar > 0) { emptyFor = 0; return; }
+  emptyFor++;
+  if (emptyFor === 3) {
+    tlog('fout', 'Geen enkel element op het scherm kon getoond worden (' + c.totaal + ' geplaatst): ik vraag alle beelden opnieuw.');
+    const p = places[placeIndex()]; let n = 0;
+    p.items.forEach(it => { const i = it.o && it.o.img; if (i && i.retry && !ready(i)) { n++; i.retry(i.src0 + (i.src0.indexOf('?') >= 0 ? '&' : '?') + 'h=' + Date.now()); } });
+  }
+  if (emptyFor === 6 && Date.now() - healed > 30 * 60000) {
+    let last = 0; try { last = +sessionStorage.getItem('kamiel-heal') || 0; } catch (e) { }
+    if (Date.now() - last < 30 * 60000) return;
+    try { sessionStorage.setItem('kamiel-heal', String(Date.now())); } catch (e) { }
+    healed = Date.now();
+    tlog('fout', 'Nog steeds geen elementen zichtbaar: de tablet laadt Kamiel opnieuw.');
+    saveScene('herstel'); location.reload();
+  }
+}, 60000);
 const calm = () => Date.now() < calmUntil;
 // a still from a camera (the doorbell, or any rule): a frame right next to Kamiel, until its time is up or someone taps it
 let doorTimer = null;
