@@ -109,9 +109,11 @@
     { id: 'valentijn', name: 'Verliefd (Valentijn)', cat: 'feest' },
     { id: 'pepernoten', name: 'Pepernoten (Sinterklaas)', cat: 'feest' },
     { id: 'liefdesfeest', name: 'Een groot hart (jullie dagen, Valentijn)', cat: 'feest' },
+    { id: 'volle-maan', name: 'Volle maan: de huisdieren doen raar', cat: 'maan' },
+    { id: 'nachtmerrie', name: 'Een nachtmerrie (ogen in de lucht)', cat: 'maan' },
   ];
 
-  const CATS = { film: 'Films (5 tot 10 minuten)', verhaal: 'Verhaaltjes', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
+  const CATS = { film: 'Films (5 tot 10 minuten)', verhaal: 'Verhaaltjes', feest: 'Op feestdagen', maan: 'Bij volle maan', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdieren', vaak: 'Vaak (een paar keer per dag)', soms: 'Soms (een paar keer per week)' };
   const PETS = ['wifi', 'snoet', 'pippa', 'pebbels', 'dobby'];
 
   /* ---------- the plan: when today's events happen ---------- */
@@ -129,7 +131,7 @@
     return Math.floor(r() * 1440);
   }
   const num = (v, d) => (v === undefined || v === null || v === '') ? d : +v;
-  function planFor(d, cfg, fest, boost) {
+  function planFor(d, cfg, fest, boost, fullMoon) {
     // on the day itself everything counts fully; in the days around a feast day about half as much extra
     const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false, B = fest ? Math.max(1, fest.day === false ? Math.ceil((boost || 3) / 2) : (boost || 3)) : 1;
     // on a feast day (or a birthday) much more happens, and things of the day itself, mostly during the day and evening
@@ -150,6 +152,8 @@
     const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const rw = seeded('week ' + ymd(mon)), today = (d.getDay() + 6) % 7;
     for (let k = 0; k < num(cfg.normal_per_week, 4); k++) { const day = Math.floor(rw() * 7), at = minuteOf(rw, ev); if (day === today) out.push({ at, cat: 'soms' }); }
+    // a full-moon night: first the housemates act strange, later in the night a nightmare
+    if (fullMoon && cfg.full_moon !== false) { out.push({ at: 1290 + Math.floor(r() * 75), cat: 'maan', id: 'volle-maan' }); out.push({ at: 1375 + Math.floor(r() * 55), cat: 'maan', id: 'nachtmerrie' }); }
     return out.sort((a, b) => a.at - b.at);
   }
 
@@ -2198,6 +2202,118 @@
         })()), (function* () { yield* wait(1.2); kam.eyes = 'groot'; emote('!?', 1.6); yield* wait(2.4); kam.eyes = ''; })());
         kam.head = 0; emote('dots', 1.5); yield* wait(1.6);
       } },
+      // full moon: the housemates come out, sit in a row and stare at the moon; the dogs howl, the cats puff up and their eyes glow,
+      // Dobby thumps. Then, all at once, they turn their heads to Kamiel. And then it's over, as if nothing happened.
+      'volle-maan': { can: () => A.night(), long: true, run: function* () {
+        const on = PETS.filter(p => !(cfg.off || []).includes(p)); if (!on.length) return;
+        const mo = (A.moon && A.moon()) || { x: W * .62, y: 120 };
+        let glow = 0, stareAll = 0;
+        fx('sky', 0, (g) => { if (glow <= 0) return; const gr = g.createRadialGradient(mo.x, mo.y, 12, mo.x, mo.y, 260);
+          gr.addColorStop(0, `rgba(225,232,255,${.38 * glow})`); gr.addColorStop(1, 'rgba(225,232,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H); });
+        kam.head = -.18; yield* tween(5, p => { glow = ez(p); });
+        kam.eyes = 'groot'; emote('?', 2);
+        const crew = on.slice(0, 5).map((n, i) => { const side = i % 2 ? 1 : -1; return { a: pet(n, side), n, x: kx() + side * (115 + Math.floor(i / 2) * 92) }; });
+        const eyesGlow = fx('front', 0, (g) => { for (const c of crew) { if (!(CATS2.includes(c.n) || stareAll) || c.a.alpha <= 0) continue;
+          const h = A.petPoint(c.a, 'head'), f = c.a.face > 0 ? 1 : -1, k = CATS2.includes(c.n) ? 1 : stareAll;
+          g.fillStyle = `rgba(200,255,120,${.85 * k})`; g.shadowColor = 'rgba(200,255,120,.9)'; g.shadowBlur = 8;
+          g.fillRect(h.x + f * 2 - 5, h.y - 2, 3, 3); g.fillRect(h.x + f * 2 + 3, h.y - 2, 3, 3); g.shadowBlur = 0; } });
+        yield* par(...crew.map((c, i) => (function* () { yield* wait(i * .9); yield* petTo(c.a, c.x, PET[c.n].run * .55); hold(c.a, 'sit'); c.a.face = mo.x > c.a.cx ? 1 : -1; })()));
+        // the strange part
+        const howls = [];
+        const waves = fx('back', 0, (g) => { for (const w of howls) { const age = cur.t - w.t; if (age > 2.2) continue; const a = 1 - age / 2.2;
+          g.strokeStyle = `rgba(230,236,255,${.5 * a})`; g.lineWidth = 2; const ang = Math.atan2(mo.y - w.y, mo.x - w.x);
+          for (let k = 0; k < 3; k++) { const r = 14 + age * 70 + k * 12; g.beginPath(); g.arc(w.x, w.y, r, ang - .35, ang + .35); g.stroke(); } } });
+        yield* tween(14, p => {
+          for (const c of crew) {
+            if (DOGS.includes(c.n)) { const ph = (cur.t * .45 + c.x * .01) % 1; c.a.r = (c.a.face > 0 ? -1 : 1) * (ph < .55 ? .38 * Math.sin(ph / .55 * Math.PI) : 0);
+              if (ph > .1 && ph < .12 && (!c.lastH || cur.t - c.lastH > 1)) { c.lastH = cur.t; const h = A.petPoint(c.a, 'head'); howls.push({ x: h.x, y: h.y - 6, t: cur.t }); } }
+            else if (CATS2.includes(c.n)) { c.a.sx = 1.08 + .05 * Math.sin(cur.t * 1.3); c.a.sq = 1.06; c.a.r = Math.sin(cur.t * 9 + c.x) * .02; }
+            else { const ph = (cur.t * 1.4) % 1; c.a.lift = ph < .2 ? Math.sin(ph / .2 * Math.PI) * 6 : 0; }
+          }
+          kam.x = Math.sin(cur.t * 17) * .8 * p;
+        });
+        for (const c of crew) { c.a.r = 0; c.a.lift = 0; }
+        // silence. They all turn their heads to Kamiel at the same moment.
+        yield* wait(1.2);
+        for (const c of crew) c.a.face = kx() > c.a.cx ? 1 : -1;
+        stareAll = 1; kam.eyes = 'groot'; emote('sweat', 4); yield* shiver(2.5, 4);
+        yield* wait(1.5);
+        stareAll = 0; for (const c of crew) { c.a.sx = 1; c.a.sq = 1; }
+        stop(waves); stop(eyesGlow);
+        emote('!?', 2); kam.head = 0; yield* tween(3, p => { glow = 1 - p; });
+        yield* par(...crew.map((c, i) => (function* () { yield* wait(i * .5); hold(c.a, null); yield* petLeave(c.a, c.x < kx() ? -1 : 1, PET[c.n].run); })()));
+        kam.eyes = ''; kam.x = 0;
+      } },
+      // a nightmare on a full-moon night: Kamiel dozes off, and the world turns. Eyes open in the sky, everything loses its
+      // colour, something tall stands far away, and every time the picture flickers it is closer. Then he wakes up.
+      nachtmerrie: { can: () => A.night(), long: true, run: function* () {
+        kam.eyes = 'dicht'; kam.head = .12; emote('zzz', 5); yield* wait(4.5);
+        let k = 0, flick = 0, black = 0;
+        const eyes = [];
+        for (let i = 0; i < 16; i++) eyes.push({ x: 40 + Math.random() * (W - 80), y: 40 + Math.random() * 300, s: .5 + Math.random() * .9, open: 0, at: 4 + Math.random() * 18, blink: 0, nb: 2 + Math.random() * 5, vein: Math.random() * 100 });
+        // the grade: no colour, deep shadows, dried-blood red, a slow pulse, and the picture creeping a little
+        cur.post = (g, pc) => {
+          const pulse = .5 + .5 * Math.sin(cur.t * 1.1);
+          g.save(); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+          if (g.filter !== undefined) g.filter = `grayscale(${.85 * k}) contrast(${1 + .35 * k}) brightness(${1 + .15 * k - .07 * k * pulse - .5 * flick})`;
+          const j = k * (Math.random() < .08 ? 3 : .6);
+          g.drawImage(pc, (Math.random() - .5) * j, (Math.random() - .5) * j); g.filter = 'none';
+          g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgba(190,${Math.round(70 + 60 * (1 - k))},${Math.round(70 + 60 * (1 - k))},${.28 * k})`; g.fillRect(0, 0, W, H);
+          g.globalCompositeOperation = 'source-over';
+          const v = g.createRadialGradient(W / 2, H * .55, H * (.28 - .08 * k), W / 2, H * .55, H * .95); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${.72 * k})`);
+          g.fillStyle = v; g.fillRect(0, 0, W, H);
+          if (black > 0) { g.fillStyle = `rgba(0,0,0,${black})`; g.fillRect(0, 0, W, H); }
+          g.restore();
+        };
+        // the eyes in the sky: they open slowly, follow Kamiel, and blink when you don't expect it
+        fx('sky', 0, (g) => {
+          for (const e of eyes) {
+            if (cur.t < e.at) continue;
+            e.open = Math.min(1, e.open + st.dt / 3);
+            e.nb -= st.dt; if (e.nb < 0) { e.blink = .25; e.nb = 3 + Math.random() * 7; }
+            if (e.blink > 0) e.blink -= st.dt;
+            const o = e.open * (e.blink > 0 ? Math.abs(e.blink - .125) / .125 : 1) * k; if (o <= .02) continue;
+            const w = 46 * e.s, h = 17 * e.s * o, cx = e.x, cy = e.y;
+            g.save(); g.beginPath(); g.moveTo(cx - w, cy); g.quadraticCurveTo(cx, cy - h * 2, cx + w, cy); g.quadraticCurveTo(cx, cy + h * 2, cx - w, cy); g.closePath();
+            g.fillStyle = '#d8cdb8'; g.fill(); g.clip();
+            g.strokeStyle = 'rgba(150,20,20,.5)'; g.lineWidth = 1;
+            for (let v = 0; v < 5; v++) { g.beginPath(); const a = v * 1.3 + e.vein; g.moveTo(cx + Math.cos(a) * w, cy + Math.sin(a) * h); g.quadraticCurveTo(cx + Math.cos(a + .4) * w * .5, cy, cx + Math.cos(a) * w * .35, cy + Math.sin(a) * h * .3); g.stroke(); }
+            const tx = kx() - cx, ty = (FEET - 150) - cy, d = Math.hypot(tx, ty) || 1, px = cx + tx / d * w * .32, py = cy + ty / d * h * .5;
+            g.fillStyle = '#3a0d0a'; g.beginPath(); g.arc(px, py, 13 * e.s, 0, 7); g.fill();
+            g.fillStyle = '#000'; g.beginPath(); g.arc(px, py, 6 * e.s, 0, 7); g.fill();
+            g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(px - 4 * e.s, py - 5 * e.s, 2.5 * e.s, 2.5 * e.s);
+            g.restore();
+          }
+        });
+        // the world twitches now and then
+        cur.itemOff = (it, layer, sx) => k > .5 && Math.sin(cur.t * 3 + sx) > .985 ? { r: (Math.random() - .5) * .08, y: (Math.random() - .5) * 3 } : null;
+        // the tall shape: far away, then nearer every time the picture flickers
+        const shape = { x: W * .92, s: .35, on: false };
+        fx('ground', 0, (g) => { if (k <= 0) return; const fg = g.createLinearGradient(0, FEET - 260, 0, FEET + 20); fg.addColorStop(0, 'rgba(150,120,120,0)'); fg.addColorStop(.7, `rgba(190,160,160,${.55 * k})`); fg.addColorStop(1, `rgba(120,100,100,${.2 * k})`); g.fillStyle = fg; g.fillRect(0, FEET - 260, W, 280); });
+        fx('back', 0, (g) => { if (!shape.on) return; const hgt = 330 * shape.s, wd = 46 * shape.s, x = shape.x, y = FEET + 4;
+          g.fillStyle = 'rgba(4,2,4,.94)'; g.beginPath(); g.moveTo(x - wd * .5, y); g.lineTo(x - wd * .32, y - hgt * .78); g.quadraticCurveTo(x - wd * .5, y - hgt, x, y - hgt); g.quadraticCurveTo(x + wd * .5, y - hgt, x + wd * .32, y - hgt * .78); g.lineTo(x + wd * .5, y); g.closePath(); g.fill();
+          g.strokeStyle = 'rgba(4,2,4,.94)'; g.lineWidth = Math.max(2, 5 * shape.s);
+          for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(x + sd * wd * .3, y - hgt * .72); g.quadraticCurveTo(x + sd * wd * .9, y - hgt * .4, x + sd * wd * .7, y - hgt * .12); g.stroke(); }
+          g.fillStyle = 'rgba(255,235,225,.95)'; g.shadowColor = 'rgba(255,60,40,.9)'; g.shadowBlur = 6; g.fillRect(x - wd * .16, y - hgt * .9, Math.max(1.5, 3 * shape.s), Math.max(1.5, 3 * shape.s)); g.fillRect(x + wd * .08, y - hgt * .9, Math.max(1.5, 3 * shape.s), Math.max(1.5, 3 * shape.s)); g.shadowBlur = 0; });
+        yield* tween(6, p => { k = ez(p); });
+        kam.eyes = 'groot'; kam.head = 0; emote('!', 1.5); yield* shiver(2, 3);
+        const flicker = function* () { yield* tween(.12, p => { flick = p; }); black = 1; yield* wait(.35 + Math.random() * .3); black = 0; yield* tween(.25, p => { flick = 1 - p; }); };
+        yield* wait(5); yield* flicker(); shape.on = true;
+        kam.face = 1; kam.head = .1; emote('sweat', 30);
+        yield* wait(6); yield* flicker(); shape.x = W * .78; shape.s = .6;
+        yield* wait(5); yield* flicker(); shape.x = W * .66; shape.s = .9;
+        kam.x = -20; yield* shiver(1.5, 5);
+        yield* wait(3); yield* flicker(); shape.x = kx() + 70; shape.s = 1.15;
+        // all the eyes wide open at once
+        for (const e of eyes) { e.at = 0; e.open = 1; e.blink = 0; e.nb = 99; }
+        yield* wait(1.4);
+        black = 1; yield* wait(.8);
+        // and he wakes up
+        cur.post = null; cur.itemOff = null; shape.on = false; black = 0; k = 0;
+        const flash = fx('screen', .6, (g, age) => { g.fillStyle = `rgba(255,255,255,${1 - age / .6})`; g.fillRect(0, 0, W, H); });
+        kam.x = 0; kam.eyes = 'groot'; emote('!?', 2.5); yield* hop(30, .35); yield* shiver(2, 3);
+        yield* wait(1); kam.eyes = 'triest'; emote('sweat', 3); yield* wait(3); kam.eyes = '';
+      } },
       wolkrit: { walk: true, run: function* () {
         const d = rnd() < .5 ? -1 : 1, img = A.CL.length ? pick(A.CL).img : null;
         const cl = { x: kx(), y: -120, w: 300 };
@@ -2664,7 +2780,7 @@
       if (cfg.on === false) return;
       const key = ymd(d), m = d.getHours() * 60 + d.getMinutes();
       if (key !== planDay) {
-        const first = !planDay; plan = planFor(d, cfg, A.festival ? A.festival(d) : null, A.festBoost ? A.festBoost() : 3); planDay = key;
+        const first = !planDay; plan = planFor(d, cfg, A.festival ? A.festival(d) : null, A.festBoost ? A.festBoost() : 3, A.fullMoon ? A.fullMoon(d) : false); planDay = key;
         if (first) plan.forEach(p => { if (p.at < m) p.done = true; });   // after a reload: what's past is past
       }
       for (const p of plan) if (!p.done && p.at <= m) { p.done = true; if (m - p.at <= 20) queue.push({ cat: p.cat, id: p.id }); }

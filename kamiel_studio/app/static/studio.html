@@ -596,6 +596,30 @@ details.fold.sub>summary{font-size:15px}
       <div class="row"><button type="button" class="primary" id="aSave">Opslaan</button><span class="status" id="aStatus" role="status"></span></div>
     </div>
 
+    <div class="card" id="cardSky">
+      <h2>🌌 Lucht en ruimte</h2>
+      <p class="hint">Kamiels lucht volgt de echte: de sterrenbeelden en planeten die nu echt boven jullie staan (het scherm kijkt naar het zuiden), vallende sterren (veel meer tijdens de echte meteorenzwermen, zoals de Perseïden in augustus), het ISS als het echt overkomt, zons- en maansverduisteringen op hun echte datum, een regenboog na de regen, en in het voor- en najaar trekkende ganzen. Op sommige nachten hangt er een nevel aan de hemel.</p>
+      <div class="choices">
+        <label class="sw"><input type="checkbox" id="kyStars"><span><b>Sterrenbeelden</b></span></label>
+        <label class="sw"><input type="checkbox" id="kyPlanets"><span><b>Planeten</b><span>Venus, Jupiter, Mars, Saturnus</span></span></label>
+        <label class="sw"><input type="checkbox" id="kyMeteors"><span><b>Vallende sterren</b></span></label>
+        <label class="sw"><input type="checkbox" id="kyIss"><span><b>Het ISS</b><span>Tik erop voor hoogte en snelheid</span></span></label>
+        <label class="sw"><input type="checkbox" id="kyEclipses"><span><b>Verduisteringen</b></span></label>
+        <label class="sw"><input type="checkbox" id="kyRainbow"><span><b>Regenboog</b></span></label>
+        <label class="sw"><input type="checkbox" id="kyGeese"><span><b>Trekkende ganzen</b></span></label>
+      </div>
+      <div class="settings">
+        <label class="field" for="kyNebula">Nevel: kans per nacht<span>In procent. 0 = nooit.</span><label class="pct"><input type="number" id="kyNebula" min="0" max="100"> %</label></label>
+      </div>
+      <label class="sw"><input type="checkbox" id="kyPlanes"><span><b>Vliegtuigen die echt over jullie huis vliegen</b><span>Installeer in Home Assistant de integratie “OpenSky Network” (Instellingen → Apparaten en diensten → Integratie toevoegen) met een straal van bijvoorbeeld 10 km. Elke keer als er een vliegtuig die cirkel binnenvliegt, vliegt er ook een over Kamiel: overdag zilver met een condensspoor als hij hoog vliegt, 's nachts met knipperende lichtjes. Tik erop voor de vlucht en de hoogte. Een gratis OpenSky-account mist minder vliegtuigen.</span></span></label>
+      <label class="sw"><input type="checkbox" id="kyLightning"><span><b>Echte bliksem in de buurt</b><span>Met de integratie “Blitzortung” (via HACS). Kamiel vindt de sensoren zelf. Bliksem dichtbij flitst feller, en komt uit de juiste richting.</span></span></label>
+      <div class="settings">
+        <label class="field" for="kyKm">Bliksem tot op (km)<input type="number" id="kyKm" min="1" max="200"></label>
+      </div>
+      <p class="hint">Volle maan: de huisdieren doen die avond raar, en later in de nacht kan Kamiel een nachtmerrie hebben. Die staan bij Gebeurtenissen onder "Bij volle maan".</p>
+      <div class="row"><button type="button" class="primary" id="kySave">Opslaan</button><span class="status" id="kyStatus" role="status"></span></div>
+    </div>
+
     <div class="card" id="cardBtns">
       <h2>🎛️ Knoppen</h2>
       <p class="hint">De knoppen in het venster <b>Knoppen.exe</b> op de tablet (tik op een lege plek in de scène). Een knop kan alles wat Home Assistant kan: een lamp of stopcontact aan/uit, een keuzelijst naar de volgende optie of een bepaalde optie, een script of scène starten, het rolluik openen, de speaker luider… Tot 30 knoppen. Alleen wat hier staat kan de tablet bedienen.</p>
@@ -1275,7 +1299,7 @@ async function renderSettings() {
   const E = s.events || {};
   $('eOn').checked = E.on !== false; $('eLama').value = E.lama_per_day === undefined ? 1 : E.lama_per_day; $('eCommon').value = E.common_per_day === undefined ? 3 : E.common_per_day;
   $('eNormal').value = E.normal_per_week === undefined ? 4 : E.normal_per_week; $('eEvening').checked = E.evening !== false;
-  const CATN = { film: 'Film', verhaal: 'Verhaaltje', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdier', vaak: 'Vaak', soms: 'Soms' };
+  const CATN = { film: 'Film', verhaal: 'Verhaaltje', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdier', maan: 'Bij volle maan', vaak: 'Vaak', soms: 'Soms' };
   $('eStories').value = E.stories_per_week === undefined ? 3 : E.stories_per_week; $('eFilms').value = E.films_per_week === undefined ? 2 : E.films_per_week; $('eAurora').value = E.aurora_chance === undefined ? 15 : E.aurora_chance;
   const F = s.feest || {}; $('fOn').checked = F.on !== false; $('fBoost').value = String(F.boost || 3);
   FDAYS = JSON.parse(JSON.stringify(F.days || [])); renderFDays();
@@ -1689,6 +1713,19 @@ $('mPhoneTest').addEventListener('click', async () => {
   const n = (j.phones || []).filter(p => p.ok).length;
   status($('mPhoneStatus'), n ? `${n} van ${j.phones.length} antwoordt. Niet vergeten: Opslaan.` : 'Geen enkele gsm antwoordt. Zijn ze thuis en verbonden met de wifi? Klopt het adres? Probeer het over een minuutje nog eens (een slapende gsm).', n ? 'ok' : 'err');
 });
+const SKYK = { kyStars: 'stars', kyPlanets: 'planets', kyMeteors: 'meteors', kyIss: 'iss', kyEclipses: 'eclipses', kyRainbow: 'rainbow', kyGeese: 'geese', kyPlanes: 'planes', kyLightning: 'lightning' };
+function renderSky() {
+  const K = world.settings.sky || {};
+  for (const id in SKYK) $(id).checked = K[SKYK[id]] !== false;
+  $('kyNebula').value = K.nebula === undefined ? 10 : K.nebula; $('kyKm').value = K.lightning_km || 25;
+}
+$('kySave').addEventListener('click', async () => {
+  const b = { nebula: +$('kyNebula').value || 0, lightning_km: +$('kyKm').value || 25 };
+  for (const id in SKYK) b[SKYK[id]] = $(id).checked;
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sky: b }) });
+  if (r.ok) world.settings.sky = Object.assign(world.settings.sky || {}, b);
+  status($('kyStatus'), r.ok ? 'Bewaard. De tablet laadt het zo meteen.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
 async function renderHuis() {
   const s = world.settings, D = s.doorbell || {}, M = s.motion || {};
   try { const j = await (await fetch('api/entities?domain=*')).json(); ENTS = j.connected ? j.entities : []; } catch { ENTS = []; }
@@ -1713,7 +1750,7 @@ async function renderHuis() {
   $('ruleExamples').innerHTML = '<span class="hint" style="flex-basis:100%;max-width:none">Voorbeelden (klik om toe te voegen):</span>' + EXAMPLES.map(([n], k) => `<button type="button" class="ex" data-k="${k}">${esc(n)}</button>`).join('');
   renderRules();
   BTNS = JSON.parse(JSON.stringify(s.buttons || [])); renderBtns(); renderQuick();
-  renderSelfie(); tabletStatus(); renderAir(); renderHalls();
+  renderSelfie(); tabletStatus(); renderAir(); renderHalls(); renderSky();
 }
 $('ruleExamples').addEventListener('click', (e) => {
   const b = e.target.closest('.ex'); if (!b) return;

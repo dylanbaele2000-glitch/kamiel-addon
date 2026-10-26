@@ -39,6 +39,9 @@
 <script src="static/films_4.js"></script>
 <script src="static/films_5.js"></script>
 <script src="static/films_6.js"></script>
+<script src="static/lib/astronomy.min.js"></script>
+<script src="static/lib/satellite.min.js"></script>
+<script src="static/sky.js"></script>
 <script src="static/events.js"></script>
 <script src="static/compose.js"></script>
 <script src="static/pets.js"></script>
@@ -796,6 +799,12 @@ function moonArc(d) {
 }
 const azX = (az) => W / 2 + (mod(az, 360) - 180) / 100 * (W / 2);
 const altY = (alt) => HOR0 - Math.max(-12, alt) / 62 * (HOR0 - 70);
+// the real sky (stars, planets, shooting stars, nebula, ISS, eclipses, rainbow, planes, geese, lightning): see sky.js
+let eclDark = 0;
+const SKY = window.KamielSky ? window.KamielSky.create({ W, H, HOR0, azX, altY, params, settings: () => S, lat: () => LAT, lon: () => LON,
+  weather: () => weather, rainy: () => rainy(), t: () => t, now: () => now(), log: (k, m) => tlog(k, m),
+  moonLight: () => { const ph = moonPos(now()).phase; return moonArc(now()) ? (1 - Math.cos(ph * 2 * Math.PI)) / 2 : 0; } })
+  : { back() {}, flyers() {}, screen() {}, sunEclipse: () => 0, drawMoonShadow() {}, onState() {}, onLive() {}, tap: () => null };
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 const rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 function skyColors(alt) {
@@ -818,6 +827,7 @@ async function pollState() {
     const s = await (await fetch('api/state', { cache: 'no-store' })).json();
     haSun = s.sun && typeof s.sun.alt === 'number' ? s.sun : null;   // no sun from Home Assistant: compute it ourselves (never a stale one)
     setAir(s.air);
+    SKY.onState(s.sky);
     osdLines = s.osd || [];
     osdRight = Array.isArray(s.osd_right) ? s.osd_right : [];
     const cov = typeof s.clouds === 'number' ? s.clouds : null;
@@ -1111,6 +1121,7 @@ async function pollLive() {
   let j; try { j = await (await fetch('api/live', { cache: 'no-store' })).json(); } catch (e) { return; }
   setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
   setAway(j.away);
+  SKY.onLive(j.sky);
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
   media = m; if (j.dismissed) remDismissed = j.dismissed;
@@ -1569,7 +1580,10 @@ function drawSky(sun, moon) {
     ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = `rgba(255,${250 - tint * 60},${225 - tint * 120},${.95 * dim})`;
     ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
-  }
+    const cover = SKY.sunEclipse(ctx, x, y, r, now());   // a real solar eclipse: the moon slides in front, the day gets dim
+    eclDark = cover > 0 ? Math.pow(cover, 2.5) : 0;
+    if (eclDark > 0) { ctx.fillStyle = `rgba(8,12,34,${.55 * eclDark})`; ctx.fillRect(0, 0, W, H); }
+  } else eclDark = 0;
   const clear = weather === 'helder' || weather === 'licht';
   const veil = clear ? 1 : weather === 'bewolkt' ? .35 : weather === 'mist' || weather === 'sneeuw' ? .25 : .15;
   // only by night, on its own arc (see moonArc)
@@ -1584,6 +1598,7 @@ function drawSky(sun, moon) {
     lastMoon = { x, y };
     const ang = moon.phase < .5 ? .3 : Math.PI - .3;
     ctx.drawImage(moonDisc(moon.phase, ang, r, halloweenNow ? [255, 176, 92] : [238, 240, 255]), x - r - 2, y - r - 2);
+    SKY.drawMoonShadow(ctx, x, y, r, now());   // a real lunar eclipse: the earth's shadow, copper red when total
     ctx.restore();
   }
 }
@@ -2011,7 +2026,7 @@ function auroraTonight(d) {
 }
 let auroraA = 0;
 function drawAurora(sun, d) {
-  const want = sun.alt < -5 && (d.getHours() >= 18 || d.getHours() < 3 || params.get('aurora')) && auroraTonight(d) && !rainy() && weather !== 'bewolkt' ? 1 : 0;
+  const want = sun.alt < -5 && auroraTonight(d) && !rainy() && weather !== 'bewolkt' ? 1 : 0;
   auroraA += Math.sign(want - auroraA) * Math.min(Math.abs(want - auroraA), 1 / 600);   // fades in and out over ten seconds
   if (auroraA <= 0) return;
   // slow, drifting curtains: where they glow, how high they reach and the rays in them all wander on their own (no repeating wave)
@@ -2117,12 +2132,12 @@ function frame() {
   const mr = moonPos(d), arc = moonArc(d), moon = arc ? { alt: arc.alt, az: arc.az, phase: mr.phase } : { alt: -90, az: 0, phase: mr.phase };
   const hide = EV.hideWorld();   // the world crashed: only Kamiel is left
   ctx = mainCtx;
-  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else { drawSky(sun, moon); drawAurora(sun, d); }
+  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else { drawSky(sun, moon); SKY.back(ctx, d, sun); drawAurora(sun, d); }
   EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
   frameNo++;
   // sky things in front of, between or behind the clouds (set per element); half of the clouds are 'front' clouds
-  if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); drawClouds(sun, true); placeItems(0, undefined, 'voor');
+  if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); SKY.flyers(ctx, d, sun); drawClouds(sun, true); placeItems(0, undefined, 'voor');
     drawHills(false); placeItems(1, true); drawHills(true); }
   if (kam.layer === 'far') drawKamiel();
   if (!hide) { placeItems(1, false); drawGround(); drawHalls(); drawFestGround(); }
@@ -2136,10 +2151,11 @@ function frame() {
   if (S.season_colors !== false && SEASON_TINT[seasonNow]) { ctx.fillStyle = SEASON_TINT[seasonNow]; ctx.fillRect(0, 0, W, H); }
   const nk = EV.nightK ? EV.nightK() : 1;
   if (L < 1 && nk > 0) { ctx.fillStyle = `rgba(10,14,42,${(1 - L) * .68 * nk})`; ctx.fillRect(0, 0, W, H); }
+  if (eclDark > 0) { ctx.fillStyle = `rgba(10,14,42,${.5 * eclDark})`; ctx.fillRect(0, 0, W, H); }
   if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); }
+  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); SKY.screen(ctx, sun); }
   EV.draw('screen', ctx);
   drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
@@ -2166,6 +2182,9 @@ EV = KamielEvents.create({
   center: (d) => (Math.round((kx - PLACE / 2) / PLACE) + d) * PLACE + PLACE / 2,
   arrive: () => { lastWalk = Date.now(); arrived(); },
   sky: () => lastSun || lastMoon,
+  moon: () => lastMoon,
+  // a full-moon night: the moon (nearly) full this evening, so the pets act strange and a nightmare may come
+  fullMoon: (d) => { const e = new Date(d); e.setHours(22, 0, 0, 0); const ph = moonPos(e).phase; return Math.abs(ph - .5) < .034 || params.get('volle') === '1'; },
   night: () => isDark(now()),
   addItem: (o, dx, h) => { const p = places[placeIndex()]; if (!p) return; p.items.push({ o, layer: 2, dx, depth: .7, h, flip: rnd() < .5, born: performance.now() });
     p.items.sort((a, b) => (a.layer - b.layer) || ((a.depth || 0) - (b.depth || 0))); },
@@ -2176,7 +2195,7 @@ const restored = restoreScene();
 if (params.get('zaal')) compose(placeIndex(), params.get('zaal'));   // ?zaal=museum (or disco, sterren) to try a hall
 if (params.get('lucht')) setInterval(() => setAir({ level: +params.get('lucht') }), 1000);   // ?lucht=2 to try bad air
 if (!restored) for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
-if (params.get('debug')) window.__kamiel = { setKx: (v) => { kx = target = v; }, kx: () => kx, PW, drifters, places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene, dark: () => isDark(now()), msToWalk: () => msToWalk(), walking: () => walking };
+if (params.get('debug')) window.__kamiel = { sky: () => SKY.debug && SKY.debug(), lat: () => [LAT, LON], setKx: (v) => { kx = target = v; }, kx: () => kx, PW, drifters, places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene, dark: () => isDark(now()), msToWalk: () => msToWalk(), walking: () => walking };
 requestAnimationFrame(loop);
 if (!params.get('ev') && !params.get('t') && !restored) tlog('tablet', 'Kamiel gestart ' + (FK() ? 'op de tablet' : 'in een browser') + ' (' + innerWidth + '×' + innerHeight + ').');
 pollState(); setInterval(pollState, 60000);
@@ -2234,7 +2253,7 @@ function spots(keys) {
 }
 let deskGen = 0;   // every opening gets a number: an older one that is still busy stops as soon as a newer one (or closing) came
 async function openDesk(only) {
-  const keys = (only || Object.keys(TITLES)).filter(k => k !== 'meter' && WIN[k] !== false && (k !== 'muziek' || S.media_player));
+  const keys = (only || Object.keys(TITLES)).filter(k => k !== 'meter' && k !== 'info' && WIN[k] !== false && (k !== 'muziek' || S.media_player));
   if (!keys.length) return;
   closeDesk(true);
   const gen = ++deskGen;
@@ -2309,6 +2328,25 @@ function renderTaskbar() {
 }
 const bodyOf = (k) => wins[k] && wins[k].querySelector('.bd');
 
+/* ---------- a small window about something in the sky (Vlucht.exe, ISS.exe) ---------- */
+function openInfo(info) {
+  if (!deskOpen) { closeDesk(true); deskOpen = true; deskGen++;
+    clearInterval(deskTimer); deskTimer = setInterval(() => { if (deskOpen && Date.now() - lastTouch > (S.window_close || 60) * 1000) closeDesk(); }, 5000); }
+  touchDesk();
+  if (wins.info) wins.info.remove();
+  ICON.info = info.icon; TITLES.info = info.title;
+  const el = document.createElement('div'); el.className = 'win'; el.dataset.k = 'info';
+  el.style.width = 'min(420px, 44%)'; el.style.left = '6%'; el.style.top = '16%';
+  el.innerHTML = `<div class="tb"><span>${info.icon}</span><span class="tt">${escH(info.title)}</span>
+    <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div>
+    <div class="bd"><table class="lv inset"><tbody>${info.rows.map(([k, v]) => `<tr><td>${escH(k)}</td><td style="text-align:right">${escH(v)}</td></tr>`).join('')}</tbody></table>
+    ${info.note ? `<div style="font-size:.85em">${escH(info.note)}</div>` : ''}</div>`;
+  deskEl.appendChild(el); wins.info = el; front(el);
+  el.addEventListener('pointerdown', () => { front(el); touchDesk(); });
+  el.querySelector('[data-a=close]').addEventListener('click', () => closeWin('info'));
+  el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
+  drag(el); renderTaskbar();
+}
 /* ---------- Meter.exe: tap a value on the top right for its history ---------- */
 const MET = { ent: null, range: 'dag', line: [], data: {} };
 const nl = (v, unit) => { if (v === null || v === undefined || isNaN(v)) return '–'; const a = Math.abs(v), d = a >= 100 ? 0 : a >= 10 ? 1 : 2;
@@ -2548,6 +2586,8 @@ let downAt = null;
 document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('.win, .taskbar')) return; downAt = Object.assign(canvasXY(e), { t: performance.now() }); });
 document.addEventListener('pointerup', (e) => {
   if (e.target.closest && e.target.closest('.win, .taskbar')) return;   // the windows handle their own taps
+  // a plane or the ISS in the sky: a little window about it
+  { const c0 = canvasXY(e), info = SKY.tap(c0.x, c0.y); if (info) { openInfo(info); return; } }
   // a value on the top right: Meter.exe with its history
   for (const sp of document.querySelectorAll('#osdr .ov')) {
     const rr = sp.getBoundingClientRect();

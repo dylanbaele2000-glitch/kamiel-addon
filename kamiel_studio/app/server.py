@@ -136,6 +136,9 @@ DEFAULT_SETTINGS = {
     "halls": {"chance": 12, "off": [], "custom": []},
     # air quality: with bad air Kamiel gets drowsy
     "air": {"on": False, "entity": "", "warn": 1000, "bad": 1500, "invert": False},
+    # the real sky: what shows, how often a nebula night comes (%), and the lightning radius (km)
+    "sky": {"stars": True, "planets": True, "meteors": True, "nebula": 10, "iss": True, "eclipses": True, "rainbow": True, "geese": True,
+            "planes": True, "lightning": True, "lightning_km": 25},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -213,7 +216,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge"):
+    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge", "sky"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); cp["busy"] = sc.get("busy", cp["busy"]); s["compose"] = cp
@@ -375,7 +378,7 @@ LAST = {}   # last seen values, for the logbook
 
 async def api_state(request):
     db = load_db()
-    out = {"sun": None, "weather": None, "wind": None, "connected": bool(TOKEN)}
+    out = {"sun": None, "weather": None, "wind": None, "connected": bool(TOKEN), "sky": {"tle": SKYDATA.get("tle")}}
     try:
         sun = await ha_get("/states/sun.sun")
         if sun:
@@ -610,6 +613,113 @@ async def api_meter(request):
     except Exception as e:
         log("fout", "Meter.exe: " + str(e), quiet=True)
         return web.json_response({"entity": ent, "error": str(e)})
+
+
+# ----------------------------------------------------------------- the real sky: ISS orbit, planes, lightning
+SKYDATA = {"tle": None, "tle_t": 0, "planes": [], "strikes": []}
+TLE_FILE = os.path.join(DATA, "iss_tle.json")
+
+
+async def tle_loop():
+    """The orbit of the ISS (a 'TLE'), fetched twice a day from CelesTrak; the tablet computes where it is."""
+    try:
+        with open(TLE_FILE) as f:
+            SKYDATA.update(json.load(f))
+    except (OSError, ValueError):
+        pass
+    while True:
+        if time.time() - SKYDATA.get("tle_t", 0) > 12 * 3600:
+            try:
+                async with ClientSession(timeout=ClientTimeout(total=20)) as sess:
+                    async with sess.get("https://celestrak.org/NORAD/elements/gp.php", params={"CATNR": "25544", "FORMAT": "TLE"}) as r:
+                        txt = await r.text()
+                lines = [l.strip() for l in txt.splitlines() if l.strip()]
+                if len(lines) >= 3 and lines[1].startswith("1 ") and lines[2].startswith("2 "):
+                    SKYDATA["tle"], SKYDATA["tle_t"] = lines[:3], time.time()
+                    with open(TLE_FILE, "w") as f:
+                        json.dump({"tle": SKYDATA["tle"], "tle_t": SKYDATA["tle_t"]}, f)
+            except Exception as e:
+                log("fout", "De baan van het ISS ophalen lukte niet: " + str(e), quiet=True)
+        await asyncio.sleep(1800)
+
+
+def _push(kind, item, keep=20):
+    SKYDATA[kind].append(item)
+    del SKYDATA[kind][:-keep]
+
+
+async def opensky_loop():
+    """Planes from Home Assistant's OpenSky integration: it fires 'opensky_entry' when a plane enters the circle around home.
+    Events only come over the websocket, so Kamiel keeps one open (and reconnects when it drops)."""
+    n = 0
+    while True:
+        try:
+            if not TOKEN or not (load_db()["settings"].get("sky") or {}).get("planes", True):
+                await asyncio.sleep(60); continue
+            async with ClientSession(timeout=ClientTimeout(total=None, sock_read=None)) as sess:
+                async with sess.ws_connect(_ws_url(), heartbeat=30) as ws:
+                    first = await ws.receive_json(timeout=10)
+                    if first.get("type") == "auth_required":
+                        await ws.send_json({"type": "auth", "access_token": TOKEN})
+                        if (await ws.receive_json(timeout=10)).get("type") != "auth_ok":
+                            await asyncio.sleep(300); continue
+                    await ws.send_json({"id": 1, "type": "subscribe_events", "event_type": "opensky_entry"})
+                    async for msg in ws:
+                        if msg.type != 1:   # text
+                            continue
+                        d = json.loads(msg.data)
+                        ev = (d.get("event") or {}) if d.get("type") == "event" else None
+                        if not ev:
+                            continue
+                        data = ev.get("data") or {}
+                        n += 1
+                        alt = data.get("altitude")
+                        _push("planes", {"id": f"{int(time.time())}-{n}", "t": time.time(), "cs": str(data.get("callsign") or "").strip()[:10],
+                                         "alt": float(alt) if isinstance(alt, (int, float)) else None})
+        except Exception as e:
+            log("fout", "OpenSky (vliegtuigen): " + str(e), quiet=True)
+        await asyncio.sleep(30)
+
+
+async def lightning_loop():
+    """Real lightning nearby from the Blitzortung integration (HACS): when its counter goes up, Kamiel's sky flashes."""
+    ents, found_t, last = {}, 0, None
+    while True:
+        await asyncio.sleep(10)
+        try:
+            if not TOKEN or not (load_db()["settings"].get("sky") or {}).get("lightning", True):
+                continue
+            if time.time() - found_t > 600:   # look for the Blitzortung sensors now and then (they may be added later)
+                found_t = time.time()
+                states = await ha_get("/states") or []
+                ents = {}
+                for st in states:
+                    e = st.get("entity_id", "")
+                    if e.startswith("sensor.") and "blitzortung" in e:
+                        for k in ("counter", "distance", "azimuth"):
+                            if k in e and k not in ents:
+                                ents[k] = e
+            if "counter" not in ents:
+                continue
+            c = await ha_get("/states/" + ents["counter"])
+            try:
+                cnt = int(float((c or {}).get("state")))
+            except (TypeError, ValueError):
+                continue
+            if last is not None and cnt > last:
+                km = az = None
+                for k in ("distance", "azimuth"):
+                    if k in ents:
+                        try:
+                            v = float(((await ha_get("/states/" + ents[k])) or {}).get("state"))
+                            km, az = (v, az) if k == "distance" else (km, v)
+                        except (TypeError, ValueError):
+                            pass
+                for j in range(min(3, cnt - last)):
+                    _push("strikes", {"id": f"{int(time.time())}-{cnt}-{j}", "t": time.time(), "km": km, "az": az})
+            last = cnt
+        except Exception as e:
+            log("fout", "Bliksem (Blitzortung): " + str(e), quiet=True)
 
 
 async def api_entities(request):
@@ -1123,6 +1233,17 @@ async def api_settings(request):
                     m["away_delay"] = max(0, min(120, int(b["away_delay"])))
                 except (TypeError, ValueError):
                     pass
+        if isinstance(body.get("sky"), dict):
+            k2, b = s["sky"], body["sky"]
+            for k in ("stars", "planets", "meteors", "iss", "eclipses", "rainbow", "geese", "planes", "lightning"):
+                if k in b:
+                    k2[k] = bool(b[k])
+            for k, lo, hi in (("nebula", 0, 100), ("lightning_km", 1, 200)):
+                if k in b:
+                    try:
+                        k2[k] = max(lo, min(hi, int(b[k])))
+                    except (TypeError, ValueError):
+                        pass
         if isinstance(body.get("charge"), dict):
             c, b = s["charge"], body["charge"]
             if "entity" in b:
@@ -1346,6 +1467,8 @@ async def api_live(request):
                          if (db.get("spotlight") or {}).get("until", 0) > time.time() else None),
            "snapshot": SNAP.get("id"), "snap": SNAP.get("opts"), "event": db.get("event_req"),
            "actions": [a for a in db.get("actions", []) if a.get("at", 0) > time.time() - 120]}
+    now = time.time()
+    out["sky"] = {"planes": [p for p in SKYDATA["planes"] if now - p["t"] < 90], "strikes": [x for x in SKYDATA["strikes"] if now - x["t"] < 30]}
     try:
         out["message"] = await current_message(db)
         if (s.get("motion") or {}).get("away_off"):
@@ -1702,7 +1825,7 @@ async def tg_handle(token, upd):
     if cmd == "/event":
         rest = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
         if rest.lower() in ("lijst", "list", "alle"):
-            groups = {"film": "Films", "lama": "Elke dag", "dier": "Huisdieren", "muziek": "Op muziek", "verhaal": "Verhaaltjes", "feest": "Op feestdagen", "vaak": "Vaak", "soms": "Soms"}
+            groups = {"film": "Films", "lama": "Elke dag", "dier": "Huisdieren", "muziek": "Op muziek", "verhaal": "Verhaaltjes", "feest": "Op feestdagen", "maan": "Bij volle maan", "vaak": "Vaak", "soms": "Soms"}
             out = []
             for cat, title in groups.items():
                 out.append(title + ":\n" + "\n".join(f"• {name} ({eid})" for eid, name, c in EVENTS if c == cat))
@@ -3628,6 +3751,9 @@ async def main():
     asyncio.ensure_future(charge_loop())
     asyncio.ensure_future(phone_loop())
     asyncio.ensure_future(presence_loop())
+    asyncio.ensure_future(tle_loop())
+    asyncio.ensure_future(opensky_loop())
+    asyncio.ensure_future(lightning_loop())
     await asyncio.Event().wait()
 
 
