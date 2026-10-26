@@ -238,6 +238,7 @@ details.fold.sub>summary{font-size:15px}
 
   <nav role="tablist" aria-label="Onderdelen">
     <button type="button" role="tab" id="tab-msg" aria-controls="p-msg" aria-selected="true">Bericht</button>
+    <button type="button" role="tab" id="tab-plan" aria-controls="p-plan" aria-selected="false">Plattegrond</button>
     <button type="button" role="tab" id="tab-el" aria-controls="p-el" aria-selected="false">Elementen</button>
     <button type="button" role="tab" id="tab-wereld" aria-controls="p-wereld" aria-selected="false">Wereld</button>
     <button type="button" role="tab" id="tab-foto" aria-controls="p-foto" aria-selected="false">Foto's</button>
@@ -948,6 +949,7 @@ details.fold.sub>summary{font-size:15px}
       <p class="hint">Tip: Home Assistant neemt Kamiel Studio ook mee in zijn eigen back-ups (Instellingen → Systeem → Back-ups). Dit hier is een extra kopie die je zelf bewaart.</p>
     </div>
   </section>
+  <section id="p-plan" role="tabpanel" aria-labelledby="tab-plan" hidden></section>
   <section id="p-log" role="tabpanel" aria-labelledby="tab-log" hidden>
     <div class="card">
       <div class="libhead"><h2>Logboek</h2><input type="search" id="logSearch" placeholder="Zoeken" aria-label="Zoeken in het logboek"></div>
@@ -980,6 +982,7 @@ async function load() { world = await (await fetch('api/world', { cache: 'no-sto
 const tabs = [...document.querySelectorAll('[role=tab]')];
 tabs.forEach(t => t.addEventListener('click', () => {
   tabs.forEach(o => { o.setAttribute('aria-selected', o === t ? 'true' : 'false'); $(o.getAttribute('aria-controls')).hidden = o !== t; });
+  try { localStorage.setItem('kamiel-tab', t.id); } catch (e) { /* fine */ }
 }));
 
 /* file pickers */
@@ -2130,5 +2133,6 @@ function render() { renderLib(); renderPano(); renderAlbum(); renderRems(); if (
 load();
 })();
 </script>
+<script src="static/house.js"></script>
 </body>
 </html>

@@ -372,6 +372,17 @@ Alles behalve Home Assistant zelf is optioneel; zonder koppeling valt alleen die
 
 De tablet laadt ook lettertypes van Google Fonts (VT323, Titan One, Arimo): zonder internet valt hij terug op systeemlettertypes.
 
+## Plattegrond (sinds 0.19.0)
+
+Een tabblad in Kamiel Studio (poort 8099, alleen via Home Assistant; de tablet op 8100 kent het niet). Windows-95-stijl, bedoeld voor de gsm.
+- Code: `app/house.py` (pure logica: controleren, vertalen van commando's, getest zonder Home Assistant), `app/server.py` (sectie "Plattegrond", `/api/house*`), `app/static/house.js` (het scherm).
+- Alles wat van het huis is (verdiepingen, tekeningen, ruimtes, apparaten, scenes) staat in `/data` (`kamiel.json` sleutel `house` + map `/data/house`). Niets daarvan in de repo. Back-ups nemen het mee.
+- Tekeningen: de eigenaar uploadt ze zelf; coördinaten zijn breuken (0..1) van de tekening.
+- Veiligheid: de pagina kan alleen een vaste lijst commando's uitvoeren op apparaten die op de plattegrond staan (`house.command`), en alleen scenes/scripts die bij een ruimte zijn gezet.
+- Heel huis: apparaten met het vinkje "Doet mee"; luidsprekers pauzeren enkel bij uit.
+- Later: grafiek van sensoren, muziekfavorieten, Heel huis als helper op het HA-dashboard, installeerbare app (vraagt https), toegang buiten wifi (Nabu Casa/Tailscale, keuze van de eigenaar).
+- Gsm: opent in de HA-app (aangemeld), met een vastgezette snelkoppeling.
+
 ## Installeren, updaten en uitbrengen
 
 **Eenmalig installeren (bij de eigenaar al gebeurd):**

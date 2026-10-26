@@ -15,12 +15,14 @@ from functools import partial
 
 from aiohttp import ClientSession, ClientTimeout, web
 
+import house
 import process
 
 APP = os.path.dirname(os.path.abspath(__file__))
 DATA = os.environ.get("KAMIEL_DATA", "/data")
 MEDIA = os.path.join(DATA, "media")
 ORIG = os.path.join(DATA, "originals")
+HOUSE = os.path.join(DATA, "house")   # the drawings of the floors: private, so never on the tablet port
 DB_FILE = os.path.join(DATA, "kamiel.json")
 LOG_FILE = os.path.join(DATA, "logboek.json")
 
@@ -176,6 +178,7 @@ def first_run():
     shutil.rmtree(os.path.join(DATA, "backup-tmp"), ignore_errors=True)   # left-over downloads and half uploads
     os.makedirs(MEDIA, exist_ok=True)
     os.makedirs(ORIG, exist_ok=True)
+    os.makedirs(HOUSE, exist_ok=True)
     if not os.path.exists(DB_FILE):
         src = os.path.join(APP, "defaults")
         if os.path.isdir(src):
@@ -1910,7 +1913,7 @@ def _make_backup(full):
                    "Terugzetten: Kamiel Studio > Instellingen > Back-up > Terugzetten.\n"
                    + ("Met alle elementen, foto's en het panorama.\n" if full else "Alleen de instellingen, regels, herinneringen en nummers (geen afbeeldingen).\n"))
         if full:
-            for d, pre in ((MEDIA, "media/"), (ORIG, "originals/")):
+            for d, pre in ((MEDIA, "media/"), (ORIG, "originals/"), (HOUSE, "house/")):
                 if os.path.isdir(d):
                     for f in sorted(os.listdir(d)):
                         fp = os.path.join(d, f)
@@ -1951,14 +1954,14 @@ def _restore(path):
         new = json.loads(z.read("kamiel.json"))
         if not isinstance(new, dict) or "settings" not in new:
             raise ValueError("De back-up is beschadigd.")
-        files = [n for n in names if n.startswith(("media/", "originals/")) and not n.endswith("/")]
+        files = [n for n in names if n.startswith(("media/", "originals/", "house/")) and not n.endswith("/")]
         cur = load_db()
         if files:   # everything: elements, photos, panorama and settings
             for n in files:
                 base = os.path.basename(n)
                 if not base or base.startswith("."):
                     continue
-                dest = os.path.join(MEDIA if n.startswith("media/") else ORIG, base)
+                dest = os.path.join(MEDIA if n.startswith("media/") else HOUSE if n.startswith("house/") else ORIG, base)
                 with z.open(n) as src, open(dest, "wb") as out:
                     shutil.copyfileobj(src, out)
             keep = {k: cur[k] for k in ("telegram",) if k in cur}
@@ -1968,7 +1971,7 @@ def _restore(path):
             new.update(keep)
             what = f"alles ({len(new.get('assets', []))} elementen, {len(new.get('photos', []))} foto's)"
         else:   # settings only: the pictures stay as they are
-            for k in ("settings", "reminders", "songs", "dismissed"):
+            for k in ("settings", "reminders", "songs", "dismissed", "house"):
                 if k in new:
                     cur[k] = new[k]
             new = cur
@@ -2157,6 +2160,185 @@ async def api_call_test(request):
     b = await request.json()
     c = clean_call(b)
     return web.json_response({"ok": await do_call(str(b.get("entity", "")).strip(), c["service"], c["data"])})
+
+
+# ----------------------------------------------------------------- Plattegrond (floor plan, Studio only)
+# The Studio shows the house (drawings, rooms, devices) and controls it. Everything is stored in kamiel.json ("house")
+# and in /data/house (the drawings). The page can only start what stands on the plan or in a room (see house.py).
+HOUSE_CACHE = {"t": 0.0, "states": None}
+HOUSE_IMG_RE = re.compile(r"^[a-z0-9_-]+\.png$")
+
+
+def get_house(db):
+    h = db.get("house")
+    return h if isinstance(h, dict) and "floors" in h else house.empty()
+
+
+async def api_house_get(request):
+    return web.json_response({"connected": bool(TOKEN), "house": get_house(load_db())})
+
+
+def _drop_drawings(names):
+    for n in names:
+        if n and HOUSE_IMG_RE.match(n):
+            try:
+                os.remove(os.path.join(HOUSE, n))
+            except OSError:
+                pass
+
+
+async def api_house_put(request):
+    try:
+        body = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest(text="Dit is geen geldige plattegrond.")
+    async with lock:
+        db = load_db()
+        old = get_house(db)
+        new = house.clean(body, old)
+        db["house"] = new
+        save_db(db, bump=False)   # the tablet does not need to reload for this
+    kept = {f["image"] for f in new["floors"]}
+    _drop_drawings([f["image"] for f in old["floors"] if f.get("image") and f["image"] not in kept])   # a floor was removed
+    return web.json_response({"ok": True, "house": new})
+
+
+def _house_image(data):
+    """A drawing: any picture, made smaller if needed and kept as PNG (lines stay sharp)."""
+    import io
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = 60_000_000
+    im = Image.open(io.BytesIO(data))
+    im.load()
+    if im.mode not in ("RGB", "RGBA"):
+        im = im.convert("RGBA" if (im.mode in ("LA", "PA", "P") and "transparency" in im.info) or im.mode in ("LA", "PA") else "RGB")
+    im.thumbnail((2200, 2200))
+    buf = io.BytesIO()
+    im.save(buf, "PNG", optimize=True)
+    return buf.getvalue(), im.size
+
+
+async def api_house_image_post(request):
+    fid = re.sub(r"[^a-z0-9]", "", request.match_info["id"].lower())[:12]
+    data = await request.read()
+    if not data:
+        raise web.HTTPBadRequest(text="Geen afbeelding ontvangen.")
+    try:
+        png, (w, h) = await run_blocking(_house_image, data)
+    except Exception:
+        raise web.HTTPBadRequest(text="Dit bestand is geen afbeelding die ik kan lezen.")
+    async with lock:
+        db = load_db()
+        hs = get_house(db)
+        fl = next((f for f in hs["floors"] if f["id"] == fid), None)
+        if not fl:
+            raise web.HTTPNotFound(text="Deze verdieping bestaat niet (meer).")
+        name = f"plan_{fid}_{uuid.uuid4().hex[:6]}.png"
+        with open(os.path.join(HOUSE, name), "wb") as f:
+            f.write(png)
+        old = fl.get("image")
+        fl.update(image=name, w=int(w), h=int(h))
+        db["house"] = hs
+        save_db(db, bump=False)
+    _drop_drawings([old])
+    return web.json_response({"ok": True, "image": name, "w": int(w), "h": int(h)})
+
+
+async def api_house_image_delete(request):
+    fid = re.sub(r"[^a-z0-9]", "", request.match_info["id"].lower())[:12]
+    async with lock:
+        db = load_db()
+        hs = get_house(db)
+        fl = next((f for f in hs["floors"] if f["id"] == fid), None)
+        if not fl:
+            raise web.HTTPNotFound()
+        old = fl.get("image")
+        fl.update(image="", w=house.BLANK[0], h=house.BLANK[1])
+        db["house"] = hs
+        save_db(db, bump=False)
+    _drop_drawings([old])
+    return web.json_response({"ok": True})
+
+
+async def api_house_img(request):
+    name = os.path.basename(request.match_info["name"])
+    p = os.path.join(HOUSE, name)
+    if not HOUSE_IMG_RE.match(name) or not os.path.exists(p):
+        raise web.HTTPNotFound()
+    return web.FileResponse(p, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+async def _house_states():
+    """All states in one call, kept for a moment so several phones do not each ask Home Assistant."""
+    if HOUSE_CACHE["states"] is not None and time.time() - HOUSE_CACHE["t"] < 1.5:
+        return HOUSE_CACHE["states"]
+    st = await ha_get("/states")
+    if st is not None:
+        HOUSE_CACHE.update(t=time.time(), states=st)
+    return st
+
+
+async def api_house_states(request):
+    hs = get_house(load_db())
+    want = {d["entity"] for d in hs["devices"]}
+    raw = await _house_states() if want else []
+    if raw is None:
+        return web.json_response({"connected": False, "states": {}})
+    return web.json_response({"connected": bool(TOKEN), "states": {s["entity_id"]: house.view(s) for s in raw if s.get("entity_id") in want}})
+
+
+async def api_house_do(request):
+    """One thing on one device that stands on the plan (light, switch, speaker). Nothing else can be started from here."""
+    try:
+        b = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest()
+    hs = get_house(load_db())
+    dev = next((d for d in hs["devices"] if d["id"] == b.get("id")), None)
+    c = house.command(dev["entity"], str(b.get("cmd", "")), b.get("value")) if dev else None
+    if not c:
+        return web.json_response({"ok": False})
+    ok = await ha_service(*c)
+    HOUSE_CACHE["t"] = 0.0
+    log("huis", f"Plattegrond: {dev['name']}, {b.get('cmd')}", quiet=True)
+    return web.json_response({"ok": ok})
+
+
+async def api_house_all(request):
+    """Heel huis: everything with the tick "doet mee" goes on or off (speakers only pause)."""
+    try:
+        b = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest()
+    on = bool(b.get("on"))
+    hs = get_house(load_db())
+    mem = [d["entity"] for d in hs["devices"] if d.get("heel")]
+    power = [e for e in mem if e.split(".")[0] in ("light", "switch", "input_boolean")]
+    music = [e for e in mem if e.startswith("media_player.")]
+    ok = True
+    if power:
+        ok = await ha_service("homeassistant", "turn_on" if on else "turn_off", {"entity_id": power}) and ok
+    if music and not on:
+        ok = await ha_service("media_player", "media_pause", {"entity_id": music}) and ok
+    HOUSE_CACHE["t"] = 0.0
+    log("huis", f"Plattegrond: heel huis {'aan' if on else 'uit'} ({len(mem)} apparaten)", quiet=True)
+    return web.json_response({"ok": ok, "count": len(mem)})
+
+
+async def api_house_run(request):
+    """A scene or script that was put with a room (or with the whole house) in the Studio."""
+    try:
+        b = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest()
+    hs = get_house(load_db())
+    sc = next((s for s in hs["scenes"] if s["id"] == b.get("id")), None)
+    if not sc:
+        return web.json_response({"ok": False})
+    ok = await do_call(sc["entity"])
+    HOUSE_CACHE["t"] = 0.0
+    log("huis", f"Plattegrond: {sc['name']} gestart", quiet=True)
+    return web.json_response({"ok": ok})
 
 
 # Dutch names for the actions people use most; everything else Home Assistant can do is listed too, with its own name
@@ -3158,6 +3340,15 @@ def make_studio():
     app.router.add_post("/api/love-test", api_love_test)
     app.router.add_delete("/api/logboek", api_log_clear)
     app.router.add_post("/api/call-test", api_call_test)
+    app.router.add_get("/api/house", api_house_get)
+    app.router.add_put("/api/house", api_house_put)
+    app.router.add_post("/api/house/floors/{id}/image", api_house_image_post)
+    app.router.add_delete("/api/house/floors/{id}/image", api_house_image_delete)
+    app.router.add_get("/api/house/img/{name}", api_house_img)
+    app.router.add_get("/api/house/states", api_house_states)
+    app.router.add_post("/api/house/do", api_house_do)
+    app.router.add_post("/api/house/all", api_house_all)
+    app.router.add_post("/api/house/run", api_house_run)
     return app
 
 
