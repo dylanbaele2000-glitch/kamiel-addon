@@ -2752,19 +2752,55 @@ async def _presence(m):
 AWAY = {"since": None}
 
 
-async def nobody_home(s):
-    """True when nobody is home: no phone, sensor or movement has shown that someone is home for the waiting time.
-    Coming home counts at once (a phone answers, the wifi sensor reports, the tablet sees someone)."""
-    _, last = await presence(s)
+PRES = {"away": None, "changed": 0.0, "why": "", "last": None}
+
+
+def _decide(out, last, m):
+    """One decision for everyone (screen, Studio, tablet), with a brake against flapping:
+    - home -> away: only when nothing has shown someone is home for the waiting time (at least 10 minutes);
+    - away -> home: only on a new sign AFTER the screen went off; movement in the first 2 minutes after that
+      doesn't count (the screen itself switching off can look like movement to the tablet's camera)."""
+    now = time.time()
     if last is None:
-        return None
-    delay = max(1, int((s.get("motion") or {}).get("away_delay", 15) or 0)) * 60
-    away = time.time() - last >= delay
-    AWAY["since"] = last if away or time.time() - last > 90 else None
-    if TABLET["last_away"] is not None and away != TABLET["last_away"]:
-        log("huis", "Niemand meer thuis: het scherm gaat uit." if away else "Er is iemand thuis: het scherm gaat weer aan.")
-    TABLET["last_away"] = away
-    return away
+        return
+    delay = max(10, int(m.get("away_delay", 15) or 0)) * 60
+    if PRES["away"] is not True:
+        if now - last >= delay:
+            PRES.update(away=True, changed=now, why=f"al {round((now - last) / 60)} min geen teken van iemand")
+            if PRES["last"] is not None:
+                log("huis", "Niemand meer thuis (" + PRES["why"] + "): het scherm gaat uit.")
+        elif PRES["away"] is None:
+            PRES.update(away=False, changed=now, why="")
+    else:
+        fresh = [x for x in out if x.get("proof") and x["proof"] > PRES["changed"] + 2
+                 and not (x["kind"] == "beweging" and x["proof"] < PRES["changed"] + 120)]
+        if fresh:
+            x = max(fresh, key=lambda y: y["proof"])
+            why = {"gsm": "antwoordt op het thuisnetwerk", "beweging": "", "entiteit": "zegt thuis"}.get(x["kind"], "")
+            PRES.update(away=False, changed=now, why=(x["name"] + " " + why).strip())
+            log("huis", "Er is iemand thuis (" + PRES["why"] + "): het scherm gaat weer aan.")
+    PRES["last"] = last
+
+
+async def presence_loop():
+    """Decides every 15 seconds whether someone is home; everything else only reads that decision."""
+    while True:
+        try:
+            s = load_db()["settings"]; m = s.get("motion") or {}
+            if m.get("away_off"):
+                out, last = await presence(s)
+                _decide(out, last, m)
+            else:
+                PRES.update(away=None, last=None)
+        except Exception as e:
+            log("fout", "Wie is er thuis: " + str(e), quiet=True)
+        await asyncio.sleep(15)
+
+
+async def nobody_home(s):
+    """True when nobody is home (the latest decision of presence_loop), None when Kamiel can't tell yet."""
+    TABLET["last_away"] = PRES["away"]
+    return PRES["away"]
 
 
 # ---- phones on the home network: Kamiel asks them "are you there?" (a ping, or knocking on a port) ----
@@ -3001,9 +3037,10 @@ async def screen_guard_loop():
             night = is_night(s) if m.get("screen_off") == "nacht" else False
             away = (await nobody_home(s)) if m.get("away_off") else False
             wake = (was_night is True and night is False and not away) or (was_away is True and away is False)
+            was_away_before = was_away is True and away is False
             was_night, was_away = night, away
             if wake and m.get("fully_pw"):
-                ok, why = await fully_screen_on("de nacht is voorbij" if not night else "iemand thuis")
+                ok, why = await fully_screen_on("iemand thuis" if was_away_before else "de nacht is voorbij")
                 if not ok:
                     log("fout", "Scherm aanzetten via Fully lukte niet: " + why)
         except Exception as e:
@@ -3028,7 +3065,7 @@ async def api_tablet_status_get(request):
                               "away": away, "home_count": (zone or {}).get("state"), "motion_ago": time.time() - WATCH["motion"] if WATCH["motion"] else None,
                               "pushed": TABLET["pushed"], "connected": bool(TOKEN),
                               "who": [{"name": x["name"], "home": x["home"], "entity": x["entity"], "kind": x["kind"], "ago": time.time() - x["proof"] if x.get("proof") else None} for x in who],
-                              "last_proof": time.time() - someone if someone else None, "away_delay": m.get("away_delay", 15), "ping": PING_OK["v"],
+                              "last_proof": time.time() - someone if someone else None, "away_delay": max(10, int(m.get("away_delay", 15) or 0)), "ping": PING_OK["v"], "why": PRES["why"],
                               "plug": (plug or {}).get("state"), "charge": c})
 
 
@@ -3182,6 +3219,7 @@ async def main():
     asyncio.ensure_future(screen_guard_loop())
     asyncio.ensure_future(charge_loop())
     asyncio.ensure_future(phone_loop())
+    asyncio.ensure_future(presence_loop())
     await asyncio.Event().wait()
 
 
