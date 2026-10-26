@@ -219,7 +219,7 @@ function builtinFrame() {
   mg.fillStyle = '#fff'; mg.fillRect(40, 40, w - 80, 230);
   return { id: 'frame-builtin', kind: 'kader', size: [w, h], hole: [40 / w, 40 / h, (w - 40) / w, 270 / h], img: c, maskImg: m, label: 'kader', moment: 'altijd' };
 }
-const FRAMES = OBJ.filter(o => o.kind === 'kader' && !o.tv && o.hole);
+const FRAMES = OBJ.filter(o => o.kind === 'kader' && o.hole);   // every frame with a photo area (also the ones marked as tv)
 const FRAME = () => FRAMES.length ? FRAMES[Math.floor(rnd() * FRAMES.length)] : (FRAME.builtin || (FRAME.builtin = builtinFrame()));
 let spotlight = null;
 const TVS = OBJ.filter(o => o.tv && o.kind === 'kader' && o.hole);
@@ -854,9 +854,10 @@ const places = [];
 const COMP = KamielCompose.create({ S, OBJ, PLACE, H, FEET, horY, baseY, words: WORDS, photos: PHOTOS });
 function compose(i, forceHall) {
   const night = isDark(now()), today = now(), wb = WEATHER_BUCKET[weather] || 'zon';
-  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to) && !o.tv
+  const ok = (o) => (o.moment === 'altijd' || (o.moment === 'nacht') === night) && inPeriod(o.period, today, o.period_from, o.period_to)
     && (!o.weather || !o.weather.length || o.weather.includes(wb));
-  const r = COMP.compose(i, { night, ok, style: params.get('stijl') });
+  // with music on, a new place (out of sight) gets at least one frame, placed by the composer like any other element: the cover goes in it
+  const r = COMP.compose(i, { night, ok, style: params.get('stijl'), minFrames: musicOn && FRAMES.length ? 1 : 0 });
   EV.placeNew(i);
   // now and then a hall instead of the outdoors (museum, disco, observatory, or one of your own)
   const hall = (forceHall || (places[i] && i !== placeIndex())) ? pickHall(forceHall) : null;
@@ -1015,26 +1016,17 @@ function setMessage(m) {
     msgCanvas = KamielReminder.render(text, { width: W, height: H, color: '#c8202a', position: 'midden', sign });
   }
 }
-// music: on the ground the album cover shows in a frame (one that's already there, or an added one);
-// sometimes instead a tv floats on a cloud or stands on something that can carry it
+// music: the album cover shows in a frame that is already there. The place you're looking at gets nothing new on the ground
+// (that would be disturbing): without a frame there, a tv floats by on a cloud. The places ahead get their frame from the composer.
 function addMusic(i) {
   const p = places[i]; if (!p || p.hall || p.items.some(x => x.music || x.tv)) return;
-  const r = rnd(), o = TV(), asp0 = o.size[0] / o.size[1];
-  if (r < .25) { const h = H * (.13 + rnd() * .08); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return; }
-  if (r < .45) {
-    const carriers = p.items.filter(x => x.o.carry && x.layer > 0 && !isHidden(x) && !p.items.some(c => c.on === x));
-    if (carriers.length) {
-      const c = carriers[Math.floor(rnd() * carriers.length)], cw = c.h * c.o.size[0] / c.o.size[1];
-      const h = Math.min(c.h * .8, cw * (.45 + rnd() * .2) / asp0);
-      p.items.push({ o, layer: c.layer, on: c, ox: 0, h, flip: false, tv: true, born: performance.now(), depth: (c.depth || 0) - .0005, dx: c.dx, onHill: c.onHill });
-      sortItems(p); return;
-    }
-  }
+  const o = TV(), asp0 = o.size[0] / o.size[1];
   const fr = p.items.filter(x => x.o.kind === 'kader' && !x.tv && !x.spot && x.photo !== undefined && x.o.hole && !isHidden(x)).sort((a, b) => b.h - a.h)[0];
   if (fr) { fr.music = true; fr.cache = null; return; }
-  // no frame here: one of your own frames joins the scene in a free spot; without frames of your own, the tv floats in on a cloud
-  if (FRAMES.length) { addThing(i, FRAME(), { photo: PHOTOS[Math.floor(rnd() * PHOTOS.length)], music: true, musicAdded: true }, (x) => x.music, .24); if (p.items.some(x => x.music)) return; }
-  for (let k = 0; k < 4; k++) { const h = H * (.12 + rnd() * .07); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return; }
+  const cloudTV = () => { for (let k = 0; k < 6; k++) { const h = H * (.12 + rnd() * .07); if (tryTV(p, o, h, h * asp0, { tv: true, y: 40 + rnd() * 120, cloud: CL.length ? CL[Math.floor(rnd() * CL.length)] : null }, 0)) return true; } return false; };
+  if (visible(i) || !FRAMES.length) { cloudTV(); return; }
+  addThing(i, FRAME(), { photo: PHOTOS[Math.floor(rnd() * PHOTOS.length)], music: true, musicAdded: true }, (x) => x.music, .24);
+  if (!p.items.some(x => x.music)) cloudTV();
 }
 const sortItems = (p) => p.items.sort((a, b) => (a.layer - b.layer) || ((a.onHill ? -1 : 0) - (b.onHill ? -1 : 0)) || ((a.depth || 0) - (b.depth || 0)));
 const isHidden = (it) => { for (let x = it; x; x = x.on) if (x.hiddenBy) return true; return false; };

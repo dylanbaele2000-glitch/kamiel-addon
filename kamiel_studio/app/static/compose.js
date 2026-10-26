@@ -87,12 +87,14 @@
         const lo = sround(lo0 * mult), hi = Math.max(lo, sround(hi0 * mult)); return lo + Math.floor(rnd() * (hi - lo + 1)); };
       let nH = num('horizon'), nS = num('lucht'), nG = num('grond'), nF = num('kader');
       if (style === 'leegte') { nG = rnd() < .5 ? Math.min(nG, 1) : 0; nH = rnd() < .3 ? 0 : 1; nS = Math.min(nS, 1); nF = 0; if (!nH && rnd() < .5) { nG = 0; nS = 0; } }   // sometimes really empty
+      if (ctx.minFrames) nF = Math.max(nF, ctx.minFrames);   // music on: the cover needs a frame
       if (style === 'verhouding' && sub === 'lucht') { nS += 1; nG = Math.max(0, nG - 1); }
       if (style === 'verhouding' && sub === 'grond') { nS = Math.max(0, nS - 1); nG += 1; }
       if (style === 'groepje') nG = Math.max(nG, BUSY() <= 1 ? 2 : 3);
       const maxO = Math.max(1, +(S.max_objects || 12));
       while (nH + nS + nG + nF > maxO) {
-        const opts = []; if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF) opts.push('f');
+        const opts = []; if (nH) opts.push('h'); if (nS) opts.push('s'); if (nG) opts.push('g'); if (nF > (ctx.minFrames || 0)) opts.push('f');
+        if (!opts.length) break;
         const d = opts[Math.floor(rnd() * opts.length)];
         if (d === 'h') nH--; else if (d === 's') nS--; else if (d === 'g') nG--; else nF--;
       }
