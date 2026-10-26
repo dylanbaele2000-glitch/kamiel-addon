@@ -380,6 +380,8 @@ Een tabblad in Kamiel Studio (poort 8099, alleen via Home Assistant; de tablet o
 - Tekeningen: de eigenaar uploadt ze zelf; coördinaten zijn breuken (0..1) van de tekening.
 - Veiligheid: de pagina kan alleen een vaste lijst commando's uitvoeren op apparaten die op de plattegrond staan (`house.command`), en alleen scenes/scripts die bij een ruimte zijn gezet.
 - Heel huis: apparaten met het vinkje "Doet mee"; luidsprekers pauzeren enkel bij uit.
+- Eigen knoppen (0.20.0): een apparaat met `knop: true` in `house.devices` (geen entity), met een aan-reeks en een uit-reeks van stappen (zet aan/uit/wissel, start scène/script, IR-commando via `remote.send_command`, wacht). `house.clean_steps` en `house.steps_to_actions` zijn de enige weg naar Home Assistant (vaste lijst); `/api/house/knop` voert de reeks op de achtergrond uit, één tegelijk per knop. Optioneel status-apparaat bepaalt of de knop "aan" is.
+- Volledig scherm (0.20.0): de knop zet `html.hs-full` (verbergt de Studio-kop en tabs) en vraagt waar kan echte fullscreen aan; op gsm onthoudt hij dit. In de HA-app blijft de HA-balk zichtbaar.
 - Later: grafiek van sensoren, muziekfavorieten, Heel huis als helper op het HA-dashboard, installeerbare app (vraagt https), toegang buiten wifi (Nabu Casa/Tailscale, keuze van de eigenaar).
 - Gsm: opent in de HA-app (aangemeld), met een vastgezette snelkoppeling.
 

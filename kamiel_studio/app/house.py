@@ -10,6 +10,10 @@ ENTITY_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 DEVICE_DOMAINS = ("light", "switch", "input_boolean", "media_player", "sensor", "binary_sensor")   # what can stand on the plan
 ACTION_DOMAINS = ("scene", "script", "automation", "button", "input_button")                         # what a room can start
 HEEL_DOMAINS = ("light", "switch", "input_boolean", "media_player")                                  # what "Heel huis" can switch
+POWER_DOMAINS = ("light", "switch", "input_boolean", "media_player", "remote", "fan")                  # what a step "zet aan/uit" can reach
+ICONS = ("power", "lamp", "tv", "ster")
+STEP_TYPES = ("aan", "uit", "wissel", "start", "ir", "wacht")
+MAX_STEPS, MAX_WAIT, MAX_TOTAL_WAIT = 20, 60.0, 180.0
 MAX_FLOORS, MAX_ROOMS, MAX_DEVICES, MAX_SCENES = 6, 40, 150, 120
 BLANK = (1600, 900)   # size of a floor without a drawing
 
@@ -53,6 +57,61 @@ def _entity(v, domains):
     return ""
 
 
+def clean_steps(raw):
+    """A sequence of steps behind one button. Only a few kinds of step exist, each tied to a kind of device."""
+    out = []
+    for st in (raw or [])[:MAX_STEPS]:
+        if not isinstance(st, dict) or st.get("t") not in STEP_TYPES:
+            continue
+        t = st["t"]
+        if t == "wacht":
+            try:
+                sec = float(st.get("s"))
+            except (TypeError, ValueError):
+                continue
+            if sec == sec:
+                out.append({"t": t, "s": round(min(MAX_WAIT, max(0.1, sec)), 1)})
+            continue
+        doms = {"aan": POWER_DOMAINS, "uit": POWER_DOMAINS, "wissel": POWER_DOMAINS, "start": ACTION_DOMAINS, "ir": ("remote",)}[t]
+        ent = _entity(st.get("e"), doms)
+        if not ent:
+            continue
+        step = {"t": t, "e": ent}
+        if t == "ir":
+            cmd = _text(st.get("c"), 80)
+            if not cmd:
+                continue
+            step["c"] = cmd
+            step["d"] = _text(st.get("d"), 40)
+        out.append(step)
+    return out
+
+
+def steps_to_actions(steps):
+    """Sequence -> list of ("wait", seconds) and ("call", domain, service, data). The total waiting time is limited."""
+    acts, total = [], 0.0
+    for st in clean_steps(steps):
+        t = st["t"]
+        if t == "wacht":
+            sec = min(st["s"], max(0.0, MAX_TOTAL_WAIT - total))
+            total += sec
+            acts.append(("wait", sec))
+            continue
+        dom = st["e"].split(".")[0]
+        data = {"entity_id": st["e"]}
+        if t in ("aan", "uit", "wissel"):
+            acts.append(("call", dom, {"aan": "turn_on", "uit": "turn_off", "wissel": "toggle"}[t], data))
+        elif t == "start":
+            svc = {"script": "turn_on", "scene": "turn_on", "automation": "trigger", "button": "press", "input_button": "press"}[dom]
+            acts.append(("call", dom, svc, data))
+        else:
+            data["command"] = [c.strip() for c in st["c"].split(",") if c.strip()]
+            if st.get("d"):
+                data["device"] = st["d"]
+            acts.append(("call", "remote", "send_command", data))
+    return acts
+
+
 def clean(body, old=None):
     """Check what the Studio sends and keep only what is valid. Drawings are never taken from the body:
     a drawing only changes through the upload (so the file, its size and its name always belong together)."""
@@ -85,9 +144,17 @@ def clean(body, old=None):
     for d in (body.get("devices") or [])[:MAX_DEVICES]:
         if not isinstance(d, dict):
             continue
-        ent = _entity(d.get("entity"), DEVICE_DOMAINS)
         floor = re.sub(r"[^a-z0-9]", "", str(d.get("floor") or "").lower())[:12]
         x, y = _num01(d.get("x")), _num01(d.get("y"))
+        if d.get("knop"):   # an own button: a name, an icon, maybe a device that tells if it is on, and one or two sequences
+            if floor not in fids or x is None or y is None:
+                continue
+            icon = str(d.get("icon") or "")
+            devices.append({"id": _id(d.get("id"), dtaken), "floor": floor, "knop": True, "entity": "", "name": _text(d.get("name"), 40) or "Knop",
+                            "x": x, "y": y, "heel": False, "icon": icon if icon in ICONS else "power",
+                            "status": _entity(d.get("status"), DEVICE_DOMAINS), "on": clean_steps(d.get("on")), "off": clean_steps(d.get("off"))})
+            continue
+        ent = _entity(d.get("entity"), DEVICE_DOMAINS)
         if not ent or ent in used or floor not in fids or x is None or y is None:
             continue
         used.add(ent)

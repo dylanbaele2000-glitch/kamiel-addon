@@ -2280,7 +2280,7 @@ async def _house_states():
 
 async def api_house_states(request):
     hs = get_house(load_db())
-    want = {d["entity"] for d in hs["devices"]}
+    want = {d["entity"] or d.get("status") for d in hs["devices"]} - {"", None}
     raw = await _house_states() if want else []
     if raw is None:
         return web.json_response({"connected": False, "states": {}})
@@ -2302,6 +2302,47 @@ async def api_house_do(request):
     HOUSE_CACHE["t"] = 0.0
     log("huis", f"Plattegrond: {dev['name']}, {b.get('cmd')}", quiet=True)
     return web.json_response({"ok": ok})
+
+
+KNOP_BUSY = {}   # buttons that are running a sequence right now
+
+
+async def _run_knop(dev, which, acts):
+    try:
+        for a in acts:
+            if a[0] == "wait":
+                await asyncio.sleep(a[1])
+            else:
+                ok = await ha_service(a[1], a[2], a[3])
+                if not ok:
+                    log("huis", f"Knop {dev['name']}: stap {a[1]}.{a[2]} lukte niet", quiet=True)
+    except Exception as e:
+        log("huis", f"Knop {dev['name']}: {e}", quiet=True)
+    finally:
+        KNOP_BUSY.pop(dev["id"], None)
+        HOUSE_CACHE["t"] = 0.0
+
+
+async def api_house_knop(request):
+    """An own button: runs its sequence (on or off) in the background, one at a time per button."""
+    try:
+        b = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest()
+    hs = get_house(load_db())
+    dev = next((d for d in hs["devices"] if d["id"] == b.get("id") and d.get("knop")), None)
+    if not dev:
+        return web.json_response({"ok": False})
+    acts = house.steps_to_actions(dev["off"] if b.get("which") == "off" else dev["on"])
+    if not acts:
+        return web.json_response({"ok": False, "empty": True})
+    if dev["id"] in KNOP_BUSY:
+        return web.json_response({"ok": False, "busy": True})
+    t = asyncio.create_task(_run_knop(dev, b.get("which"), acts))
+    KNOP_BUSY[dev["id"]] = t
+    log("huis", f"Plattegrond: knop {dev['name']} ({'uit' if b.get('which') == 'off' else 'aan'})", quiet=True)
+    secs = sum(a[1] for a in acts if a[0] == "wait")
+    return web.json_response({"ok": True, "secs": secs})
 
 
 async def api_house_all(request):
@@ -3348,6 +3389,7 @@ def make_studio():
     app.router.add_get("/api/house/states", api_house_states)
     app.router.add_post("/api/house/do", api_house_do)
     app.router.add_post("/api/house/all", api_house_all)
+    app.router.add_post("/api/house/knop", api_house_knop)
     app.router.add_post("/api/house/run", api_house_run)
     return app
 

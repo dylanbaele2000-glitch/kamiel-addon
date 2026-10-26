@@ -20,6 +20,7 @@ let ST = {};                                          // Home Assistant states o
 let connected = true, started = false, edit = false;
 let floorId = null, tab = 'house', sel = null, selRoom = null;
 let tool = null;          // { kind: 'room', pts: [[x, y]] } or { kind: 'place', entity, name }
+let RUN = {}, full = false, fsAsked = false, knopEd = null;
 let drag = null, busy = false, armed = '', armedT = null;
 let ENTS = null, ACTS = null, entQ = '', picking = false;
 let timer = null, saveT = null, saving = Promise.resolve(), toastT = null;
@@ -38,8 +39,9 @@ function setHTML(el, html) { if (el && el._h !== html) { el._h = html; el.innerH
 const FL = () => H.floors.find(f => f.id === floorId) || null;
 const devsHere = () => H.devices.filter(d => d.floor === floorId);
 const devById = (id) => H.devices.find(d => d.id === id) || null;
-const stOf = (d) => ST[d.entity] || null;
+const stOf = (d) => ST[d.knop ? d.status : d.entity] || null;
 function kind(d) {
+  if (d.knop) return 'knop';
   const dom = d.entity.split('.')[0];
   return dom === 'media_player' ? 'speaker' : dom === 'sensor' ? 'sensor' : dom === 'binary_sensor' ? 'binary' : dom === 'light' ? 'light' : 'switch';
 }
@@ -182,7 +184,24 @@ const CSS = `
 .hs .st>div{padding:2px 8px;border:1px solid;border-color:var(--lo) var(--hi) var(--hi) var(--lo);min-height:22px;flex:1 1 150px}
 .hs .st .bad,.hs .bad{color:#a00000;font-weight:700}
 .hs .hint{color:var(--dark);font-size:13px}
-@media (max-width:900px){.hs-main{grid-template-columns:minmax(0,1fr)}.hs{padding:6px}}
+.hs-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.hs .stp{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:5px 4px;border-bottom:1px dotted var(--lo)}
+.hs .stp select,.hs .stp input[type=text]{flex:1 1 140px;width:auto}
+.hs .stp .sw{margin-left:auto;flex-wrap:nowrap}
+html.hs-full header,html.hs-full nav[role=tablist]{display:none!important}
+html.hs-full .wrap{padding:0!important;margin:0!important;max-width:none!important}
+html.hs-full body{background:#008080}
+html.hs-full .hs{min-height:100vh}
+@media (max-width:900px){
+ .hs-main{grid-template-columns:minmax(0,1fr)}.hs{padding:6px}
+ .hs-bar{flex-direction:column;align-items:stretch}.hs-bar .sp{display:none}
+ .hs-row{flex-wrap:nowrap}.hs-row .b{flex:1 1 0;min-height:44px}
+ #hs-svg{max-height:62vh}
+ .hs.ed .hs-plan{position:sticky;top:0;z-index:5;box-shadow:0 4px 0 var(--face)}
+ .hs.ed #hs-svg{max-height:42vh}
+ html.hs-full .hs-title{display:none}
+ .hs .stp select,.hs .stp input[type=text]{flex-basis:100%}
+}
 @media (pointer:coarse){.hs button.b{min-height:40px}.hs button.b.sm{min-height:36px}.hs button.b.x{min-height:34px;min-width:36px}.hs .hs-tab{min-height:36px}.hs .row{min-height:44px}.hs .swb{width:38px;height:38px}.hs input[type=range]{min-height:36px}.hs input[type=text],.hs select{min-height:38px}}
 `;
 
@@ -208,6 +227,7 @@ async function start() {
   try { const j = await api('GET', 'api/house'); H = j.house; connected = j.connected; }
   catch (e) { setHTML($('hs-wrap'), `<div class="hs-panel"><div class="empty">De plattegrond kon niet geladen worden: ${esc(e.message)}</div></div>`); return; }
   floorId = (H.floors[0] || {}).id || null;
+  try { if (narrow() && localStorage.getItem('kamiel-hs-full') === '1') { full = true; document.documentElement.classList.add('hs-full'); } } catch (e) { /* fine */ }
   drawAll();
   await poll();
   timer = setInterval(() => { if (!root.hidden && document.visibilityState === 'visible') poll(); }, 4000);
@@ -232,6 +252,28 @@ async function poll() {
 }
 
 /* ---------- commands ---------- */
+function quick(d) {
+  const k = kind(d);
+  if (k === 'light' || k === 'switch') cmd(d, 'toggle');
+  else if (k === 'knop') { drawPlan(); drawCtl(); drawRoomPanel(); pressKnop(d); }
+  else { drawPlan(); drawCtl(); drawRoomPanel(); }
+}
+async function pressKnop(d, force) {
+  if ((RUN[d.id] || 0) > Date.now()) { toast(d.name + ' is nog bezig.'); return; }
+  const s = stOf(d), hasOff = (d.off || []).length > 0, hasOn = (d.on || []).length > 0;
+  const which = force || (s && s.state === 'on' && hasOff ? 'off' : 'on');
+  if ((which === 'on' && !hasOn) || (which === 'off' && !hasOff)) { toast(d.name + ' heeft hiervoor nog geen stappen. Zet Bewerken aan.', true); return; }
+  if (s && !force && d.status) s.state = which === 'on' ? 'on' : 'off';
+  RUN[d.id] = Date.now() + 1500; drawPlan(); drawCtl(); drawRoomPanel();
+  let secs = 0;
+  try {
+    await flush();
+    const j = await api('POST', 'api/house/knop', { id: d.id, which });
+    if (!j.ok) throw new Error(j.busy ? 'is nog bezig.' : 'lukte niet.');
+    secs = j.secs || 0; RUN[d.id] = Date.now() + secs * 1000 + 800;
+  } catch (e) { RUN[d.id] = 0; toast(d.name + ': ' + e.message, true); }
+  setTimeout(() => { poll(); drawPlan(); drawCtl(); drawRoomPanel(); }, (secs + 1) * 1000);
+}
 let sendT = {};
 async function cmd(d, c, value, soon) {
   const s = ST[d.entity] || (ST[d.entity] = { state: 'unknown', ok: true });
@@ -278,14 +320,30 @@ async function runScene(id) {
   setTimeout(poll, 1200);
 }
 
+/* ---------- full screen: hides the Studio's own header and tabs, and asks the browser for real full screen where that exists ---------- */
+function setFull(on) {
+  full = on;
+  document.documentElement.classList.toggle('hs-full', on);
+  try { localStorage.setItem('kamiel-hs-full', on ? '1' : ''); } catch (e) { /* fine */ }
+  const el = document.documentElement;
+  if (on && !document.fullscreenElement && el.requestFullscreen) { fsAsked = true; el.requestFullscreen().catch(() => { fsAsked = false; }); }
+  else if (!on && document.fullscreenElement && document.exitFullscreen) { fsAsked = false; document.exitFullscreen().catch(() => {}); }
+  drawBar(); drawPlan();
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && fsAsked && full) { fsAsked = false; setFull(false); } });
+tabBtn.addEventListener('click', () => { document.documentElement.classList.toggle('hs-full', full); });
+document.querySelectorAll('[role=tab]').forEach(t => { if (t !== tabBtn) t.addEventListener('click', () => { document.documentElement.classList.remove('hs-full'); }); });
+
 /* ---------- drawing ---------- */
 function drawAll() { drawBar(); drawWrap(); drawStatus(); }
 
 function drawBar() {
-  const h = `<button type="button" class="b" data-a="all-on"><span class="hs-led on"></span>Heel huis aan</button>
-    <button type="button" class="b" data-a="all-off"><span class="hs-led"></span>Heel huis uit</button>
+  const canFull = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled) || narrow();
+  const h = `<div class="hs-row"><button type="button" class="b" data-a="all-on"><span class="hs-led on"></span>Heel huis aan</button>
+    <button type="button" class="b" data-a="all-off"><span class="hs-led"></span>Heel huis uit</button></div>
     <span class="sp"></span>
-    <button type="button" class="b" data-a="edit" aria-pressed="${edit}">Bewerken</button>`;
+    <div class="hs-row">${canFull ? `<button type="button" class="b" data-a="full" aria-pressed="${full}">${full ? 'Normaal scherm' : 'Volledig scherm'}</button>` : ''}
+    <button type="button" class="b" data-a="edit" aria-pressed="${edit}">Bewerken</button></div>`;
   setHTML($('hs-bar'), h);
   $('hs').classList.toggle('ed', edit);
 }
@@ -345,13 +403,23 @@ function viewBox(f) {
 function markerSVG(d, u, zoomed) {
   const f = FL(), s = stOf(d), k = kind(d), on = isOn(d);
   const cx = d.x * f.w, cy = d.y * f.h, z = narrow() ? 1.25 : 1;
-  const right = d.x < 0.72;
+  const right = d.x < (narrow() ? 0.55 : 0.72);
   const showName = !narrow() || zoomed || sel === d.id || edit;
   let g = `<g class="mk" data-id="${d.id}" tabindex="0" role="button" aria-label="${esc(d.name)}" aria-pressed="${on}" transform="translate(${cx} ${cy}) scale(${u * z})">`;
   g += `<rect x="-22" y="-22" width="44" height="44" fill="transparent"/>`;
   if (sel === d.id) g += `<rect class="selbox" x="-21" y="-21" width="42" height="42"/>`;
   let w = 15;
-  if (k === 'sensor' || k === 'binary') {
+  if (k === 'knop') {
+    const col = on ? '#0a7a0a' : '#000';
+    g += `<rect x="-15" y="-15" width="30" height="30" fill="#c0c0c0" stroke="#000" stroke-width="1.5"/><path d="M-14 14V-14H14" fill="none" stroke="#fff" stroke-width="2"/><path d="M-13 14H14V-13" fill="none" stroke="#808080" stroke-width="2"/>`;
+    const ic = d.icon || 'power';
+    if (ic === 'power') g += `<path d="M-5.5-5.5A8 8 0 1 0 5.5-5.5M0-10V0" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round"/>`;
+    else if (ic === 'lamp') g += `<circle cx="0" cy="-3" r="6" fill="${on ? '#ffd54a' : '#fff'}" stroke="#000" stroke-width="1.5"/><rect x="-3.5" y="3" width="7" height="5" fill="#808080" stroke="#000"/>`;
+    else if (ic === 'tv') g += `<rect x="-9" y="-7" width="18" height="12" fill="${on ? '#8fd0ff' : '#fff'}" stroke="#000" stroke-width="1.5"/><path d="M-4 9H4" stroke="#000" stroke-width="2"/>`;
+    else g += `<path d="M0-9L2.6-3 9-2.5 4.2 1.7 5.6 8 0 4.7-5.6 8-4.2 1.7-9-2.5-2.6-3Z" fill="${on ? '#ffd54a' : '#fff'}" stroke="#000" stroke-width="1.2"/>`;
+    if (d.status) g += `<circle cx="12" cy="-12" r="3.5" fill="${on ? '#19e619' : '#4a4a4a'}" stroke="#000"/>`;
+    if ((RUN[d.id] || 0) > Date.now()) g += `<rect x="-15" y="-15" width="30" height="30" fill="rgba(255,255,255,.55)"/>`;
+  } else if (k === 'sensor' || k === 'binary') {
     const t = sensorText(d), tw = Math.max(34, t.length * 8.4 + 12);
     w = tw / 2;
     const warn = s && !s.ok;
@@ -424,8 +492,8 @@ function drawCtl() {
   const d = sel && devById(sel);
   if (!d || d.floor !== floorId) { setHTML(side, `<div class="hs-ct raised"><div class="hint">Tik op een apparaat op de plattegrond om het te bedienen.</div></div>`); return; }
   const s = stOf(d) || { ok: true, state: 'unknown' }, k = kind(d), on = isOn(d);
-  let h = `<div class="hs-ct raised"><div class="h"><b>${esc(d.name)}</b><button type="button" class="b x" data-a="close" aria-label="Sluiten">✕</button></div><div class="ent">${esc(d.entity)}</div>`;
-  if (!s.ok) h += `<div class="bad">Niet bereikbaar</div>`;
+  let h = `<div class="hs-ct raised"><div class="h"><b>${esc(d.name)}</b><button type="button" class="b x" data-a="close" aria-label="Sluiten">✕</button></div><div class="ent">${esc(d.knop ? 'Eigen knop' : d.entity)}</div>`;
+  if (!s.ok && k !== 'knop') h += `<div class="bad">Niet bereikbaar</div>`;
   if (k === 'light' || k === 'switch') {
     h += `<button type="button" class="b big" data-a="toggle" aria-pressed="${on}"><span class="hs-led ${on ? 'on' : ''}"></span>${on ? 'Aan' : 'Uit'}</button>`;
     if (k === 'light' && s.dim) h += `<div class="sl"><label for="hs-bri">Helderheid</label><output id="hs-briv">${s.bri || (on ? 100 : 0)}%</output></div><input type="range" id="hs-bri" min="1" max="100" value="${s.bri || 100}">`;
@@ -436,6 +504,14 @@ function drawCtl() {
         + `<input type="color" id="hs-col" value="${cur}" aria-label="Eigen kleur"></div>`;
     }
     if (k === 'light' && s.ct) h += `<div class="sl"><label for="hs-k">Wit: warm tot koel</label><output id="hs-kv">${s.k || ''} K</output></div><input type="range" id="hs-k" min="${s.kmin}" max="${s.kmax}" step="50" value="${s.k || Math.round((s.kmin + s.kmax) / 2)}">`;
+  } else if (k === 'knop') {
+    const hasOff = (d.off || []).length > 0, busyK = (RUN[d.id] || 0) > Date.now();
+    if (!(d.on || []).length && !hasOff) h += `<div class="hint">Deze knop heeft nog geen stappen. Zet Bewerken aan en kies de knop.</div>`;
+    else if (hasOff && d.status) h += `<button type="button" class="b big" data-a="knop" aria-pressed="${on}" ${busyK ? 'disabled' : ''}><span class="hs-led ${on ? 'on' : ''}"></span>${busyK ? 'Bezig…' : on ? 'Aan (tik voor uit)' : 'Uit (tik voor aan)'}</button>`;
+    else {
+      h += `<button type="button" class="b big" data-a="knop-on" ${busyK ? 'disabled' : ''}>${busyK ? 'Bezig…' : hasOff ? 'Aan' : 'Start'}</button>`;
+      if (hasOff) h += `<button type="button" class="b big" data-a="knop-off" ${busyK ? 'disabled' : ''}>Uit</button>`;
+    }
   } else if (k === 'speaker') {
     const f = s.feat || 0, tt = s.title ? s.title + (s.artist ? ' – ' + s.artist : '') : (on ? 'Speelt' : s.state === 'paused' ? 'Gepauzeerd' : s.state === 'off' || s.state === 'standby' ? 'Uit' : 'Niets aan het spelen');
     h += `<div class="np">${esc(tt)}</div><div class="trip">`
@@ -480,7 +556,7 @@ function drawRoomPanel() {
 /* ---------- editing ---------- */
 const DOMAIN_NL = { light: 'Lamp', switch: 'Schakelaar', input_boolean: 'Schakelaar', media_player: 'Speaker', sensor: 'Sensor', binary_sensor: 'Sensor' };
 async function ensureEnts() {
-  if (!ENTS) { try { const j = await api('GET', 'api/entities?domain=light,switch,input_boolean,media_player,sensor,binary_sensor'); ENTS = j.entities || []; } catch (e) { ENTS = []; } }
+  if (!ENTS) { try { const j = await api('GET', 'api/entities?domain=light,switch,input_boolean,media_player,sensor,binary_sensor,remote,fan'); ENTS = j.entities || []; } catch (e) { ENTS = []; } }
   if (!ACTS) { try { const j = await api('GET', 'api/entities?domain=scene,script,automation,button,input_button'); ACTS = j.entities || []; } catch (e) { ACTS = []; } }
 }
 function redrawEditor() { if (edit) { drawEditor(); drawRoomEditor(); } }
@@ -499,16 +575,46 @@ function drawEditor() {
   if (tool && tool.kind === 'room') h += `<div class="hint"><b>Klik de hoeken</b> van de ruimte op de tekening (${tool.pts.length} gezet). Klik op de gele eerste hoek of op Klaar om te sluiten.</div><div class="sw"><button type="button" class="b sm" data-a="room-done" ${tool.pts.length < 3 ? 'disabled' : ''}>Klaar</button><button type="button" class="b sm" data-a="tool-cancel">Annuleren</button></div>`;
   else h += `<div><button type="button" class="b sm" data-a="room-new">+ Ruimte tekenen</button></div>${selRoom ? `<div class="hint">Sleep de witte punten om de hoeken te verplaatsen.</div>` : ''}`;
   h += `<h3>Apparaten</h3>`;
-  h += mine.map(d => `<div class="er dv${sel === d.id ? ' sel' : ''}" data-id="${d.id}"><input type="text" data-f="dname" data-id="${d.id}" value="${esc(d.name)}" aria-label="Naam van het apparaat" maxlength="40" autocomplete="off"><button type="button" class="b x" data-a="dev-del" data-id="${d.id}" aria-label="Apparaat verwijderen">${armed === 'd' + d.id ? '?' : '✕'}</button>
+  if (knopEd && devById(knopEd) && devById(knopEd).floor === floorId) { setHTML(side, knopEditorHTML(devById(knopEd))); return; }
+  knopEd = null;
+  h += mine.map(d => d.knop ? `<div class="er dv${sel === d.id ? ' sel' : ''}" data-id="${d.id}"><input type="text" data-f="dname" data-id="${d.id}" value="${esc(d.name)}" aria-label="Naam van de knop" maxlength="40" autocomplete="off"><button type="button" class="b x" data-a="dev-del" data-id="${d.id}" aria-label="Knop verwijderen">${armed === 'd' + d.id ? '?' : '✕'}</button>
+    <div class="sub"><button type="button" class="b sm" data-a="knop-edit" data-id="${d.id}">Stappen bewerken</button> <span class="ent">Eigen knop</span></div></div>` : `<div class="er dv${sel === d.id ? ' sel' : ''}" data-id="${d.id}"><input type="text" data-f="dname" data-id="${d.id}" value="${esc(d.name)}" aria-label="Naam van het apparaat" maxlength="40" autocomplete="off"><button type="button" class="b x" data-a="dev-del" data-id="${d.id}" aria-label="Apparaat verwijderen">${armed === 'd' + d.id ? '?' : '✕'}</button>
     <div class="ent sub">${esc(d.entity)}</div>${/^(light|switch|input_boolean|media_player)\./.test(d.entity) ? `<label class="chk"><input type="checkbox" data-f="heel" data-id="${d.id}"${d.heel ? ' checked' : ''}> Doet mee met Heel huis${d.entity.startsWith('media_player.') ? ' (pauzeert bij uit)' : ''}</label>` : ''}</div>`).join('');
-  if (tool && tool.kind === 'place') h += `<div class="hint"><b>${esc(tool.name)}</b>: klik op de plattegrond waar het staat.</div><div><button type="button" class="b sm" data-a="tool-cancel">Annuleren</button></div>`;
+  if (tool && tool.kind === 'place') h += `<div class="hint"><b>${esc(tool.knop ? 'Nieuwe knop' : tool.name)}</b>: klik op de plattegrond waar het staat.</div><div><button type="button" class="b sm" data-a="tool-cancel">Annuleren</button></div>`;
   else if (picking) h += pickerHTML();
-  else h += `<div><button type="button" class="b sm" data-a="dev-add">+ Apparaat toevoegen</button></div>`;
+  else h += `<div class="sw"><button type="button" class="b sm" data-a="dev-add">+ Apparaat toevoegen</button><button type="button" class="b sm" data-a="knop-new">+ Eigen knop</button></div>`;
   setHTML(side, h + '</div>');
+}
+const STEP_NL = { aan: 'Zet aan', uit: 'Zet uit', wissel: 'Wissel aan/uit', start: 'Start scène/script', ir: 'IR-commando', wacht: 'Wacht' };
+const POWER = ['light', 'switch', 'input_boolean', 'media_player', 'remote', 'fan'];
+function entOptions(list, cur) {
+  const has = list.some(e => e.id === cur);
+  return `<option value="">Kies…</option>` + (cur && !has ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : '') + list.map(e => `<option value="${esc(e.id)}"${e.id === cur ? ' selected' : ''}>${esc(e.name)} (${esc(e.id)})</option>`).join('');
+}
+function stepHTML(w, st, i, n) {
+  let h = `<div class="stp" data-w="${w}" data-i="${i}"><select data-f="stype" data-w="${w}" data-i="${i}" aria-label="Soort stap">${Object.keys(STEP_NL).map(t => `<option value="${t}"${t === st.t ? ' selected' : ''}>${STEP_NL[t]}</option>`).join('')}</select>`;
+  if (st.t === 'wacht') h += `<input type="text" inputmode="decimal" data-f="ssec" data-w="${w}" data-i="${i}" value="${esc(st.s == null ? 1 : st.s)}" aria-label="Seconden" style="max-width:90px"> <span>seconden</span>`;
+  else {
+    const list = st.t === 'start' ? (ACTS || []) : st.t === 'ir' ? (ENTS || []).filter(e => e.id.startsWith('remote.')) : (ENTS || []).filter(e => POWER.includes(e.id.split('.')[0]));
+    h += `<select data-f="sent" data-w="${w}" data-i="${i}" aria-label="Apparaat">${entOptions(list, st.e || '')}</select>`;
+    if (st.t === 'ir') h += `<input type="text" data-f="scmd" data-w="${w}" data-i="${i}" value="${esc(st.c || '')}" placeholder="Commando (meer: scheid met komma)" aria-label="IR-commando" maxlength="80"><input type="text" data-f="sdev" data-w="${w}" data-i="${i}" value="${esc(st.d || '')}" placeholder="Apparaatnaam (mag leeg)" aria-label="Apparaat voor IR" maxlength="40">`;
+  }
+  return h + `<span class="sw"><button type="button" class="b x" data-a="knop-up" data-w="${w}" data-i="${i}" aria-label="Omhoog" ${i === 0 ? 'disabled' : ''}>▲</button><button type="button" class="b x" data-a="knop-down" data-w="${w}" data-i="${i}" aria-label="Omlaag" ${i === n - 1 ? 'disabled' : ''}>▼</button><button type="button" class="b x" data-a="knop-sdel" data-w="${w}" data-i="${i}" aria-label="Stap verwijderen">✕</button></span></div>`;
+}
+function knopEditorHTML(d) {
+  const statusList = (ENTS || []).filter(e => DOMAIN_NL[e.id.split('.')[0]]);
+  const block = (w, title, help) => `<h3>${title}</h3><div class="hint">${help}</div>` + (d[w] || []).map((st, i, a) => stepHTML(w, st, i, a.length)).join('')
+    + `<div class="sw"><button type="button" class="b sm" data-a="knop-sadd" data-w="${w}">+ Stap</button>${(d[w] || []).length ? `<button type="button" class="b sm" data-a="knop-test" data-w="${w}">Proberen</button>` : ''}</div>`;
+  return `<div class="ed-box raised"><div class="h" style="display:flex;justify-content:space-between;align-items:center"><b>Eigen knop</b><button type="button" class="b sm" data-a="knop-done">Klaar</button></div>
+    <input type="text" data-f="dname" data-id="${d.id}" value="${esc(d.name)}" aria-label="Naam van de knop" maxlength="40" autocomplete="off">
+    <label class="hint" for="hs-ki">Icoon</label><select id="hs-ki" data-f="kicon" aria-label="Icoon">${[['power', 'Aan/uit-knop'], ['lamp', 'Lamp'], ['tv', 'Scherm'], ['ster', 'Ster']].map(x => `<option value="${x[0]}"${(d.icon || 'power') === x[0] ? ' selected' : ''}>${x[1]}</option>`).join('')}</select>
+    <label class="hint" for="hs-ks">Welk apparaat zegt of het aan is? (mag leeg)</label><select id="hs-ks" data-f="kstatus" aria-label="Status-apparaat">${entOptions(statusList, d.status || '')}</select>
+    ${block('on', 'Aan-reeks', 'Wat er gebeurt als je de knop aanzet (of op Start tikt). De stappen gaan één voor één.')}
+    ${block('off', 'Uit-reeks (mag leeg)', 'Wat er gebeurt als je de knop uitzet. Zonder uit-reeks is het een gewone startknop.')}</div>`;
 }
 function pickerHTML() {
   const used = new Set(H.devices.map(d => d.entity)), q = entQ.trim().toLowerCase();
-  const list = (ENTS || []).filter(e => !used.has(e.id) && (!q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q))).slice(0, 80);
+  const list = (ENTS || []).filter(e => DOMAIN_NL[e.id.split('.')[0]] && !used.has(e.id) && (!q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q))).slice(0, 80);
   return `<div class="sunken" style="padding:6px;display:flex;flex-direction:column;gap:6px"><input type="search" id="hs-q" data-f="q" placeholder="Zoek een lamp, speaker of sensor" value="${esc(entQ)}" aria-label="Zoeken" autocomplete="off">
     <div class="pick">${ENTS ? (list.length ? list.map(e => `<button type="button" class="pr" data-a="dev-pick" data-ent="${esc(e.id)}"><i>${DOMAIN_NL[e.id.split('.')[0]] || ''}</i><span>${esc(e.name)}</span></button>`).join('') : `<div class="empty">${connected ? 'Niets gevonden.' : 'Home Assistant is niet bereikbaar.'}</div>`) : `<div class="empty">Laden…</div>`}</div>
     <div><button type="button" class="b sm" data-a="tool-cancel">Sluiten</button></div></div>`;
@@ -571,8 +677,9 @@ function finishRoom() {
 }
 function placeDevice(e) {
   const p = toFrac(e), f = FL(); if (!p || !f || !tool) return;
-  const d = { id: newId(), floor: f.id, entity: tool.entity, name: tool.name, x: p.x, y: p.y, heel: /^(light|switch|input_boolean)\./.test(tool.entity) };
-  H.devices.push(d); tool = null; picking = false; sel = d.id; queueSave(); drawAll(); poll();
+  const d = tool.knop ? { id: newId(), floor: f.id, knop: true, entity: '', name: 'Nieuwe knop', x: p.x, y: p.y, heel: false, icon: 'power', status: '', on: [], off: [] }
+    : { id: newId(), floor: f.id, entity: tool.entity, name: tool.name, x: p.x, y: p.y, heel: /^(light|switch|input_boolean)\./.test(tool.entity) };
+  H.devices.push(d); tool = null; picking = false; sel = d.id; if (d.knop) knopEd = d.id; queueSave(); drawAll(); poll();
 }
 function toFrac(e) {
   const svg = $('hs-svg'), f = FL(); if (!svg || !f) return null;
@@ -591,7 +698,7 @@ function bind() {
     const t = e.target.closest('[data-a]');
     if (!t) {
       const mk = e.target.closest('#hs-svg .mk');
-      if (!edit && mk) { const d = devById(mk.dataset.id); if (d) { select(d.id); if (['light', 'switch'].includes(kind(d))) cmd(d, 'toggle'); else { drawPlan(); drawCtl(); drawRoomPanel(); } } return; }
+      if (!edit && mk) { const d = devById(mk.dataset.id); if (d) { select(d.id); quick(d); } return; }
       const rm = e.target.closest('#hs-svg .room');
       if (!edit && rm) setTab(rm.dataset.room);
       return;
@@ -600,17 +707,21 @@ function bind() {
     switch (a) {
       case 'all-on': houseCmd(true); break;
       case 'all-off': houseCmd(false); break;
-      case 'edit': edit = !edit; tool = null; picking = false; selRoom = null; armed = ''; wrapDirty(); drawAll(); if (edit) ensureEnts().then(() => { redrawEditor(); }); break;
+      case 'edit': edit = !edit; knopEd = null; tool = null; picking = false; selRoom = null; armed = ''; wrapDirty(); drawAll(); if (edit) ensureEnts().then(() => { redrawEditor(); }); break;
       case 'start': addFloor(); ensureEnts(); break;
       case 'floor': floorId = t.dataset.floor; tab = 'house'; tool = null; selRoom = null; sel = (d && d.floor === floorId) ? sel : null; wrapDirty(); drawAll(); break;
       case 'floor-add': addFloor(); break;
       case 'tab': setTab(t.dataset.tab); break;
       case 'close': sel = null; drawPlan(); drawCtl(); drawRoomPanel(); break;
       case 'toggle': if (d) cmd(d, 'toggle'); break;
+      case 'knop': if (d) pressKnop(d); break;
+      case 'knop-on': if (d) pressKnop(d, 'on'); break;
+      case 'knop-off': if (d) pressKnop(d, 'off'); break;
+      case 'full': setFull(!full); break;
       case 'swatch': if (d) { const c = t.dataset.c; cmd(d, 'color', [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]); } break;
       case 'prev': case 'next': case 'playpause': if (d) cmd(d, a); break;
       case 'vminus': case 'vplus': { const s = d && stOf(d); if (d && s) { const v = Math.max(0, Math.min(100, (s.vol || 0) + (a === 'vplus' ? 5 : -5))); cmd(d, 'volume', v); } break; }
-      case 'row': if (d) { select(d.id); if (['light', 'switch'].includes(kind(d))) cmd(d, 'toggle'); else { drawPlan(); drawCtl(); drawRoomPanel(); } } break;
+      case 'row': if (d) { select(d.id); quick(d); } break;
       case 'room-on': case 'room-off': { const here = devsHere().filter(x => { const r = roomOf(x); return r && r.id === tab; }); groupCmd(here.map(x => x.id), a === 'room-on'); break; }
       case 'run': runScene(t.dataset.sid); break;
       /* editing */
@@ -622,6 +733,13 @@ function bind() {
       case 'tool-cancel': tool = null; picking = false; drawPlan(); drawEditor(); break;
       case 'room-pick': selRoom = selRoom === t.dataset.room ? null : t.dataset.room; drawPlan(); drawEditor(); break;
       case 'room-del': if (warn('r' + t.dataset.room)) { const f = FL(); f.rooms = f.rooms.filter(r => r.id !== t.dataset.room); H.scenes = H.scenes.filter(s => s.room !== t.dataset.room); if (tab === t.dataset.room) tab = 'house'; if (selRoom === t.dataset.room) selRoom = null; queueSave(); wrapDirty(); drawAll(); } break;
+      case 'knop-new': tool = { kind: 'place', knop: true }; picking = false; drawPlan(); drawEditor(); break;
+      case 'knop-edit': knopEd = id; sel = id; await ensureEnts(); drawPlan(); drawEditor(); break;
+      case 'knop-done': knopEd = null; drawEditor(); break;
+      case 'knop-sadd': { const k = devById(knopEd); if (k) { (k[t.dataset.w] = k[t.dataset.w] || []).push({ t: 'aan', e: '' }); queueSave(); drawEditor(); } break; }
+      case 'knop-sdel': { const k = devById(knopEd); if (k) { k[t.dataset.w].splice(+t.dataset.i, 1); queueSave(); drawEditor(); } break; }
+      case 'knop-up': case 'knop-down': { const k = devById(knopEd); if (k) { const arr = k[t.dataset.w], i = +t.dataset.i, j = a === 'knop-up' ? i - 1 : i + 1; if (arr[j]) { [arr[i], arr[j]] = [arr[j], arr[i]]; queueSave(); drawEditor(); } } break; }
+      case 'knop-test': { const k = devById(knopEd); if (k) pressKnop(k, t.dataset.w); break; }
       case 'dev-add': picking = true; entQ = ''; drawEditor(); await ensureEnts(); drawEditor(); { const q = $('hs-q'); if (q) q.focus(); } break;
       case 'dev-pick': { const en = (ENTS || []).find(x => x.id === t.dataset.ent); tool = { kind: 'place', entity: t.dataset.ent, name: (en && en.name) || t.dataset.ent }; picking = false; drawPlan(); drawEditor(); break; }
       case 'dev-del': if (warn('d' + id)) { H.devices = H.devices.filter(x => x.id !== id); if (sel === id) sel = null; queueSave(); drawAll(); } break;
@@ -644,11 +762,27 @@ function bind() {
     if (fld === 'fname' && f) { f.name = t.value; queueSave(); const tb = root.querySelector(`.hs-tab[data-floor="${f.id}"]`); if (tb) tb.firstChild.textContent = t.value; wrapDirty(); return; }
     if (fld === 'rname' && f) { const r = f.rooms.find(x => x.id === t.dataset.room); if (r) { r.name = t.value; queueSave(); drawPlan(); const tb = root.querySelector(`.hs-tab[data-tab="${r.id}"]`); if (tb) tb.textContent = t.value; wrapDirty(); } return; }
     if (fld === 'dname') { const d = devById(t.dataset.id); if (d) { d.name = t.value; queueSave(); drawPlan(); } return; }
+    if (['scmd', 'sdev', 'ssec'].includes(fld)) {
+      const k = devById(knopEd), st = k && (k[t.dataset.w] || [])[+t.dataset.i];
+      if (st) { if (fld === 'scmd') st.c = t.value; else if (fld === 'sdev') st.d = t.value; else { const v = parseFloat(String(t.value).replace(',', '.')); st.s = isFinite(v) ? v : 1; } queueSave(); }
+      return;
+    }
     if (fld === 'sname') { const s = H.scenes.find(x => x.id === t.dataset.sid); if (s) { s.name = t.value; queueSave(); } }
   });
   root.addEventListener('change', (e) => {
     const t = e.target;
     if (t.id === 'hs-file') { const file = t.files && t.files[0]; t.value = ''; uploadImage(file); return; }
+    if (['stype', 'sent', 'kicon', 'kstatus'].includes(t.dataset.f)) {
+      const k = devById(knopEd); if (!k) return;
+      if (t.dataset.f === 'kicon') k.icon = t.value;
+      else if (t.dataset.f === 'kstatus') { k.status = t.value; poll(); }
+      else {
+        const st = (k[t.dataset.w] || [])[+t.dataset.i]; if (!st) return;
+        if (t.dataset.f === 'sent') st.e = t.value;
+        else { st.t = t.value; st.e = ''; if (st.t === 'wacht') st.s = 1; else delete st.s; }
+      }
+      queueSave(); drawEditor(); drawPlan(); return;
+    }
     if (t.dataset.f === 'heel') { const d = devById(t.dataset.id); if (d) { d.heel = t.checked; queueSave(); } return; }
     if (['hs-bri', 'hs-vol', 'hs-k', 'hs-col'].includes(t.id)) { busy = false; poll(); }
   });
@@ -681,7 +815,7 @@ function bind() {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       if (edit) { sel = d.id; selectRows(); drawPlan(); return; }
-      select(d.id); if (['light', 'switch'].includes(kind(d))) cmd(d, 'toggle'); else { drawPlan(); drawCtl(); drawRoomPanel(); }
+      select(d.id); quick(d);
       return;
     }
     if (edit && /^Arrow/.test(e.key)) {
