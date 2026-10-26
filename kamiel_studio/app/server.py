@@ -113,7 +113,7 @@ DEFAULT_SETTINGS = {
                "away_off": False, "away_entity": "zone.home", "to_ha": True, "fully_pw": "",
                # who is home: any of these says "home" (a phone on the home wifi, a person, a router tracker…);
                # the wifi name(s) stay in the add-on's own data, never in the code
-               "away_entities": [], "home_wifi": "", "away_delay": 10},
+               "away_entities": [], "home_wifi": "", "away_delay": 15, "phones": [], "motion_counts": True},
     # a smart plug that charges the tablet: only when the battery runs low, up to a set level (better for the battery)
     "charge": {"entity": "", "mode": "uit", "low": 30, "high": 80},
     # lights and sockets to switch from the Lampen window on the tablet
@@ -460,7 +460,7 @@ BUILD = _build_id()
 async def api_world(request):
     db = load_db()
     if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
-        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); db["settings"] = st
+        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); st.get("motion", {}).pop("phones", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
         "build": BUILD,
@@ -936,6 +936,11 @@ async def api_settings(request):
                 m["away_entity"] = str(b["away_entity"]).strip()[:120] or "zone.home"
             if isinstance(b.get("away_entities"), list):
                 m["away_entities"] = [str(e).strip()[:120] for e in b["away_entities"] if isinstance(e, str) and "." in e][:8]
+            if isinstance(b.get("phones"), list):   # the phones' addresses on the home network: stay in the add-on, never on the tablet
+                m["phones"] = [{"name": str(p.get("name") or "").strip()[:30], "ip": str(p.get("ip") or "").strip()}
+                               for p in b["phones"] if isinstance(p, dict) and IP_RE.match(str(p.get("ip") or "").strip())][:6]
+            if "motion_counts" in b:
+                m["motion_counts"] = bool(b["motion_counts"])
             if "home_wifi" in b:
                 m["home_wifi"] = str(b["home_wifi"] or "").strip()[:200]
             if "away_delay" in b:
@@ -2705,37 +2710,158 @@ async def presence(s):
     return val
 
 
+def _ha_time(v):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
 async def _presence(m):
+    """Every source of "someone is home", with the last moment it proved it (a 'proof' time).
+    A phone's wifi sensor only proves it while the phone keeps reporting: away from home the phone can't reach
+    Home Assistant, so its last report ("home wifi") would otherwise stay forever."""
     wifi = [w.strip().lower() for w in re.split(r"[,;\n]", m.get("home_wifi") or "") if w.strip()]
-    out = []
-    for ent in presence_entities(m):
+    out, now = [], time.time()
+    ents = [e for e in presence_entities(m) if not (e == "zone.home" and (m.get("phones") or m.get("away_entities")))]
+    for ent in ents:
         st = await ha_get("/states/" + ent)
+        home = home_says(ent, st, wifi)
+        proof = None
+        if home:
+            proof = now
+            if ent.startswith("sensor."):   # the moment the phone last reported it (Android: about every 15 minutes)
+                proof = _ha_time((st or {}).get("last_reported")) or _ha_time((st or {}).get("last_updated")) or now
+                if now - proof > 1800:
+                    home = False   # still says "home wifi", but hasn't reported for half an hour: probably left
         out.append({"entity": ent, "name": ((st or {}).get("attributes") or {}).get("friendly_name", ent), "state": (st or {}).get("state"),
-                    "home": home_says(ent, st, wifi)})
-    known = [x["home"] for x in out if x["home"] is not None]
-    return out, (any(known) if known else None)
+                    "home": home, "proof": proof, "kind": "entiteit"})
+    for ph in m.get("phones") or []:
+        r = PHONES.get(ph.get("ip")) or {}
+        out.append({"entity": ph.get("ip"), "name": ph.get("name") or ph.get("ip"), "home": bool(r.get("seen")) and now - r["seen"] < 120 if r.get("tried") else None,
+                    "proof": r.get("seen"), "kind": "gsm"})
+    if m.get("motion_counts", True) and WATCH["motion"]:
+        out.append({"entity": "", "name": "Beweging voor de tablet", "home": now - WATCH["motion"] < 120, "proof": WATCH["motion"], "kind": "beweging"})
+    known = [x for x in out if x["home"] is not None]
+    if not known:
+        return out, None
+    return out, max([x["proof"] or 0 for x in out] + [STARTED_AT])
 
 
 AWAY = {"since": None}
 
 
 async def nobody_home(s):
-    """True when nobody is home. Someone coming home counts at once; "nobody" only after a few minutes,
-    because a phone in a pocket sometimes drops the wifi for a moment."""
-    _, someone = await presence(s)
-    if someone is None:
+    """True when nobody is home: no phone, sensor or movement has shown that someone is home for the waiting time.
+    Coming home counts at once (a phone answers, the wifi sensor reports, the tablet sees someone)."""
+    _, last = await presence(s)
+    if last is None:
         return None
-    if someone:
-        AWAY["since"] = None
-        away = False
-    else:
-        AWAY["since"] = AWAY["since"] or time.time()
-        delay = int((s.get("motion") or {}).get("away_delay", 10) or 0) * 60
-        away = time.time() - AWAY["since"] >= delay
+    delay = max(1, int((s.get("motion") or {}).get("away_delay", 15) or 0)) * 60
+    away = time.time() - last >= delay
+    AWAY["since"] = last if away or time.time() - last > 90 else None
     if TABLET["last_away"] is not None and away != TABLET["last_away"]:
         log("huis", "Niemand meer thuis: het scherm gaat uit." if away else "Er is iemand thuis: het scherm gaat weer aan.")
     TABLET["last_away"] = away
     return away
+
+
+# ---- phones on the home network: Kamiel asks them "are you there?" (a ping, or knocking on a port) ----
+PHONES = {}            # ip -> {"seen": time of the last answer, "tried": time of the last try, "how": "ping"/"tcp"}
+PING_OK = {"v": None}  # can this add-on send pings? (otherwise it knocks on a port: a phone that is there says "closed")
+STARTED_AT = time.time()
+
+
+async def _ping(ip):
+    if PING_OK["v"] is False:
+        return False
+    try:
+        p = await asyncio.create_subprocess_exec("ping", "-c", "2", "-W", "2", ip, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, err = await asyncio.wait_for(p.communicate(), 8)
+        if p.returncode == 0:
+            PING_OK["v"] = True
+            return True
+        if err and (b"permission" in err.lower() or b"not permitted" in err.lower()):
+            PING_OK["v"] = False
+        return False
+    except (FileNotFoundError, PermissionError):
+        PING_OK["v"] = False
+        return False
+    except asyncio.TimeoutError:
+        return False
+
+
+async def _knock(ip):
+    """A phone that is there answers "closed" straight away; one that isn't, doesn't answer at all."""
+    for port in (62078, 8009, 80):
+        try:
+            r, w = await asyncio.wait_for(asyncio.open_connection(ip, port), 3)
+            w.close()
+            return True
+        except ConnectionRefusedError:
+            return True
+        except (asyncio.TimeoutError, OSError):
+            continue
+    return False
+
+
+async def probe_phone(ip):
+    """Ask one phone if it is there. A sleeping Android phone sometimes takes a while: knock first (that wakes its wifi), then ping."""
+    ok = await _knock(ip)
+    how = "tcp"
+    if not ok:
+        ok = await _ping(ip)
+        how = "ping"
+    r = PHONES.setdefault(ip, {})
+    was = bool(r.get("seen")) and time.time() - r["seen"] < 600
+    r["tried"] = time.time()
+    if ok:
+        r["seen"] = time.time(); r["how"] = how
+    return ok, was
+
+
+async def phone_loop():
+    """Every 20 s while nobody seems home (so coming home is noticed fast), otherwise every minute."""
+    while True:
+        try:
+            m = load_db()["settings"].get("motion") or {}
+            phones = [p for p in (m.get("phones") or []) if p.get("ip")]
+            if phones:
+                res = await asyncio.gather(*[probe_phone(p["ip"]) for p in phones])
+                for p, (ok, was) in zip(phones, res):
+                    if ok and not was and PHONES[p["ip"]].get("logged") != "thuis":
+                        log("huis", f"{p.get('name') or 'Een gsm'} is thuis (op het thuisnetwerk).")
+                        PHONES[p["ip"]]["logged"] = "thuis"
+                    elif not ok and PHONES[p["ip"]].get("seen") and time.time() - PHONES[p["ip"]]["seen"] > 600 and PHONES[p["ip"]].get("logged") != "weg":
+                        log("huis", f"{p.get('name') or 'Een gsm'} antwoordt al 10 minuten niet meer.")
+                        PHONES[p["ip"]]["logged"] = "weg"
+            quick = any(time.time() - (PHONES.get(p["ip"], {}).get("seen") or 0) > 90 for p in phones)
+        except Exception as e:
+            log("fout", "Gsm's zoeken: " + str(e), quiet=True)
+            quick, phones = False, []
+        key = [p.get("ip") for p in phones]
+        for _ in range(4 if quick else 12):   # new addresses in the Studio: start asking them at once
+            await asyncio.sleep(5)
+            if [p.get("ip") for p in ((load_db()["settings"].get("motion") or {}).get("phones") or []) if p.get("ip")] != key:
+                break
+
+
+async def api_phones_test(request):
+    """Studio: ask the phones right now (the addresses come from the Studio form, so you can test before saving)."""
+    b = await request.json()
+    out = []
+    for p in (b.get("phones") or [])[:6]:
+        ip = str(p.get("ip") or "").strip()
+        if not IP_RE.match(ip):
+            out.append({"ip": ip, "ok": False, "error": "Dat is geen geldig adres (zoals 192.168.86.23)."})
+            continue
+        ok, _ = await probe_phone(ip)
+        out.append({"ip": ip, "ok": ok, "how": (PHONES.get(ip) or {}).get("how")})
+    return web.json_response({"phones": out, "ping": PING_OK["v"]})
+
+
+IP_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$")
 
 
 CHARGE = {"last": None, "asked": 0}
@@ -2901,8 +3027,8 @@ async def api_tablet_status_get(request):
                               "night": is_night(s), "night_start": s.get("night_start"), "night_end": s.get("night_end"),
                               "away": away, "home_count": (zone or {}).get("state"), "motion_ago": time.time() - WATCH["motion"] if WATCH["motion"] else None,
                               "pushed": TABLET["pushed"], "connected": bool(TOKEN),
-                              "who": [{"name": x["name"], "home": x["home"], "entity": x["entity"]} for x in who], "someone": someone,
-                              "waiting": (time.time() - AWAY["since"]) if AWAY["since"] else None,
+                              "who": [{"name": x["name"], "home": x["home"], "entity": x["entity"], "kind": x["kind"], "ago": time.time() - x["proof"] if x.get("proof") else None} for x in who],
+                              "last_proof": time.time() - someone if someone else None, "away_delay": m.get("away_delay", 15), "ping": PING_OK["v"],
                               "plug": (plug or {}).get("state"), "charge": c})
 
 
@@ -2983,6 +3109,7 @@ def make_studio():
     app.router.add_get("/api/tablet-status", api_tablet_status_get)
     app.router.add_post("/api/screen-test", api_screen_test)
     app.router.add_post("/api/screen-wake", api_screen_wake)
+    app.router.add_post("/api/phones-test", api_phones_test)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
     app.router.add_post("/api/halls", api_hall_upload)
     app.router.add_delete("/api/halls/{id}", api_hall_delete)
@@ -3054,6 +3181,7 @@ async def main():
         log("fout", "Versie bijhouden mislukt: " + str(e), quiet=True)
     asyncio.ensure_future(screen_guard_loop())
     asyncio.ensure_future(charge_loop())
+    asyncio.ensure_future(phone_loop())
     await asyncio.Event().wait()
 
 

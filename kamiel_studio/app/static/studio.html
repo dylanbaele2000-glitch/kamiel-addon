@@ -72,6 +72,9 @@ legend{font-weight:600;margin-bottom:6px;padding:0}
 label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width:420px}
 label.field span{font-weight:400;color:var(--muted);font-size:13px}
 .settings.osdrows{grid-template-columns:1fr}
+.phones{display:grid;gap:8px;margin:6px 0 8px}
+.phones .ph{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:center;max-width:620px}
+.phones .ph span{font-weight:400;font-size:13px;color:var(--muted);min-width:7em}
 div.field{display:flex;flex-direction:column;gap:6px;font-weight:600}
 div.field>span{font-weight:400;color:var(--muted);font-size:13px}
 .osdline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -541,22 +544,27 @@ details.fold.sub>summary{font-size:15px}
           <span>Optioneel, in plaats van (of naast) de camera van de tablet.</span>
           <select id="mEnt"></select></label>
       </div>
-      <label class="sw"><input type="checkbox" id="mAway"><span><b>Scherm uit als niemand thuis is</b><span>Is minstens één van jullie thuis (bijvoorbeeld: verbonden met de thuiswifi), dan staat het scherm aan. Is niemand meer thuis, dan gaat het na de wachttijd uit. Komt er iemand thuis, dan gaat het meteen weer aan.</span></span></label>
+      <label class="sw"><input type="checkbox" id="mAway"><span><b>Scherm uit als niemand thuis is</b><span>Kamiel kijkt of jullie gsm's op het thuisnetwerk zitten (en wat je hieronder nog kiest). Toont niets een kwartier lang dat er iemand thuis is, dan gaat het scherm uit. Komt er iemand thuis, dan gaat het binnen een halve minuut weer aan.</span></span></label>
       <details class="guide">
-        <summary>Thuis = verbonden met de thuiswifi: zo stel je dat in</summary>
+        <summary>Jullie gsm's op het thuisnetwerk: zo stel je dat in</summary>
         <ol class="steps">
-          <li>Open op elke gsm de <b>Home Assistant-app</b> → Instellingen → <b>Companion-app</b> → <b>Sensoren beheren</b>.</li>
-          <li>Android: zet <b>Wifi-verbinding</b> (Wi-Fi Connection) aan. iPhone: zet <b>SSID</b> aan. Die sensor toont de naam van de wifi waarmee de gsm verbonden is.</li>
-          <li>Kies hieronder bij "Wie is er thuis" die sensor van elke gsm (bijvoorbeeld <code>sensor.…_wifi_connection</code> of <code>sensor.…_ssid</code>).</li>
-          <li>Vul de naam van jullie thuiswifi in (precies zoals hij op de gsm staat). Hebben jullie er meer (bv. een 5 GHz-netwerk), zet dan een komma ertussen.</li>
+          <li>Open de <b>Google Home-app</b> → <b>Wifi</b> → het tandwiel (Netwerkinstellingen) → <b>Geavanceerd netwerk</b> → <b>DHCP IP-reserveringen</b>.</li>
+          <li>Tik op <b>+</b>, kies de gsm en bewaar. Je ziet nu zijn vaste adres, bijvoorbeeld <code>192.168.86.23</code>. Doe dat voor elke gsm.</li>
+          <li>Zet op de gsm, bij jullie thuiswifi, <b>Privacy</b> of "MAC-adrestype" op <b>Willekeurig MAC (standaard)</b> of <b>Apparaat-MAC</b>, maar niet op iets dat elke keer wisselt. Standaard is goed.</li>
+          <li>Vul hieronder per gsm een naam en dat adres in en klik op <b>Test</b>: elke gsm die thuis is, hoort "antwoordt" te zeggen.</li>
         </ol>
-        <p class="hint">Je kan ook andere dingen kiezen: een persoon of <code>device_tracker</code> (bijvoorbeeld van je router) die "thuis" zegt, <code>zone.home</code>, of een schakelaar. Eén van de gekozen dingen die "thuis" zegt, is genoeg. De naam van de wifi blijft in Kamiel Studio op je Home Assistant: hij gaat niet naar de tablet en staat nergens online.</p>
+        <p class="hint">Kamiel stuurt om de minuut een piepklein berichtje naar elke gsm; de batterij en de wifi merken daar niets van. De adressen blijven in Kamiel Studio op je Home Assistant: ze gaan niet naar de tablet en staan nergens online.</p>
       </details>
+      <div class="field" style="margin:10px 0">Gsm's op het thuisnetwerk
+        <div id="mPhones" class="phones"></div>
+        <div class="row"><button type="button" id="mPhoneTest">Test: antwoorden ze nu?</button><span class="status" id="mPhoneStatus" role="status"></span></div></div>
+      <label class="sw"><input type="checkbox" id="mMotionHome"><span><b>Beweging voor de tablet telt ook als "iemand thuis"</b><span>Handig voor iemand zonder gsm (of met een lege batterij).</span></span></label>
+      <p class="hint" style="margin-top:12px">Extra, niet nodig: iets uit Home Assistant dat "thuis" zegt. De wifi-sensor van de Home Assistant-app telt alleen zolang de gsm hem blijft doorgeven: zonder toegang van buitenaf kan een gsm die vertrokken is dat niet meer laten weten, dus hij helpt vooral om thuiskomen snel te zien.</p>
       <div class="settings">
         <div class="field">Wie is er thuis<span>Eén ervan die "thuis" zegt, is genoeg.</span>
           <div class="osdline" id="mAwayEnts" style="grid-template-columns:repeat(2,minmax(0,1fr))"><select class="awayEnt"></select><select class="awayEnt"></select><select class="awayEnt"></select><select class="awayEnt"></select></div></div>
         <label class="field" for="mWifi">Naam van jullie thuiswifi<span>Alleen nodig voor de wifi-sensor van de gsm.</span><input type="text" id="mWifi" maxlength="200" autocomplete="off" spellcheck="false"></label>
-        <label class="field" for="mDelay">Wachttijd voor het scherm uitgaat (minuten)<span>Een gsm in de zak verliest soms even de wifi: pas als er zo lang niemand verbonden is, gaat het scherm uit.</span><input type="number" id="mDelay" min="0" max="120"></label>
+        <label class="field" for="mDelay">Wachttijd voor het scherm uitgaat (minuten)<span>Een slapende gsm antwoordt niet altijd meteen: pas als er zo lang niets "iemand thuis" zegt, gaat het scherm uit. 15 is een goede waarde.</span><input type="number" id="mDelay" min="0" max="120"></label>
       </div>
       <label class="sw"><input type="checkbox" id="mToHa"><span><b>Batterij, scherm en beweging doorgeven aan Home Assistant</b><span>Dan heb je in Home Assistant <code>sensor.kamiel_tablet_batterij</code>, <code>binary_sensor.kamiel_tablet_lader</code>, <code>binary_sensor.kamiel_tablet_scherm</code> en <code>binary_sensor.kamiel_tablet_beweging</code>, voor je eigen automatiseringen. Daarvoor is de Fully Kiosk-integratie niet nodig.</span></span></label>
       <div style="margin-top:14px"><b style="font-size:14px">🔌 Laden met een slimme stekker</b>
@@ -1643,15 +1651,32 @@ $('dbTest').addEventListener('click', async () => {
 });
 $('mSave').addEventListener('click', async () => {
   const b = { night_start: $('sNightStart').value || '22:00', night_end: $('sNightEnd').value || '06:00', motion: { on: $('mOn').checked, look: $('mLook').checked, wake: $('mWake').checked, screen_off: $('mOff').value, off_after: +$('mAfter').value || 10, entity: $('mEnt').value,
-    away_off: $('mAway').checked, away_entities: [...document.querySelectorAll('.awayEnt')].map(e => e.value).filter(Boolean), home_wifi: $('mWifi').value,
+    away_off: $('mAway').checked, phones: readPhones(), motion_counts: $('mMotionHome').checked, away_entities: [...document.querySelectorAll('.awayEnt')].map(e => e.value).filter(Boolean), home_wifi: $('mWifi').value,
     away_delay: +$('mDelay').value || 0, to_ha: $('mToHa').checked, fully_pw: $('mPw').value },
     charge: { entity: $('cEnt').value, mode: $('cMode').value, low: +$('cLow').value || 30, high: +$('cHigh').value || 80 } };
   if (b.motion.away_entities.length) b.motion.away_entity = b.motion.away_entities[0];
+  const badIp = [...document.querySelectorAll('#mPhones .phIp')].find(e => e.value.trim() && !/^\d{1,3}(\.\d{1,3}){3}$/.test(e.value.trim()));
+  if (badIp) { status($('mStatus'), 'Een adres van een gsm klopt niet: het ziet eruit als 192.168.86.23.', 'err'); badIp.focus(); return; }
   if (b.motion.away_off && b.motion.away_entities.some(e => e.startsWith('sensor.')) && !b.motion.home_wifi.trim()) { status($('mStatus'), 'Vul de naam van jullie thuiswifi in: zonder die naam weet Kamiel niet of een gsm thuis is.', 'err'); return; }
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
   status($('mStatus'), r.ok ? 'Bewaard. Herlaad de tablet om het te laten werken.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
 
+function renderPhones(list) {
+  const rows = list.concat([{}, {}, {}, {}]).slice(0, Math.max(4, list.length));
+  $('mPhones').innerHTML = rows.map((p, k) => `<div class="ph"><input type="text" class="phName" maxlength="30" placeholder="Naam (bv. gsm ${k + 1})" value="${esc(p.name || '')}" aria-label="Naam van gsm ${k + 1}">`
+    + `<input type="text" class="phIp" inputmode="decimal" placeholder="Adres, bv. 192.168.86.23" value="${esc(p.ip || '')}" aria-label="Adres van gsm ${k + 1}"><span class="phRes"></span></div>`).join('');
+}
+const readPhones = () => [...document.querySelectorAll('#mPhones .ph')].map(r => ({ name: r.querySelector('.phName').value.trim(), ip: r.querySelector('.phIp').value.trim() })).filter(p => p.ip);
+$('mPhoneTest').addEventListener('click', async () => {
+  const phones = readPhones(); if (!phones.length) { status($('mPhoneStatus'), 'Vul eerst het adres van minstens één gsm in.', 'err'); return; }
+  status($('mPhoneStatus'), 'Even kijken… (een slapende gsm kan een paar seconden nodig hebben)');
+  let j; try { j = await (await fetch('api/phones-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phones }) })).json(); } catch { status($('mPhoneStatus'), 'Testen lukte niet.', 'err'); return; }
+  document.querySelectorAll('#mPhones .ph').forEach(r => { const ip = r.querySelector('.phIp').value.trim(), x = (j.phones || []).find(p => p.ip === ip);
+    r.querySelector('.phRes').textContent = !x ? '' : x.error ? '⚠️ adres?' : x.ok ? '✅ antwoordt' : '— geen antwoord'; });
+  const n = (j.phones || []).filter(p => p.ok).length;
+  status($('mPhoneStatus'), n ? `${n} van ${j.phones.length} antwoordt. Niet vergeten: Opslaan.` : 'Geen enkele gsm antwoordt. Zijn ze thuis en verbonden met de wifi? Klopt het adres? Probeer het over een minuutje nog eens (een slapende gsm).', n ? 'ok' : 'err');
+});
 async function renderHuis() {
   const s = world.settings, D = s.doorbell || {}, M = s.motion || {};
   try { const j = await (await fetch('api/entities?domain=*')).json(); ENTS = j.connected ? j.entities : []; } catch { ENTS = []; }
@@ -1665,7 +1690,8 @@ async function renderHuis() {
   $('mAway').checked = !!M.away_off; $('mToHa').checked = M.to_ha !== false; $('mPw').value = M.fully_pw || '';
   const aw = (M.away_entities && M.away_entities.length) ? M.away_entities : [M.away_entity || 'zone.home'];
   document.querySelectorAll('.awayEnt').forEach((el, k) => { el.innerHTML = entOpts(['sensor', 'device_tracker', 'person', 'zone', 'group', 'binary_sensor', 'input_boolean'], aw[k] || '', k ? '—' : 'Kies…'); });
-  $('mWifi').value = M.home_wifi || ''; $('mDelay').value = M.away_delay === undefined ? 10 : M.away_delay;
+  renderPhones(M.phones || []); $('mMotionHome').checked = M.motion_counts !== false;
+  $('mWifi').value = M.home_wifi || ''; $('mDelay').value = M.away_delay === undefined ? 15 : M.away_delay;
   const C = s.charge || {};
   $('cEnt').innerHTML = entOpts(['switch', 'input_boolean', 'light'], C.entity || '', 'Geen'); $('cMode').value = C.mode || 'uit';
   $('cLow').value = C.low || 30; $('cHigh').value = C.high || 80;
@@ -1708,8 +1734,10 @@ async function tabletStatus() {
   if (!M.on || M.off === 'nooit') out.push(row(null, 'Scherm uit bij geen beweging: niet ingesteld', 'Zet hieronder "Reageren op beweging" aan en kies bij "Scherm uit als er niemand is" voor "Alleen tijdens de rusttijd". ' + nightTxt));
   else out.push(row(live && i.js && i.motion_detect ? true : false, M.off === 'nacht' ? 'Tijdens de rusttijd gaat het scherm uit' : 'Het scherm gaat uit zonder beweging', `Na ${M.after} min zonder beweging${M.off === 'nacht' ? ', alleen tijdens de rusttijd' : ''}, en weer aan bij beweging. ${nightTxt}${live && i.js && i.motion_detect ? '' : ' Werkt pas als de punten hierboven in orde zijn.'}`));
   const hc = j.home_count;
-  const whoTxt = (j.who || []).map(x => `${esc(x.name)}: ${x.home === true ? 'thuis' : x.home === false ? 'niet thuis' : 'weet ik niet' + (x.entity.startsWith('sensor.') ? ' (thuiswifi ingevuld?)' : '')}`).join(' · ');
-  if (M.away) out.push(row(j.away === null ? false : true, 'Scherm uit als niemand thuis is', j.away === null ? 'Kamiel kan niet zien wie er thuis is: kies hieronder bij "Wie is er thuis" iets dat bestaat. ' + whoTxt : `Nu ${j.away ? 'is er niemand thuis: het scherm hoort uit te zijn' : j.someone === false ? 'is er niemand thuis, maar de wachttijd loopt nog (' + Math.round((j.waiting || 0) / 60) + ' min)' : 'is er iemand thuis'}. ${whoTxt}`));
+  const whoTxt = (j.who || []).map(x => `${esc(x.name)}: ${x.home === true ? (x.kind === 'beweging' ? 'net gezien' : 'thuis') : x.home === false ? (x.ago ? 'laatst ' + agoNL(x.ago) : 'niet thuis') : 'weet ik niet' + (x.entity.startsWith('sensor.') ? ' (thuiswifi ingevuld?)' : '')}`).join(' · ');
+  const left = j.last_proof !== null && j.last_proof !== undefined ? Math.max(0, Math.round(j.away_delay - j.last_proof / 60)) : null;
+  if (M.away) out.push(row(j.away === null ? false : true, 'Scherm uit als niemand thuis is', j.away === null ? 'Kamiel kan niet zien wie er thuis is: vul hieronder de adressen van jullie gsm\'s in. ' + whoTxt
+    : `Nu ${j.away ? 'is er niemand thuis: het scherm hoort uit te zijn' : j.last_proof > 90 && left !== null ? 'lijkt niemand thuis; het scherm gaat uit over ' + left + ' min als dat zo blijft' : 'is er iemand thuis'}. ${whoTxt}${j.ping === false ? ' (Pingen mag hier niet: Kamiel klopt op een poort, dat werkt ook.)' : ''}`));
   else out.push(row(null, 'Scherm uit als niemand thuis is: uit', /^\d+$/.test(hc || '') ? `Volgens Home Assistant zijn er nu ${hc} personen thuis.` : 'Vink het hieronder aan als je dat wil.'));
   const C = j.charge || {};
   if (C.entity && C.mode !== 'uit') out.push(row(j.plug === 'on' || j.plug === 'off' ? true : false, 'Slimme stekker van de lader: ' + (j.plug === 'on' ? 'aan' : j.plug === 'off' ? 'uit' : 'niet bereikbaar'),
