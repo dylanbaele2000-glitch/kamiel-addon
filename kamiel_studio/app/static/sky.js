@@ -99,28 +99,60 @@
         } catch (e) { }
       }
     }
+    // the real night sky (about 1600 stars to magnitude 5, and the lines of all constellations): positions every 20 s
+    const SD = window.KamielSkyData || null;
+    let cat = null, catT = 0, lineSegs = [];
+    function lstDeg(d) { const jd = d.valueOf() / 864e5 + 2440587.5; return ((280.46061837 + 360.98564736629 * (jd - 2451545) + A.lon()) % 360 + 360) % 360; }
+    function altaz(raH, dec, lst, sinP, cosP) {
+      const H = (lst - raH * 15) * D2R, de = dec * D2R;
+      const sa = sinP * Math.sin(de) + cosP * Math.cos(de) * Math.cos(H);
+      const az = Math.atan2(Math.sin(H), Math.cos(H) * sinP - Math.tan(de) * cosP) / D2R + 180;
+      return [az, Math.asin(clamp(sa, -1, 1)) / D2R];
+    }
+    function updateCatalog(d) {
+      if (!SD || (cat && Math.abs(d - catT) < 20000)) return;
+      catT = d.valueOf();
+      const lst = lstDeg(d), sinP = Math.sin(A.lat() * D2R), cosP = Math.cos(A.lat() * D2R), S0 = SD.STARS, n = S0.length / 4;
+      cat = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) {
+        const [az, alt] = altaz(S0[i * 4], S0[i * 4 + 1], lst, sinP, cosP);
+        cat[i * 4] = A.azX(az); cat[i * 4 + 1] = A.altY(alt); cat[i * 4 + 2] = alt; cat[i * 4 + 3] = az;
+      }
+      lineSegs = [];
+      for (const k in SD.LINES) for (const seg of SD.LINES[k]) {
+        let prev = null;
+        for (const [ra, dec] of seg) {
+          const [az, alt] = altaz(ra, dec, lst, sinP, cosP), p = { x: A.azX(az), y: A.altY(alt), alt };
+          if (prev && prev.alt > 2 && p.alt > 2 && Math.abs(prev.x - p.x) < W * .5) lineSegs.push(prev.x, prev.y, p.x, p.y);
+          prev = p;
+        }
+      }
+    }
+    const starCol = (bv) => bv < 0 ? '205,218,255' : bv < .3 ? '228,235,255' : bv < .8 ? '255,250,238' : bv < 1.3 ? '255,226,190' : '255,200,160';
     function drawStars(g, d, sun) {
       const c = cfg(), dk = darkness(sun) * clearness();
       if ((!c.stars && !c.planets) || !AST) return;
       updateStars(d);
       const t = A.t();
-      if (c.stars && dk > .02) {
+      if (c.stars && dk > .02 && SD) {
+        updateCatalog(d);
         g.save();
-        // the lines of the constellations: very faint, like a star chart seen through the camcorder
-        g.strokeStyle = `rgba(170,190,255,${.16 * dk})`; g.lineWidth = 1;
-        g.beginPath();
-        for (const name in LINES) for (const [a, b] of LINES[name]) {
-          const p = starPos[a], q = starPos[b]; if (!p || !q || p.alt < 3 || q.alt < 3 || !onScreen(p.p, 200) || !onScreen(q.p, 200)) continue;
-          if (Math.abs(p.p.x - q.p.x) > W * .6) continue;
-          g.moveTo(p.p.x, p.p.y); g.lineTo(q.p.x, q.p.y);
-        }
+        // the lines of all constellations: very faint, like a star chart seen through the camcorder
+        g.strokeStyle = `rgba(170,190,255,${.13 * dk})`; g.lineWidth = 1; g.beginPath();
+        for (let i = 0; i < lineSegs.length; i += 4) { if (lineSegs[i + 1] > A.HOR0 || lineSegs[i + 3] > A.HOR0) continue; g.moveTo(lineSegs[i], lineSegs[i + 1]); g.lineTo(lineSegs[i + 2], lineSegs[i + 3]); }
         g.stroke();
-        for (const k in starPos) {
-          const s = starPos[k]; if (s.alt < 1 || !onScreen(s.p)) continue;
-          const low = clamp(s.alt / 12, .25, 1), tw = .7 + .3 * nz(t * 1.7 + k.length * 13.1 + s.mag * 7);
-          const r = Math.max(.8, 2.4 - s.mag * .45), a = clamp(1.15 - s.mag * .2, .3, 1) * dk * low * tw;
-          if (s.mag < 1.2) { const gl = g.createRadialGradient(s.p.x, s.p.y, 0, s.p.x, s.p.y, r * 4); gl.addColorStop(0, `rgba(230,236,255,${a * .5})`); gl.addColorStop(1, 'rgba(230,236,255,0)'); g.fillStyle = gl; g.fillRect(s.p.x - r * 4, s.p.y - r * 4, r * 8, r * 8); }
-          g.fillStyle = `rgba(245,247,255,${a})`; g.beginPath(); g.arc(s.p.x, s.p.y, r, 0, 7); g.fill();
+        const S0 = SD.STARS, n = S0.length / 4, moonDim = 1 - .45 * A.moonLight();
+        for (let i = 0; i < n; i++) {
+          const x = cat[i * 4], y = cat[i * 4 + 1], alt = cat[i * 4 + 2]; if (alt < 1 || x < -4 || x > W + 4 || y < -4) continue;
+          const mag = S0[i * 4 + 2], low = clamp(alt / 14, .2, 1);
+          // faint stars disappear first when the moon is bright or near the horizon (that's how it really looks)
+          let a = clamp(1.4 - mag * .19, .22, 1) * dk * low * (mag > 3.5 ? moonDim : 1);
+          if (a < .03) continue;
+          const tw = .7 + .3 * nz(t * (1.2 + (i % 7) * .2) + i * 1.37); a *= mag < 2.5 ? tw : .85 + .15 * tw;
+          const r = Math.max(.9, 2.5 - mag * .38), col = starCol(S0[i * 4 + 3]);
+          if (mag < 1.2) { const gl = g.createRadialGradient(x, y, 0, x, y, r * 4.5); gl.addColorStop(0, `rgba(${col},${a * .45})`); gl.addColorStop(1, `rgba(${col},0)`); g.fillStyle = gl; g.fillRect(x - r * 5, y - r * 5, r * 10, r * 10); }
+          g.fillStyle = `rgba(${col},${a})`;
+          if (r < 1.2) g.fillRect(x - r / 2, y - r / 2, r + .3, r + .3); else { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
         }
         g.restore();
       }
@@ -160,10 +192,10 @@
           rate += sh.rate / 1100 * up * (1 - .5 * A.moonLight());
           rad = xy(h.az, Math.max(h.alt, 5));
           const night = d.toDateString();
-          if (sh.rate > 12 && showerLogged !== night && dk > .5) { showerLogged = night; A.log('event', 'Vannacht: de ' + sh.s.name + ' (vallende sterren)'); }
+          if (sh.rate > 12 && showerLogged !== night && dk > .5) { showerLogged = night; A.log('lucht', '☄️ Vannacht: de ' + sh.s.name + ' (meteorenzwerm, tot ' + Math.round(sh.rate) + ' per uur aan de hele hemel)'); }
         }
         if (force('meteoor')) rate = Math.max(rate, 1 / 2);
-        if (Math.random() < rate * dt) spawnMeteor(sh && Math.random() < sh.rate / (sh.rate + 8) ? rad : null);
+        if (Math.random() < rate * dt) { const fromShower = sh && Math.random() < sh.rate / (sh.rate + 8); spawnMeteor(fromShower ? rad : null); meteorReport(fromShower ? sh.s.name : ''); }
       }
       for (let i = meteors.length - 1; i >= 0; i--) {
         const m = meteors[i]; m.age += dt;
@@ -183,6 +215,11 @@
           if (ta > 0) { g.strokeStyle = `rgba(160,255,200,${ta})`; g.lineWidth = 2; g.beginPath(); g.moveTo(m.x, m.y); g.lineTo(m.x + m.dx * m.len * head, m.y + m.dy * m.len * head); g.stroke(); }
         }
       }
+    }
+    let metCount = 0, metFrom = Date.now(), metShower = '';
+    function meteorReport(name) {
+      metCount++; if (name) metShower = name;
+      if (Date.now() - metFrom > 3600e3) { A.log('lucht', `☄️ ${metCount} vallende ster${metCount === 1 ? '' : 'ren'} het voorbije uur${metShower ? ' (' + metShower + ')' : ''}.`); metCount = 0; metFrom = Date.now(); metShower = ''; }
     }
     function spawnMeteor(rad) {
       let x = 60 + Math.random() * (W - 120), y = 50 + Math.random() * (HOR0 - 200), ang;
@@ -222,6 +259,7 @@
     function drawNebula(g, d, sun) {
       const n = nebulaFor(d), dk = darkness(sun) * clearness() * (1 - .6 * A.moonLight());
       if (!n.on || dk < .05) return;
+      note('neb' + n.key, '🌌 Vannacht hangt er een nevel aan de hemel.');
       const p = xy(n.az, n.alt), t = A.t(), w = 560, h = 350;
       g.save(); g.globalCompositeOperation = 'lighter'; g.translate(p.x, p.y); g.rotate(n.rot);
       for (const [cv, k, sp] of [[n.c1, 1, .012], [n.c2, -1, .009]]) {   // two layers drifting against each other: it seems to breathe
@@ -250,7 +288,8 @@
       if (!cfg().iss && !force('iss')) return;
       if (force('iss') && !satrec) return;
       if (d - issT > 400 || d < issT || !issT) { issT = d.valueOf(); iss = issNow(d); if (iss && iss.alt > 0) { issTrail.push(xy(iss.az, iss.alt)); if (issTrail.length > 12) issTrail.shift(); } else issTrail = []; }
-      if (!iss || iss.alt < 0) { issHit = null; return; }
+      if (!iss || iss.alt < 0) { issHit = null; if (once.iss) forget('iss'); return; }
+      if (iss.alt > 5) note('iss', `🛰️ Het ISS komt over: nu ${Math.round(iss.alt)}° hoog, ${Math.round(iss.height)} km boven de aarde.`);
       const p = xy(iss.az, iss.alt); if (!onScreen(p, 10)) { issHit = null; return; }
       const dk = darkness(sun), a = clamp(.45 + .55 * dk, .45, 1) * (clearness() > .1 ? 1 : .35);   // anytime: in daylight a small bright dot
       for (let k = 1; k < issTrail.length; k++) { g.strokeStyle = `rgba(255,250,220,${a * .25 * k / issTrail.length})`; g.lineWidth = 1.5; g.beginPath(); g.moveTo(issTrail[k - 1].x, issTrail[k - 1].y); g.lineTo(issTrail[k].x, issTrail[k].y); g.stroke(); }
@@ -285,6 +324,7 @@
         const R = .2666;   // the sun's radius in degrees
         dx = (hm.azimuth - hs.azimuth) * Math.cos(hs.altitude * D2R) / R; dy = -(hm.altitude - hs.altitude) / R;
       }
+      note('ecls' + e.sun.a.toDateString(), `🌘 Zonsverduistering bezig (tot ${Math.round((e.sun.obsc || 0) * 100)}% van de zon bedekt).`);
       const ox = x + dx * r * 1.6, oy = y + dy * r * 1.6;   // a bit exaggerated, so you can follow it
       g.save(); g.fillStyle = '#05060c'; g.beginPath(); g.arc(ox, oy, r * .98, 0, 7); g.fill(); g.restore();
       const dist = Math.hypot(ox - x, oy - y) / (r * 2); return clamp(1 - dist, 0, 1);   // how much is covered (for darkening the sky)
@@ -302,6 +342,7 @@
     }
     function drawMoonShadow(g, x, y, r, d) {
       const s = moonShadow(d); if (!s) return;
+      note('eclm' + d.toDateString(), s.tot ? '🌕 Totale maansverduistering: de maan wordt koperrood.' : '🌖 Maansverduistering bezig.');
       g.save();
       g.beginPath(); g.arc(x, y, r + .5, 0, 7); g.clip();
       g.fillStyle = `rgba(20,10,10,${.25 * s.pen})`; g.fillRect(x - r - 2, y - r - 2, r * 2 + 4, r * 2 + 4);   // the faint half-shadow
@@ -318,6 +359,7 @@
       wasRain = rain;
       const want = ((cfg().rainbow && !rain && Date.now() - rainEnd < 20 * 60000 && sun.alt > 2 && sun.alt < 40 && A.weather() !== 'mist') || force('regenboog')) ? 1 : 0;
       bowA += Math.sign(want - bowA) * Math.min(Math.abs(want - bowA), 1 / 2400);   // fades in and out over about forty seconds
+      if (want) note('bow', '🌈 Een regenboog na de regen.'); else if (once.bow && bowA <= 0) forget('bow');
       if (bowA <= 0) return;
       const left = sun.az > 180 || force('regenboog');   // always on the side opposite the sun
       const cx = left ? W * .26 : W * .74, cy = HOR0 + 120 + sun.alt * 4, R = W * .52;
@@ -349,6 +391,7 @@
       const autumn = new Date().getMonth() >= 6, dir = autumn ? 1 : -1, n = 7 + Math.floor(Math.random() * 10), birds = [];
       const armL = Math.floor((n - 1) / 2 + (Math.random() - .5) * 3);
       for (let k = 0; k < n; k++) { const side = k === 0 ? 0 : (k <= armL ? -1 : 1), rank = k === 0 ? 0 : k <= armL ? k : k - armL; birds.push({ side, rank, ph: Math.random() * 6, sp: 5.5 + Math.random() * 1.5, wob: Math.random() * 100 }); }
+      A.log('lucht', `🪿 Een V van ${n} ganzen trekt over (naar het ${autumn ? 'zuidwesten' : 'noordoosten'}).`);
       flyers.push({ kind: 'geese', x: dir > 0 ? -140 : W + 140, y: 80 + Math.random() * 120, dir, v: 38 + Math.random() * 14, birds, seed: Math.random() * 100, z: .8 + Math.random() * .4 });
     }
     function geeseSeason(d) { const m = d.getMonth() + 1, day = d.getDate(); return (m === 9 && day > 15) || m === 10 || m === 11 || m === 2 || m === 3; }
@@ -455,14 +498,254 @@
       return null;
     }
 
+    /* ---------- weather you can feel: rain on its way, storm, frost, heat, strong sun ---------- */
+    const WX = { temp: null, uv: null, gust: null, bearing: null, rain: null };
+    const once = {};
+    const note = (key, text) => { if (once[key]) return; once[key] = true; A.log('lucht', text); };
+    const forget = (key) => { once[key] = false; };
+    function stormK() {
+      if (force('storm')) return 1;
+      if (cfg().storm === false) return 0;
+      const w = Math.max(+A.wind() || 0, (+WX.gust || 0) * .8);
+      return clamp((w - 50) / 40, 0, 1);   // from about 50 km/h it gets wild, from 90 km/h it's a real storm
+    }
+    const frostK = () => force('vorst') ? 1 : cfg().frost_heat === false || WX.temp === null ? 0 : clamp(-WX.temp / 6, 0, 1);
+    const heatK = () => force('hitte') ? 1 : cfg().frost_heat === false || WX.temp === null ? 0 : clamp((WX.temp - 28) / 6, 0, 1);
+    const uvHigh = () => force('uv') || (cfg().uv !== false && WX.uv !== null && +WX.uv >= 6);
+    // the rain cloud: far away behind Kamiel at first, a little closer and darker every minute
+    let rcImg = null, rcKey = '';
+    function rainCloud(g, sun) {
+      const r = WX.rain || (force('regenwolk') ? { in: 15, t0: Date.now() / 1000 - (A.t() % 40) / 40 * 900 } : null);
+      if (!r || A.rainy()) { if (once.rain) forget('rain'); return; }
+      const total = Math.max(5, +r.in || 15) * 60, p = clamp((Date.now() / 1000 - (+r.t0 || Date.now() / 1000)) / total, 0, 1);
+      const cl = A.clouds0(); if (!cl) return;
+      if (rcKey !== cl.src) {   // the same cloud picture, but heavy and dark
+        rcKey = cl.src; rcImg = document.createElement('canvas'); rcImg.width = cl.width; rcImg.height = cl.height;
+        const q = rcImg.getContext('2d'); q.drawImage(cl, 0, 0); q.globalCompositeOperation = 'source-atop';
+        const gr = q.createLinearGradient(0, 0, 0, cl.height); gr.addColorStop(0, 'rgba(70,78,96,.82)'); gr.addColorStop(1, 'rgba(30,34,46,.92)'); q.fillStyle = gr; q.fillRect(0, 0, cl.width, cl.height);
+      }
+      const from = WX.bearing !== null && WX.bearing !== undefined ? (A.azX(+WX.bearing) < W / 2 ? -1 : 1) : 1;
+      const w = 320 + 520 * p, h = w * rcImg.height / rcImg.width, x = W / 2 + from * (W * .4) * (1 - p) - w / 2, y = HOR0 - h * .8 - 230 * p * p;
+      const L = clamp((sun.alt + 6) / 14, .25, 1);
+      g.save(); g.globalAlpha = .55 + .4 * p; g.filter = `brightness(${L})`; g.drawImage(rcImg, x, y, w, h); g.filter = 'none';
+      if (p > .65) {   // the first rain falls from it, not yet on Kamiel
+        const k = (p - .65) / .35; g.strokeStyle = `rgba(150,165,200,${.35 * k})`; g.lineWidth = 1; g.beginPath();
+        for (let i = 0; i < 40 * k; i++) { const rx = x + w * (.15 + .7 * hsh(i * 3.1)), ry = y + h * .7 + ((A.t() * 260 + i * 37) % (HOR0 - y - h * .6)); g.moveTo(rx, ry); g.lineTo(rx - 3, ry + 12); }
+        g.stroke();
+      }
+      g.restore();
+      note('rain', `🌧️ De regenwolk is in beeld (regen over ongeveer ${Math.round((1 - p) * total / 60)} min).`);
+    }
+    // storm: things fly by, everything sways, the sky gets heavy
+    const debris = [];
+    function drawStorm(g) {
+      const k = stormK();
+      if (k <= 0) { if (once.storm) forget('storm'); return; }
+      note('storm', `🌪️ Storm: wind ${Math.round(Math.max(+A.wind() || 0, +WX.gust || 0))} km/u. Alles waait.`);
+      g.fillStyle = `rgba(30,34,48,${.28 * k})`; g.fillRect(0, 0, W, HOR0 + 40);
+      const dir = WX.bearing !== null && WX.bearing !== undefined ? (A.azX(+WX.bearing) < W / 2 ? 1 : -1) : 1;
+      if (debris.length < 26 * k && Math.random() < .25 * k) debris.push({ x: dir > 0 ? -30 : W + 30, y: 120 + Math.random() * (HOR0 + 60), v: (420 + Math.random() * 420) * dir, r: Math.random() * 6, vr: (Math.random() - .5) * 14, kind: Math.random() < .7 ? 'blad' : 'papier', c: ['#b5651d', '#d9a441', '#8a9a3c', '#c0392b'][Math.floor(Math.random() * 4)], seed: Math.random() * 99 });
+      const dt = 1 / 60;
+      for (let i = debris.length - 1; i >= 0; i--) {
+        const d = debris[i]; d.x += d.v * dt; d.y += Math.sin(A.t() * 3 + d.seed) * 60 * dt; d.r += d.vr * dt;
+        if (d.x < -60 || d.x > W + 60) { debris.splice(i, 1); continue; }
+        g.save(); g.translate(d.x, d.y); g.rotate(d.r);
+        if (d.kind === 'blad') { g.fillStyle = d.c; g.beginPath(); g.ellipse(0, 0, 7, 3.5, 0, 0, 7); g.fill(); }
+        else { g.fillStyle = 'rgba(240,240,232,.9)'; g.fillRect(-8, -6, 16, 12); g.fillStyle = 'rgba(120,120,140,.6)'; g.fillRect(-6, -3, 12, 1); g.fillRect(-6, 1, 9, 1); }
+        g.restore();
+      }
+    }
+    // frost: ice crystals grow in from the edges of the screen, and Kamiel's breath shows
+    let frostCv = null, breath = [], breathT = 0;
+    function makeFrost() {
+      frostCv = document.createElement('canvas'); frostCv.width = W; frostCv.height = H; const g = frostCv.getContext('2d');
+      g.lineCap = 'round';
+      // ice ferns: short straight arms that split at 60°, dense in the corners, thinning out toward the middle
+      const branch = (x, y, ang, len, depth, w) => {
+        if (depth <= 0 || len < 2) return;
+        const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+        g.strokeStyle = `rgba(240,248,255,${.22 + depth * .07})`; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
+        const n = 2 + Math.floor(Math.random() * 3);
+        for (let i = 1; i <= n; i++) { const f = i / (n + 1), bx = x + (x2 - x) * f, by = y + (y2 - y) * f, bl = len * (.55 - f * .3);
+          for (const sd of [-1, 1]) branch(bx, by, ang + sd * Math.PI / 3, bl, depth - 2, w * .6); }
+        branch(x2, y2, ang + (Math.random() - .5) * .35, len * .8, depth - 1, w * .85);
+      };
+      const corner = (cx, cy, base) => { for (let k = 0; k < 9; k++) branch(cx, cy, base + (k / 8) * Math.PI / 2 + (Math.random() - .5) * .15, 18 + Math.random() * 26, 6, 2.4); };
+      corner(0, 0, 0); corner(W, 0, Math.PI / 2); corner(W, H, Math.PI); corner(0, H, Math.PI * 1.5);
+      for (let k = 0; k < 46; k++) {   // and along the edges
+        const e = k % 4, tt = Math.random();
+        const x = e === 0 ? tt * W : e === 1 ? W : e === 2 ? tt * W : 0, y = e === 0 ? 0 : e === 1 ? tt * H : e === 2 ? H : tt * H;
+        const ang = [Math.PI / 2, Math.PI, -Math.PI / 2, 0][e] + (Math.random() - .5) * 1.1;
+        branch(x, y, ang, 10 + Math.random() * 22, 5, 1.8);
+      }
+      const vg = g.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .85); vg.addColorStop(0, 'rgba(225,238,255,0)'); vg.addColorStop(.7, 'rgba(225,238,255,.12)'); vg.addColorStop(1, 'rgba(225,238,255,.5)');
+      g.fillStyle = vg; g.fillRect(0, 0, W, H);
+    }
+    function drawFrost(g) {
+      const k = frostK();
+      if (k <= 0) { if (once.frost) forget('frost'); return; }
+      note('frost', `❄️ Het vriest (${WX.temp !== null ? Math.round(WX.temp) + '°C' : 'test'}): ijsbloemen op het scherm.`);
+      if (!frostCv) makeFrost();
+      g.save(); g.globalAlpha = .35 + .65 * k; g.drawImage(frostCv, 0, 0); g.restore();
+      // breath: a little cloud from Kamiel's nose every few seconds
+      const t = A.t();
+      if (t - breathT > 2.6 && !A.eventOn()) { breathT = t; const n = A.nose(); if (n) breath.push({ x: n.x, y: n.y, t0: t, dir: A.face() }); }
+      for (let i = breath.length - 1; i >= 0; i--) {
+        const b = breath[i], a = t - b.t0; if (a > 1.8) { breath.splice(i, 1); continue; }
+        g.fillStyle = `rgba(240,245,255,${.45 * (1 - a / 1.8)})`;
+        for (let j = 0; j < 3; j++) { g.beginPath(); g.arc(b.x + b.dir * (8 + a * 26 + j * 6), b.y - a * 10 + j * 2, 4 + a * 8 - j, 0, 7); g.fill(); }
+      }
+    }
+    // heat: the air above the horizon shimmers, a warm haze
+    const shimmerCv = document.createElement('canvas');
+    function drawHeat(g, cv) {
+      const k = heatK();
+      if (k <= 0) { if (once.heat) forget('heat'); return; }
+      note('heat', `🔥 Het is ${WX.temp !== null ? Math.round(WX.temp) + '°C' : 'heet (test)'}: de lucht trilt boven de horizon.`);
+      const y0 = HOR0 - 70, hh = 120; shimmerCv.width = W; shimmerCv.height = hh;
+      const q = shimmerCv.getContext('2d'); q.clearRect(0, 0, W, hh); q.drawImage(cv, 0, y0, W, hh, 0, 0, W, hh);
+      const t = A.t();
+      for (let y = 0; y < hh; y += 2) { const off = Math.sin(y * .25 + t * 6) * 2.2 * k + Math.sin(y * .11 - t * 3.7) * 1.4 * k; g.drawImage(shimmerCv, 0, y, W, 2, off, y0 + y, W, 2); }
+      g.fillStyle = `rgba(255,170,90,${.07 * k})`; g.fillRect(0, 0, W, H);
+    }
+    // strong sun: a soft lens flare (and Kamiel's sunglasses, see display.html)
+    function drawFlare(g, sun) {
+      if (!uvHigh() || sun.alt < 5) { if (once.uv) forget('uv'); return; }
+      note('uv', `😎 UV-index ${WX.uv !== null ? Math.round(WX.uv) : 'hoog (test)'}: Kamiel zet zijn zonnebril op.`);
+      const sx = A.azX(sun.az), sy = A.altY(sun.alt); if (sx < -100 || sx > W + 100) return;
+      const cx = W / 2, cy = H / 2;
+      g.save(); g.globalCompositeOperation = 'screen';
+      [[.35, 26, '255,220,150', .12], [.6, 14, '150,220,255', .14], [.85, 40, '255,170,200', .08], [1.25, 20, '200,255,200', .1], [1.5, 60, '255,230,180', .06]].forEach(([f, r, c, a]) => {
+        const x = sx + (cx - sx) * f * 2, y = sy + (cy - sy) * f * 2;
+        const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${c},${a})`); gr.addColorStop(.7, `rgba(${c},${a * .6})`); gr.addColorStop(1, `rgba(${c},0)`);
+        g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+      });
+      g.restore();
+    }
+
+    /* ---------- the telescope: everything worth seeing tonight, and a look through the eyepiece ---------- */
+    const DSO = [
+      ['Pleiaden (Zevengesternte)', 'M45', 3.79, 24.1, 'open sterrenhoop'], ['Orionnevel', 'M42', 5.59, -5.39, 'gasnevel waar sterren geboren worden'],
+      ['Andromedastelsel', 'M31', .712, 41.27, 'het verste wat je met het blote oog kan zien: 2,5 miljoen lichtjaar'], ['Bijenkorf', 'M44', 8.67, 19.98, 'open sterrenhoop'],
+      ['Ringnevel', 'M57', 18.89, 33.03, 'een gestorven ster met een ring van gas'], ['Herculescluster', 'M13', 16.69, 36.46, 'bolhoop van honderdduizenden sterren'],
+      ['Dubbele sterrenhoop', 'h+χ Per', 2.33, 57.13, 'twee sterrenhopen naast elkaar'], ['Halternevel', 'M27', 19.99, 22.72, 'planetaire nevel'],
+      ['Albireo', 'β Cyg', 19.51, 27.96, 'dubbelster: goud en blauw'], ['Mizar en Alcor', 'ζ UMa', 13.40, 54.93, 'dubbelster in de Grote Beer'],
+      ['Lagunenevel', 'M8', 18.06, -24.38, 'gasnevel, laag in het zuiden'], ['Bode-stelsel', 'M81', 9.93, 69.07, 'spiraalstelsel'],
+    ];
+    const DIRS = ['N', 'NO', 'O', 'ZO', 'Z', 'ZW', 'W', 'NW'], dirOf = (az) => DIRS[Math.round(((az % 360) + 360) % 360 / 45) % 8];
+    const hm = (dt) => dt ? String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0') : '–';
+    const PNL = { Venus: 'Venus', Jupiter: 'Jupiter', Mars: 'Mars', Saturn: 'Saturnus', Mercury: 'Mercurius', Moon: 'Maan' };
+    function riseSet(body, d, dir) { try { const r = AST.SearchRiseSet(body, observer(), dir, new Date(d.getTime() - 3 * 3600e3), 1.2); return r ? r.date : null; } catch (e) { return null; } }
+    function issPasses(d) {
+      if (!satrec) return [];
+      const out = []; let cur = null;
+      for (let m = 0; m < 12 * 60; m += .5) {
+        const t = new Date(d.getTime() + m * 60000), p = issNow(t); if (!p) continue;
+        if (p.alt > 10) { if (!cur) cur = { start: t, max: p.alt, az0: p.az, azMax: p.az }; else if (p.alt > cur.max) { cur.max = p.alt; cur.azMax = p.az; } cur.end = t; cur.az1 = p.az; }
+        else if (cur) { out.push(cur); cur = null; if (out.length >= 4) break; }
+      }
+      if (cur) out.push(cur);
+      return out;
+    }
+    function tonight(d) {
+      const o = observer(), sec = [];
+      if (!AST) return [{ title: 'Kamiel kan de hemel niet uitrekenen', rows: [] }];
+      const ill = AST.Illumination('Moon', d), ph = AST.MoonPhase(d), pctLit = Math.round(ill.phase_fraction * 100);
+      const phName = ph < 22.5 || ph > 337.5 ? 'nieuwe maan' : ph < 67.5 ? 'wassende sikkel' : ph < 112.5 ? 'eerste kwartier' : ph < 157.5 ? 'wassende maan' : ph < 202.5 ? 'volle maan' : ph < 247.5 ? 'afnemende maan' : ph < 292.5 ? 'laatste kwartier' : 'afnemende sikkel';
+      const mEq = AST.Equator('Moon', d, o, true, true), mH = AST.Horizon(d, o, mEq.ra, mEq.dec, 'normal');
+      sec.push({ title: 'De maan', rows: [{ id: 'moon', name: phName[0].toUpperCase() + phName.slice(1) + ', ' + pctLit + '% verlicht', info: mH.altitude > 0 ? `nu ${Math.round(mH.altitude)}° hoog in het ${dirOf(mH.azimuth)}` : `komt op om ${hm(riseSet('Moon', d, +1))}` }] });
+      const pl = [];
+      for (const [body] of PLANETS) {
+        try {
+          const e = AST.Equator(body, d, o, true, true), h = AST.Horizon(d, o, e.ra, e.dec, 'normal'), mag = AST.Illumination(body, d).mag;
+          const up = h.altitude > 3, rise = riseSet(body, d, +1), set = riseSet(body, d, -1);
+          pl.push({ id: 'planet:' + body, name: PNL[body], mag, info: up ? `nu ${Math.round(h.altitude)}° hoog in het ${dirOf(h.azimuth)}, gaat onder om ${hm(set)}` : `komt op om ${hm(rise)} (${dirOf(AST.Horizon(rise || d, o, e.ra, e.dec, 'normal').azimuth)})`, up });
+        } catch (e) { }
+      }
+      sec.push({ title: 'Planeten', rows: pl.sort((a, b) => (b.up - a.up) || a.mag - b.mag).map(p => ({ id: p.id, name: p.name + (p.up ? '' : ' (nog niet op)'), info: p.info + ` · helderheid ${p.mag.toFixed(1)}` })) });
+      if (SD) {
+        const lst = lstDeg(d), sinP = Math.sin(A.lat() * D2R), cosP = Math.cos(A.lat() * D2R), cons = [];
+        for (const k in SD.NAMES) { const [nm, ra, dec, rank] = SD.NAMES[k]; if (rank > 2) continue; const [az, alt] = altaz(ra, dec, lst, sinP, cosP); if (alt > 20) cons.push({ nm, az, alt, rank }); }
+        cons.sort((a, b) => a.rank - b.rank || b.alt - a.alt);
+        sec.push({ title: 'Sterrenbeelden die nu goed staan', rows: cons.slice(0, 8).map(c => ({ id: 'con', name: c.nm, info: `${Math.round(c.alt)}° hoog in het ${dirOf(c.az)}` })) });
+        const ds = [];
+        for (const [nm, code, ra, dec, what] of DSO) { const [az, alt] = altaz(ra, dec, lst, sinP, cosP); if (alt > 15) ds.push({ id: 'dso:' + code, name: nm + ' (' + code + ')', info: what + ` · ${Math.round(alt)}° hoog in het ${dirOf(az)}` }); }
+        if (ds.length) sec.push({ title: 'Voor de telescoop', rows: ds });
+      }
+      const ps = issPasses(d);
+      sec.push({ title: 'Het ISS', rows: ps.length ? ps.map(p => ({ id: 'iss', name: `${hm(p.start)} – ${hm(p.end)}`, info: `van ${dirOf(p.az0)} naar ${dirOf(p.az1)}, hoogste punt ${Math.round(p.max)}° in het ${dirOf(p.azMax)}` }))
+        : [{ id: 'iss', name: satrec ? 'Komt de komende 12 uur niet hoog genoeg over' : 'De baan is nog niet binnen', info: '' }] });
+      const sh = showerNow(d);
+      if (sh && sh.rate > 5) sec.push({ title: 'Vallende sterren', rows: [{ id: 'met', name: 'De ' + sh.s.name, info: `tot ${Math.round(sh.rate)} per uur aan de hele hemel; het best na middernacht` }] });
+      try {
+        const se = AST.SearchLocalSolarEclipse(d, o), le = AST.SearchLunarEclipse(d), rows = [];
+        if (se.peak.time.date - d < 400 * 864e5) rows.push({ id: 'ecl', name: 'Zonsverduistering ' + se.peak.time.date.toLocaleDateString('nl-BE', { day: 'numeric', month: 'long', year: 'numeric' }), info: `${se.kind === 'partial' ? 'gedeeltelijk' : se.kind === 'total' ? 'totaal' : 'ringvormig'}, ${Math.round(se.obscuration * 100)}% van de zon bedekt, om ${hm(se.peak.time.date)}` });
+        if (le.peak.date - d < 400 * 864e5) rows.push({ id: 'ecl', name: 'Maansverduistering ' + le.peak.date.toLocaleDateString('nl-BE', { day: 'numeric', month: 'long', year: 'numeric' }), info: `${le.kind === 'total' ? 'totaal' : le.kind === 'partial' ? 'gedeeltelijk' : 'bijschaduw'}, hoogtepunt om ${hm(le.peak.date)}` });
+        if (rows.length) sec.push({ title: 'Binnenkort', rows });
+      } catch (e) { }
+      const ss = riseSet('Sun', d, -1), sr = riseSet('Sun', new Date(d.getTime() + 6 * 3600e3), +1);
+      sec.push({ title: 'De zon', rows: [{ id: 'sun', name: `Onder om ${hm(ss)}, op om ${hm(sr)}`, info: '' }] });
+      return sec;
+    }
+    // the eyepiece: a round view with the chosen object
+    function eyepiece(c, id, d) {
+      const g = c.getContext('2d'), R = c.width / 2;
+      g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+      g.save(); g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.clip();
+      g.fillStyle = '#05060d'; g.fillRect(0, 0, c.width, c.height);
+      const rs = (k) => hsh(k * 7.31 + id.length * 3.1);
+      for (let k = 0; k < 70; k++) { g.fillStyle = `rgba(255,255,255,${.2 + rs(k) * .6})`; g.fillRect(rs(k + 100) * c.width, rs(k + 200) * c.height, rs(k) > .9 ? 2 : 1, rs(k) > .9 ? 2 : 1); }
+      const disc = (r, col, shade) => { const gr = g.createRadialGradient(R - r * .3, R - r * .3, r * .1, R, R, r); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]); g.fillStyle = gr; g.beginPath(); g.arc(R, R, r, 0, 7); g.fill(); if (shade) shade(r); };
+      if (id === 'moon' || id === 'ecl') {
+        const r = R * .78, ph = AST ? AST.MoonPhase(d) / 360 : .5;
+        disc(r, ['#f2efe6', '#b9b5aa']);
+        g.fillStyle = 'rgba(110,108,100,.35)';
+        [[-.3, -.2, .22], [.15, -.3, .15], [.25, .1, .2], [-.15, .3, .14], [-.45, .15, .1], [.4, -.05, .08]].forEach(([u, v, z]) => { g.beginPath(); g.arc(R + u * r, R + v * r, z * r, 0, 7); g.fill(); });
+        for (let k = 0; k < 40; k++) { g.strokeStyle = 'rgba(90,88,80,.35)'; g.beginPath(); g.arc(R + (rs(k) - .5) * r * 1.6, R + (rs(k + 50) - .5) * r * 1.6, 2 + rs(k + 9) * 7, 0, 7); g.stroke(); }
+        // the dark part: waxing = lit on the right
+        const k = Math.cos(ph * 2 * Math.PI), waxing = ph < .5;
+        g.fillStyle = 'rgba(3,4,10,.93)'; g.beginPath();
+        if (waxing) { g.arc(R, R, r + 1, Math.PI / 2, Math.PI * 1.5); g.ellipse(R, R, Math.abs(k) * r, r + 1, 0, Math.PI * 1.5, Math.PI / 2, k < 0); }
+        else { g.arc(R, R, r + 1, -Math.PI / 2, Math.PI / 2); g.ellipse(R, R, Math.abs(k) * r, r + 1, 0, Math.PI / 2, Math.PI * 1.5, k < 0); }
+        g.fill();
+      } else if (id.startsWith('planet:')) {
+        const body = id.split(':')[1];
+        if (body === 'Jupiter') {
+          disc(R * .32, ['#f3e2c4', '#b89768'], (r) => { for (let b = 0; b < 6; b++) { g.fillStyle = b % 2 ? 'rgba(160,110,70,.45)' : 'rgba(255,240,220,.25)'; g.fillRect(R - r, R - r * .55 + b * r * .2, r * 2, r * .1); } g.fillStyle = 'rgba(190,90,60,.6)'; g.beginPath(); g.ellipse(R + r * .35, R + r * .25, r * .14, r * .08, 0, 0, 7); g.fill(); });
+          // the four big moons in their real order and side (squeezed a little so they fit in the eyepiece)
+          try { const jm = AST.JupiterMoons(d), r0 = R * .32; ['io', 'europa', 'ganymede', 'callisto'].forEach((k) => { const m = jm[k], x = m.x, off = Math.min(R * .9, r0 + Math.sqrt(Math.abs(x) / .0126) * (R * .86 - r0));
+            g.fillStyle = '#fff'; g.beginPath(); g.arc(R + Math.sign(x) * off, R + (m.y > 0 ? -1 : 1) * Math.min(6, Math.abs(m.y) * 400), 2.4, 0, 7); g.fill(); }); } catch (e) { }
+        } else if (body === 'Saturn') {
+          g.strokeStyle = 'rgba(230,210,160,.85)'; g.lineWidth = 4; g.beginPath(); g.ellipse(R, R, R * .62, R * .17, -.12, 0, 7); g.stroke();
+          disc(R * .26, ['#f5e2b0', '#b8995c']);
+          g.strokeStyle = 'rgba(230,210,160,.9)'; g.beginPath(); g.ellipse(R, R, R * .62, R * .17, -.12, 0, Math.PI); g.stroke();
+        } else if (body === 'Mars') disc(R * .2, ['#ff9b6a', '#a8401f'], (r) => { g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.ellipse(R, R - r * .85, r * .35, r * .14, 0, 0, 7); g.fill(); });
+        else if (body === 'Venus') { const f = AST.Illumination('Venus', d).phase_fraction; disc(R * .3, ['#fffbea', '#d9cfae']); g.fillStyle = 'rgba(5,6,13,.97)'; g.beginPath(); g.ellipse(R - R * .3 * (f - .5) * 2, R, R * .3, R * .31, 0, 0, 7); g.fill(); }
+        else disc(R * .12, ['#e8e0d0', '#9a9080']);
+      } else if (id.startsWith('dso:')) {
+        const code = id.split(':')[1];
+        if (code === 'M45' || code === 'M44' || code.startsWith('h+')) { for (let k = 0; k < (code === 'M45' ? 14 : 40); k++) { const r = code === 'M45' && k < 7 ? 3.2 : 1.6; g.fillStyle = code === 'M45' ? 'rgba(200,220,255,.95)' : 'rgba(255,245,230,.9)'; g.beginPath(); g.arc(R + (rs(k + 300) - .5) * R * 1.2, R + (rs(k + 400) - .5) * R * 1.2, r, 0, 7); g.fill(); } }
+        else if (code === 'M42' || code === 'M8') { const gr = g.createRadialGradient(R, R, 4, R, R, R * .7); gr.addColorStop(0, 'rgba(255,170,190,.7)'); gr.addColorStop(.5, 'rgba(160,110,200,.35)'); gr.addColorStop(1, 'rgba(60,40,120,0)'); g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#fff'; [[0, 0], [5, 3], [-4, 4], [2, -5]].forEach(([u, v]) => g.fillRect(R + u, R + v, 2, 2)); }
+        else if (code === 'M31' || code === 'M81') { g.save(); g.translate(R, R); g.rotate(-.6); const gr = g.createRadialGradient(0, 0, 2, 0, 0, R * .8); gr.addColorStop(0, 'rgba(255,245,225,.9)'); gr.addColorStop(.3, 'rgba(220,210,200,.35)'); gr.addColorStop(1, 'rgba(120,120,140,0)'); g.scale(1, .3); g.fillStyle = gr; g.beginPath(); g.arc(0, 0, R * .8, 0, 7); g.fill(); g.restore(); }
+        else if (code === 'M57' || code === 'M27') { g.strokeStyle = 'rgba(140,220,200,.75)'; g.lineWidth = R * .12; g.beginPath(); g.ellipse(R, R, R * .32, R * .24, .3, 0, 7); g.stroke(); }
+        else if (code === 'M13') { for (let k = 0; k < 220; k++) { const a = rs(k + 500) * 7, r = Math.pow(rs(k + 600), 2) * R * .55; g.fillStyle = 'rgba(255,240,215,.75)'; g.fillRect(R + Math.cos(a) * r, R + Math.sin(a) * r, 1.4, 1.4); } }
+        else { g.fillStyle = '#ffcf6a'; g.beginPath(); g.arc(R - 10, R, 5, 0, 7); g.fill(); g.fillStyle = '#7fb0ff'; g.beginPath(); g.arc(R + 10, R + 4, 3.5, 0, 7); g.fill(); }
+      } else { g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(R, R, 3, 0, 7); g.fill(); }
+      g.restore();
+      g.strokeStyle = '#222'; g.lineWidth = 6; g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.stroke();
+      const v = g.createRadialGradient(R, R, R * .7, R, R, R); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.6)'); g.fillStyle = v; g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.fill();
+    }
+
     return {
       back(g, d, sun) { try { drawRainbow(g, d, sun); drawNebula(g, d, sun); drawStars(g, d, sun); drawISS(g, d, sun); drawMeteors(g, d, sun); } catch (e) { console.error('sky', e); } },
       flyers(g, d, sun) { try { drawFlyers(g, d, sun); } catch (e) { console.error('flyers', e); } },
-      screen(g, sun) { try { drawLights(g, sun); drawLightning(g); } catch (e) { console.error('sky screen', e); } },
+      rainCloud(g, sun) { try { rainCloud(g, sun); } catch (e) { console.error('rain cloud', e); } },
+      screen(g, sun, cv) { try { if (cv) drawHeat(g, cv); drawStorm(g); drawLights(g, sun); drawLightning(g); drawFlare(g, sun); drawFrost(g); } catch (e) { console.error('sky screen', e); } },
+      storm: stormK, uvHigh,
       sunEclipse, drawMoonShadow, moonShadow,
-      onState(s) { if (s && s.tle) setTle(s.tle); },
+      onState(s, st) { if (s && s.tle) setTle(s.tle); if (s) WX.rain = s.rain_soon || null; if (st) { WX.temp = st.temp === null || st.temp === undefined ? null : +st.temp; WX.uv = st.uv === null || st.uv === undefined ? null : +st.uv; WX.gust = st.gust; WX.bearing = st.bearing; } },
       onLive(s) { if (!s) return; (s.planes || []).forEach(addPlane); (s.strikes || []).forEach(addStrike); },
-      tap,
+      tap, tonight, eyepiece,
       debug: () => ({ shower: showerNow(A.now()), nebula: neb && neb.on, iss: iss, flyers: flyers.map(f => ({ kind: f.kind, x: f.x, y: f.sy === undefined ? f.y : f.sy })), eclipses: ecl }),
     };
   }

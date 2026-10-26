@@ -78,6 +78,7 @@
     { id: 'deurbel', name: 'Er wordt aangebeld', cat: 'intern' },
     { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
     { id: 'begroeten', name: 'Een huisdier komt Kamiel begroeten', cat: 'intern' },
+    { id: 'telescoop', name: 'Kamiel kijkt door zijn telescoop (tik op de maan)', cat: 'intern' },
     { id: 'dansfeest', name: 'Dansfeest: iedereen danst op het nummer', cat: 'muziek' },
     { id: 'heidiwraak', name: 'Heidi’s wraak: ze kaapt het scherm', cat: 'verhaal' },
     { id: 'ufo', name: 'Dobby wordt ontvoerd door een ufo', cat: 'verhaal' },
@@ -2313,6 +2314,31 @@
         const flash = fx('screen', .6, (g, age) => { g.fillStyle = `rgba(255,255,255,${1 - age / .6})`; g.fillRect(0, 0, W, H); });
         kam.x = 0; kam.eyes = 'groot'; emote('!?', 2.5); yield* hop(30, .35); yield* shiver(2, 3);
         yield* wait(1); kam.eyes = 'triest'; emote('sweat', 3); yield* wait(3); kam.eyes = '';
+      } },
+      // tap on the moon: Kamiel sets up his telescope, looks, and shows what there is to see tonight
+      telescoop: { run: function* () {
+        const mo = (A.moon && A.moon()) || { x: W * .7, y: 110 }, side = mo.x > kx() ? 1 : -1;
+        const sc = { x: kx() + side * 70, a: 0, up: 0 };
+        fx('back', 0, (g) => {
+          if (sc.a <= 0) return; g.save(); g.globalAlpha = sc.a;
+          const bx = sc.x, by = FEET - 4, top = by - 92 * sc.up;
+          g.strokeStyle = '#3a2a1a'; g.lineWidth = 3; [-16, 0, 16].forEach(dx => { g.beginPath(); g.moveTo(bx + dx, by); g.lineTo(bx, top); g.stroke(); });
+          const ang = Math.atan2(mo.y - top, mo.x - bx) * sc.up + (1 - sc.up) * -.2;
+          g.translate(bx, top); g.rotate(ang);
+          g.fillStyle = '#b8862e'; g.fillRect(-46, -7, 92, 14); g.fillStyle = '#e8c46a'; g.fillRect(-46, -7, 92, 3);
+          g.fillStyle = '#2a2016'; g.fillRect(40, -9, 10, 18); g.fillStyle = '#5a4a3a'; g.fillRect(-56, -4, 12, 8);
+          g.restore();
+        });
+        kam.eyes = 'blij'; emote('!', 1.2);
+        yield* tween(1, p => { sc.a = p; }); yield* tween(1.2, p => { sc.up = ez(p); });
+        yield* walkTo(sc.x - kx() + kam.x - side * 62, 60); kam.face = side;
+        kam.head = .25; kam.eyes = 'dicht'; yield* wait(1.4);
+        kam.eyes = 'groot'; emote('sparks', 2);
+        if (A.openTelescope) A.openTelescope();
+        yield* wait(9);
+        kam.head = 0; kam.eyes = 'blij'; emote('hearts', 2); yield* wait(1.5);
+        yield* tween(1, p => { sc.up = 1 - ez(p); }); yield* tween(.8, p => { sc.a = 1 - p; });
+        kam.eyes = ''; if (kam.x) yield* walkTo(0, 50);
       } },
       wolkrit: { walk: true, run: function* () {
         const d = rnd() < .5 ? -1 : 1, img = A.CL.length ? pick(A.CL).img : null;

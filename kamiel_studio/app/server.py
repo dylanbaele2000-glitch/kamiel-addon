@@ -25,6 +25,7 @@ ORIG = os.path.join(DATA, "originals")
 HOUSE = os.path.join(DATA, "house")   # the drawings of the floors: private, so never on the tablet port
 DB_FILE = os.path.join(DATA, "kamiel.json")
 LOG_FILE = os.path.join(DATA, "logboek.json")
+SKYLOG_FILE = os.path.join(DATA, "logboek_lucht.json")   # the sky has its own logbook (planes, shooting stars…), so it never pushes the rest out
 
 
 def _addon_version():
@@ -138,7 +139,8 @@ DEFAULT_SETTINGS = {
     "air": {"on": False, "entity": "", "warn": 1000, "bad": 1500, "invert": False},
     # the real sky: what shows, how often a nebula night comes (%), and the lightning radius (km)
     "sky": {"stars": True, "planets": True, "meteors": True, "nebula": 10, "iss": True, "eclipses": True, "rainbow": True, "geese": True,
-            "planes": True, "lightning": True, "lightning_km": 25},
+            "planes": True, "lightning": True, "lightning_km": 25, "telescope": True,
+            "rain_cloud": True, "storm": True, "frost_heat": True, "uv": True, "rain_entity": "", "uv_entity": "", "temp_entity": ""},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -252,6 +254,19 @@ def load_db():
 LOG_KINDS = ("event", "dier", "weer", "huis", "deurbel", "telegram", "selfie", "tablet", "systeem", "fout")
 LOG = {"items": None, "dirty": False, "n": 0}
 LOG_MAX = 1500
+SKYLOG = {"items": None, "dirty": False, "n": 0}
+SKYLOG_MAX = 1000
+
+
+def _sky_items():
+    if SKYLOG["items"] is None:
+        try:
+            with open(SKYLOG_FILE) as f:
+                SKYLOG["items"] = json.load(f)[-SKYLOG_MAX:]
+        except (OSError, ValueError):
+            SKYLOG["items"] = []
+        SKYLOG["n"] = SKYLOG["items"][-1]["n"] if SKYLOG["items"] else 0
+    return SKYLOG["items"]
 
 
 def _log_items():
@@ -266,7 +281,14 @@ def _log_items():
 
 
 def log(kind, text, quiet=False):
-    """One line in the logbook (and in the add-on log)."""
+    """One line in the logbook (and in the add-on log). Kind 'lucht' goes to the sky's own logbook."""
+    if kind == "lucht":
+        items = _sky_items()
+        SKYLOG["n"] += 1
+        items.append({"n": SKYLOG["n"], "t": time.time(), "kind": "lucht", "text": str(text)[:300]})
+        del items[:-SKYLOG_MAX]
+        SKYLOG["dirty"] = True
+        return
     items = _log_items()
     LOG["n"] += 1
     items.append({"n": LOG["n"], "t": time.time(), "kind": kind if kind in LOG_KINDS else "systeem", "text": str(text)[:300]})
@@ -279,6 +301,14 @@ def log(kind, text, quiet=False):
 async def log_writer():
     while True:
         await asyncio.sleep(5)
+        if SKYLOG["dirty"] and SKYLOG["items"] is not None:
+            SKYLOG["dirty"] = False
+            try:
+                with open(SKYLOG_FILE + ".tmp", "w") as f:
+                    json.dump(SKYLOG["items"], f)
+                os.replace(SKYLOG_FILE + ".tmp", SKYLOG_FILE)
+            except OSError:
+                pass
         if LOG["dirty"] and LOG["items"] is not None:
             LOG["dirty"] = False
             try:
@@ -292,10 +322,14 @@ async def log_writer():
 
 async def api_log_get(request):
     after = int(request.query.get("after", 0) or 0)
-    return web.json_response([x for x in _log_items() if x["n"] > after][-600:])
+    items = _sky_items() if request.query.get("soort") == "lucht" else _log_items()
+    return web.json_response([x for x in items if x["n"] > after][-600:])
 
 
 async def api_log_clear(request):
+    if request.query.get("soort") == "lucht":
+        SKYLOG["items"] = []; SKYLOG["dirty"] = True
+        return web.json_response({"ok": True})
     LOG["items"] = []; LOG["dirty"] = True
     log("systeem", "Logboek gewist in de Studio.")
     return web.json_response({"ok": True})
@@ -315,7 +349,7 @@ async def api_log_post(request):
         b = await request.json()
     except ValueError:
         raise web.HTTPBadRequest()
-    kind = b.get("kind") if b.get("kind") in ("event", "dier", "tablet", "fout") else "tablet"
+    kind = b.get("kind") if b.get("kind") in ("event", "dier", "tablet", "fout", "lucht") else "tablet"
     log(kind, ("Tablet: " if kind == "fout" else "") + str(b.get("text", ""))[:200], quiet=kind != "fout")
     return web.json_response({"ok": True})
 
@@ -396,7 +430,19 @@ async def api_state(request):
                     LAST["weather"] = w.get("state")
                 wa = w.get("attributes", {})
                 out["wind"] = wa.get("wind_speed")
+                out["gust"] = wa.get("wind_gust_speed")
+                out["bearing"] = wa.get("wind_bearing")
                 out["clouds"] = wa.get("cloud_coverage")
+                out["temp"] = wa.get("temperature")
+                out["uv"] = wa.get("uv_index")
+        sk = db["settings"].get("sky") or {}
+        for key, ent2 in (("temp", sk.get("temp_entity")), ("uv", sk.get("uv_entity"))):   # your own sensors win over the weather service
+            if ent2:
+                try:
+                    out[key] = float(((await ha_get("/states/" + ent2)) or {}).get("state"))
+                except (TypeError, ValueError):
+                    pass
+        out["sky"]["rain_soon"] = SKYDATA.get("rain_soon")
         air = db["settings"].get("air") or {}
         if air.get("on") and air.get("entity"):
             st = await ha_get("/states/" + air["entity"])
@@ -636,6 +682,7 @@ async def tle_loop():
                 lines = [l.strip() for l in txt.splitlines() if l.strip()]
                 if len(lines) >= 3 and lines[1].startswith("1 ") and lines[2].startswith("2 "):
                     SKYDATA["tle"], SKYDATA["tle_t"] = lines[:3], time.time()
+                    log("lucht", "🛰️ De baan van het ISS is bijgewerkt (CelesTrak).")
                     with open(TLE_FILE, "w") as f:
                         json.dump({"tle": SKYDATA["tle"], "tle_t": SKYDATA["tle_t"]}, f)
             except Exception as e:
@@ -679,6 +726,7 @@ async def opensky_loop():
                         alt = data.get("altitude")
                         _push("planes", {"id": f"{int(time.time())}-{n}", "t": time.time(), "cs": str(data.get("callsign") or "").strip()[:10],
                                          "alt": float(alt) if isinstance(alt, (int, float)) else None})
+                        log("lucht", f"✈️ Vliegtuig {str(data.get('callsign') or '?').strip()}" + (f" op {round(alt):,} m".replace(",", ".") if isinstance(alt, (int, float)) and alt else "") + " (OpenSky)")
         except Exception as e:
             # while Home Assistant restarts (for example after adding an integration) this fails for a minute or two:
             # that's normal, so only say something when it keeps failing for a quarter of an hour
@@ -725,9 +773,62 @@ async def lightning_loop():
                             pass
                 for j in range(min(3, cnt - last)):
                     _push("strikes", {"id": f"{int(time.time())}-{cnt}-{j}", "t": time.time(), "km": km, "az": az})
+                log("lucht", f"⚡ {cnt - last} blikseminslag(en)" + (f", op {km:.0f} km" if km is not None else "") + (f", richting {az:.0f}°" if az is not None else "") + " (Blitzortung)")
             last = cnt
         except Exception as e:
             log("fout", "Bliksem (Blitzortung): " + str(e), quiet=True)
+
+
+RAIN = {"found_t": 0, "ent": None, "last": None}
+
+
+async def rain_loop():
+    """Rain on its way: from a rain-radar sensor (e.g. Buienradar's precipitation forecast, found by itself),
+    or else from the weather service's hourly forecast. The tablet then lets a rain cloud come closer."""
+    while True:
+        await asyncio.sleep(120)
+        try:
+            s = load_db()["settings"]; sk = s.get("sky") or {}
+            if not TOKEN or sk.get("rain_cloud") is False:
+                SKYDATA["rain_soon"] = None; continue
+            ent = sk.get("rain_entity") or ""
+            if not ent and time.time() - RAIN["found_t"] > 1800:
+                RAIN["found_t"] = time.time()
+                RAIN["ent"] = next((st["entity_id"] for st in (await ha_get("/states") or [])
+                                    if st.get("entity_id", "").startswith("sensor.") and "buienradar" in st["entity_id"] and "precipitation_forecast_average" in st["entity_id"]), None)
+            ent = ent or RAIN["ent"]
+            now_rain = False
+            w = await ha_get("/states/" + s["weather_entity"]) if s.get("weather_entity") else None
+            if w and w.get("state") in ("rainy", "pouring", "lightning-rainy", "snowy-rainy", "hail"):
+                now_rain = True
+            soon = None
+            if ent:   # mm/h expected in the coming half hour or so
+                st = await ha_get("/states/" + ent)
+                try:
+                    v = float((st or {}).get("state"))
+                    if v >= .1 and not now_rain:
+                        soon = {"in": 15, "mm": v, "src": "radar"}
+                except (TypeError, ValueError):
+                    pass
+            elif s.get("weather_entity") and not now_rain:
+                r = await ha_service_response("weather", "get_forecasts", {"entity_id": s["weather_entity"], "type": "hourly"})
+                fc = ((((r or {}).get("service_response") or {}).get(s["weather_entity"]) or {}).get("forecast")) or []
+                lt = time.localtime()
+                if fc:
+                    nxt = fc[1] if len(fc) > 1 and lt.tm_min >= 30 else fc[0]
+                    mm, pr = nxt.get("precipitation") or 0, nxt.get("precipitation_probability") or 0
+                    if (mm and mm >= .3) or pr >= 70:
+                        soon = {"in": max(5, 60 - lt.tm_min) if nxt is not fc[0] else 20, "mm": mm, "src": "voorspelling"}
+            if soon and not RAIN["last"]:
+                log("lucht", f"🌧️ Regen op komst (over ongeveer {soon['in']} min, {soon['mm']:.1f} mm, volgens de {soon['src']}): de regenwolk komt dichterbij.")
+            if not soon and RAIN["last"] and not now_rain:
+                log("lucht", "🌤️ De regen gaat toch niet door.")
+            if soon:   # when it was first seen: the cloud comes closer from then on
+                soon["t0"] = RAIN["last"]["t0"] if RAIN["last"] else time.time()
+            RAIN["last"] = soon
+            SKYDATA["rain_soon"] = soon
+        except Exception as e:
+            log("fout", "Regen op komst: " + str(e), quiet=True)
 
 
 async def api_entities(request):
@@ -1243,9 +1344,12 @@ async def api_settings(request):
                     pass
         if isinstance(body.get("sky"), dict):
             k2, b = s["sky"], body["sky"]
-            for k in ("stars", "planets", "meteors", "iss", "eclipses", "rainbow", "geese", "planes", "lightning"):
+            for k in ("stars", "planets", "meteors", "iss", "eclipses", "rainbow", "geese", "planes", "lightning", "telescope", "rain_cloud", "storm", "frost_heat", "uv"):
                 if k in b:
                     k2[k] = bool(b[k])
+            for k in ("rain_entity", "uv_entity", "temp_entity"):
+                if k in b:
+                    k2[k] = str(b[k] or "").strip()[:120]
             for k, lo, hi in (("nebula", 0, 100), ("lightning_km", 1, 200)):
                 if k in b:
                     try:
@@ -1688,7 +1792,7 @@ TG_HELP = ("Stuur me gewoon een tekst en hij verschijnt op het scherm thuis.\n"
            "/bus  de volgende trams en bussen\n/kijk  een foto van het scherm nu\n/wis  het bericht weghalen\n"
            "/muziek Titel 127  Kamiel knikt mee op dat nummer (127 = tempo)\n/muziek  de lijst met nummers\n"
            "/event  er gebeurt iets in Kamielland\n/event lijst  alle events\n/selfie  Kamiel stuurt een selfie\n"
-           "/logboek  wat er de voorbije 24 uur gebeurde (/logboek 6 = de voorbije 6 uur)\n\n"
+           "/logboek  wat er de voorbije 24 uur gebeurde (/logboek 6 = de voorbije 6 uur; /logboek lucht = vliegtuigen, vallende sterren, ISS…)\n\n"
            "Zet \"tijd\" voor of achter je bericht, dan komt het uur waarop je het stuurde eronder.")
 
 
@@ -1780,15 +1884,19 @@ async def tg_handle(token, upd):
             return await tg_say(chat, "De tablet antwoordt niet. Staat hij aan?")
         return await tg_call(token, "sendPhoto", {"chat_id": chat}, files={"photo": ("kamiel.jpg", data, "image/jpeg")})
     if cmd == "/logboek":
+        words = text.split()[1:]
+        sky = bool(words) and words[0].lower() in ("lucht", "ruimte", "sky")
+        if sky:
+            words = words[1:]
         try:
-            hours = max(1, min(168, int(text.split()[1]))) if len(text.split()) > 1 else 24
+            hours = max(1, min(168, int(words[0]))) if words else 24
         except ValueError:
             hours = 24
         since = time.time() - hours * 3600
         icon = {"event": "✨", "dier": "🐾", "weer": "🌦", "huis": "🏠", "deurbel": "🔔", "telegram": "💬", "selfie": "🤳",
-                "tablet": "📟", "systeem": "⚙️", "fout": "⚠️"}
+                "tablet": "📟", "systeem": "⚙️", "fout": "⚠️", "lucht": "🌌"}
         lines, day = [], None
-        for it in _log_items():
+        for it in (_sky_items() if sky else _log_items()):
             if it["t"] < since or (it["kind"] == "telegram" and ": /logboek" in it["text"]):
                 continue
             lt = time.localtime(it["t"]); d = ["ma", "di", "wo", "do", "vr", "za", "zo"][lt.tm_wday] + time.strftime(" %d/%m", lt)
@@ -3762,6 +3870,7 @@ async def main():
     asyncio.ensure_future(tle_loop())
     asyncio.ensure_future(opensky_loop())
     asyncio.ensure_future(lightning_loop())
+    asyncio.ensure_future(rain_loop())
     await asyncio.Event().wait()
 
 
