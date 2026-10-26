@@ -173,6 +173,10 @@ const SINK = (S.horizon_sink === undefined ? 3 : +S.horizon_sink) / 100;   // ho
 const pano = world.panorama ? load('media/' + world.panorama.file) : null;
 const PW = world.panorama ? world.panorama.width : PLACE * 8;
 const N = Math.max(1, Math.round(PW / PLACE));
+// which copy of the (endless, repeating) world the camera is in: Kamiel can walk on forever in one direction,
+// so everything is drawn around the copy he is in now (before 0.21.2 only around the first one: after walking
+// a couple of rounds the same way, every element, hill and pumpkin disappeared while the clouds stayed)
+const kb = () => Math.floor(kx / PW);
 const HZ = world.panorama ? world.panorama.horizon : null;
 const horY = (wx) => HZ ? HZ[mod(Math.round(wx / 8), HZ.length)] : HOR0;
 // lowest ground point (largest y) between two x positions: an object standing there is never floating,
@@ -439,7 +443,7 @@ function drawFestGround() {
   festHits = [];
   const f = festival(); if (!f) return;
   const cam = kx - W / 2, night = isDark(now());
-  for (let i = 0; i < N; i++) for (let k = -1; k <= 1; k++) {
+  for (let i = 0; i < N; i++) for (let k = kb() - 1; k <= kb() + 1; k++) {
     const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0 || (places[i] && places[i].hall)) continue;
     if (f.kind === 'kerst') {   // a string of lights along the horizon
       for (let n = 0; n < 40; n++) {
@@ -575,7 +579,7 @@ function drawHalls() {
   const cam = kx - W / 2, FL = HOR0 - 6;
   for (let i = 0; i < N; i++) {
     const hl = places[i] && places[i].hall; if (!hl) continue;
-    for (let k = -1; k <= 1; k++) {
+    for (let k = kb() - 1; k <= kb() + 1; k++) {
       const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0) continue;
       ctx.save(); ctx.beginPath(); ctx.rect(x0, 0, PLACE, H); ctx.clip();
       if (hl.kind === 'museum') drawMuseum(hl, x0, FL);
@@ -953,7 +957,7 @@ function go(d) {
 // the places left and right of Kamiel always counted as "visible" and were never made new
 function visible(i) {
   const cam = kx - W / 2;
-  for (let k = -1; k <= 1; k++) { const x0 = i * PLACE + k * PW; if (x0 + PLACE > cam + 1 && x0 < cam + W - 1) return true; }
+  for (let k = kb() - 1; k <= kb() + 1; k++) { const x0 = i * PLACE + k * PW; if (x0 + PLACE > cam + 1 && x0 < cam + W - 1) return true; }
   return false;
 }
 const placeIndex = () => mod(Math.round((kx - PLACE / 2) / PLACE), N);
@@ -1206,8 +1210,9 @@ function setAway(a) {
 // what the current place holds and how much of it can really be shown (for the Studio: De tablet)
 function sceneNow() {
   const p = places[placeIndex()]; if (!p) return null;
+  const drawn = new Set(hits.map(h => h.it));   // really drawn in the last frame (not just: its picture is loaded)
   const c = { lucht: 0, horizon: 0, grond: 0, zichtbaar: 0, totaal: 0, kapot: [...brokenImgs].slice(0, 6), hall: !!p.hall };
-  for (const it of p.items) { if (it.on || it.board || it.timer || it.door) continue; c[['lucht', 'horizon', 'grond'][it.layer]]++; c.totaal++; if (ready(it.o.img)) c.zichtbaar++; }
+  for (const it of p.items) { if (it.on || it.board || it.timer || it.door) continue; c[['lucht', 'horizon', 'grond'][it.layer]]++; c.totaal++; if (drawn.has(it)) c.zichtbaar++; }
   return c;
 }
 function reportTablet() {
@@ -1221,7 +1226,7 @@ setTimeout(reportTablet, 4000); setInterval(reportTablet, 60000);
 // every image is asked again; if that doesn't help either, the page starts over (the scene stays the same)
 let emptyFor = 0, healed = 0;
 setInterval(() => {
-  if (document.hidden || walking) return;
+  if (document.hidden || walking || EV.active || deskOpen || (places[placeIndex()] || {}).hall) { emptyFor = 0; return; }
   const c = sceneNow(); if (!c || c.totaal < 2 || c.zichtbaar > 0) { emptyFor = 0; return; }
   emptyFor++;
   if (emptyFor === 3) {
@@ -1733,7 +1738,7 @@ function itemPos(it, i, k) {
     }
     y = it.base + h * (o.sink !== null && o.sink !== undefined ? o.sink / 100 : SINK) - h * f.y;
   } else { const hy = horY(wx); y = hy + 14 + it.depth * Math.max(20, FEET - 8 - hy - 14) - h * f.y + 2; }
-  const fk = frameNo * 4 + k + 1;
+  const fk = frameNo * 4 + (k - kb()) + 1;
   if (it._fk !== fk) { it._fk = fk; it._off = EV.itemOff(it, it.layer, sx, y, w, h); }
   const off = it._off;
   if (off) { sx += off.x || 0; y += off.y || 0; }
@@ -1748,9 +1753,9 @@ function placeItems(layer, hill, sky) {
   if (layer === 2) for (let i = 0; i < N; i++) { const dl = festDecor(i); if (dl) for (const d of dl) list.push([i, d]); }
   list.sort((a, b) => ((a[1].onHill ? -1 : 0) - (b[1].onHill ? -1 : 0)) || ((a[1].depth || 0) - (b[1].depth || 0)));
   for (const [i, it] of list) {
-    if (it.decor) { for (let k = -1; k <= 1; k++) drawDecor(it, i, k); continue; }
+    if (it.decor) { for (let k = kb() - 1; k <= kb() + 1; k++) drawDecor(it, i, k); continue; }
     const o = it.o;
-    for (let k = -1; k <= 1; k++) {
+    for (let k = kb() - 1; k <= kb() + 1; k++) {
       const p = itemPos(it, i, k); if (!p) continue;
       const { sx, y, w, h, f } = p;
       if (!(isFinite(sx) && isFinite(y) && w > 0 && h > 0)) continue;
@@ -1785,7 +1790,7 @@ function drawHills(front) {
   const cam = kx - W / 2;
   for (let i = 0; i < N; i++) {
     const hl = places[i].hills; if (!hl) continue;
-    for (let k = -1; k <= 1; k++) {
+    for (let k = kb() - 1; k <= kb() + 1; k++) {
       const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0) continue;
       for (const rg of hl.ranges) {
         if ((rg === hl.ranges[hl.ranges.length - 1]) !== front) continue;   // first the hills behind, later the front one
@@ -2171,7 +2176,7 @@ const restored = restoreScene();
 if (params.get('zaal')) compose(placeIndex(), params.get('zaal'));   // ?zaal=museum (or disco, sterren) to try a hall
 if (params.get('lucht')) setInterval(() => setAir({ level: +params.get('lucht') }), 1000);   // ?lucht=2 to try bad air
 if (!restored) for (let i = 0; i < N; i++) EV.placeNew(i);   // some housemates may already be lying somewhere
-if (params.get('debug')) window.__kamiel = { drifters, places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene, dark: () => isDark(now()), msToWalk: () => msToWalk(), walking: () => walking };
+if (params.get('debug')) window.__kamiel = { setKx: (v) => { kx = target = v; }, kx: () => kx, PW, drifters, places, go, EV: () => EV, kam, placeIndex, openDesk, saveScene, dark: () => isDark(now()), msToWalk: () => msToWalk(), walking: () => walking };
 requestAnimationFrame(loop);
 if (!params.get('ev') && !params.get('t') && !restored) tlog('tablet', 'Kamiel gestart ' + (FK() ? 'op de tablet' : 'in een browser') + ' (' + innerWidth + '×' + innerHeight + ').');
 pollState(); setInterval(pollState, 60000);
