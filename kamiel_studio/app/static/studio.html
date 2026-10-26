@@ -724,6 +724,14 @@ details.fold.sub>summary{font-size:15px}
         <div class="field">Regel 2<div class="osdline"><select class="osdsel" data-l="1"></select><select class="osdsel" data-l="1"></select><select class="osdsel" data-l="1"></select></div></div>
         <div class="field">Regel 3<div class="osdline"><select class="osdsel" data-l="2"></select><select class="osdsel" data-l="2"></select><select class="osdsel" data-l="2"></select></div></div>
       </div>
+      <h2 style="margin-top:8px">Rechts bovenaan</h2>
+      <p class="hint">Tot vier regels met waarden, bijvoorbeeld temperatuur, vochtigheid, elektriciteit (kWh) of gas (m³). Tik je op de tablet op een waarde, dan opent <b>Meter.exe</b> met de geschiedenis: een grafiek van de laatste 24 uur, 7 of 30 dagen, het laagste en hoogste punt, het gemiddelde, en hoeveel je verbruikte tegenover de periode daarvoor. Voor verbruik kies je best de meterstand (de sensor die altijd optelt).</p>
+      <div class="settings osdrows">
+        <div class="field">Regel 1<div class="osdline"><select class="osdsel" data-side="r" data-l="0"></select><select class="osdsel" data-side="r" data-l="0"></select><select class="osdsel" data-side="r" data-l="0"></select></div></div>
+        <div class="field">Regel 2<div class="osdline"><select class="osdsel" data-side="r" data-l="1"></select><select class="osdsel" data-side="r" data-l="1"></select><select class="osdsel" data-side="r" data-l="1"></select></div></div>
+        <div class="field">Regel 3<div class="osdline"><select class="osdsel" data-side="r" data-l="2"></select><select class="osdsel" data-side="r" data-l="2"></select><select class="osdsel" data-side="r" data-l="2"></select></div></div>
+        <div class="field">Regel 4<div class="osdline"><select class="osdsel" data-side="r" data-l="3"></select><select class="osdsel" data-side="r" data-l="3"></select><select class="osdsel" data-side="r" data-l="3"></select></div></div>
+      </div>
       <h2 style="margin-top:8px">Tikken op het scherm</h2>
       <p class="hint">Een script kan alles wat Home Assistant kan: lichten, muziek, een melding… Per element stel je in de bibliotheek in wat tikken erop doet.</p>
       <div class="settings">
@@ -1332,9 +1340,9 @@ async function renderSettings() {
     const j = await (await fetch('api/entities?domain=sensor,input_number,input_text,input_select,binary_sensor,counter')).json();
     const opts = '<option value="">—</option>' + j.entities.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
     // a line is a list of up to three entities (older versions: one entity per line)
-    const lines = (s.osd_entities || []).map(l => Array.isArray(l) ? l : [l]);
-    const per = [0, 0, 0];
-    document.querySelectorAll('.osdsel').forEach((el) => { const l = +el.dataset.l, v = (lines[l] || [])[per[l]++] || '';
+    const lines = (s.osd_entities || []).map(l => Array.isArray(l) ? l : [l]), linesR = (s.osd_right || []).map(l => Array.isArray(l) ? l : [l]);
+    const per = { l: [0, 0, 0, 0], r: [0, 0, 0, 0] };
+    document.querySelectorAll('.osdsel').forEach((el) => { const sd = el.dataset.side === 'r' ? 'r' : 'l', l = +el.dataset.l, v = ((sd === 'r' ? linesR : lines)[l] || [])[per[sd][l]++] || '';
       el.innerHTML = j.connected ? opts : '<option value="">Niet verbonden met Home Assistant</option>'; if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v)); el.value = v; });
   } catch { }
 }
@@ -1363,7 +1371,8 @@ $('setForm').addEventListener('submit', async (e) => {
     feest: { on: $('fOn').checked, boost: +$('fBoost').value || 3, days: readFDays(), holidays: Object.fromEntries([...document.querySelectorAll('.fH')].map(e => [e.dataset.k, e.checked])) },
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
     outfits_off: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => !e.checked).map(e => e.dataset.o) : undefined,
-    osd_entities: [0, 1, 2].map(l => [...document.querySelectorAll('.osdsel[data-l="' + l + '"]')].map(e => e.value).filter(Boolean)).filter(l => l.length) };
+    osd_entities: [0, 1, 2].map(l => [...document.querySelectorAll('.osdsel:not([data-side])[data-l="' + l + '"]')].map(e => e.value).filter(Boolean)).filter(l => l.length),
+    osd_right: [0, 1, 2, 3].map(l => [...document.querySelectorAll('.osdsel[data-side="r"][data-l="' + l + '"]')].map(e => e.value).filter(Boolean)).filter(l => l.length) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });

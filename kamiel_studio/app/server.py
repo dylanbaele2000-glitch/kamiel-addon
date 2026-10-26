@@ -165,6 +165,7 @@ DEFAULT_SETTINGS = {
     "horizon_sink": 3,
     "tap_url": "",
     "osd_entities": [],
+    "osd_right": [],        # top right: up to 4 lines of values you can tap for their history
     "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "HIER WOONT KAMIEL",
               "NIETS AAN DE HAND", "BLIJF NOG EVEN", "HET IS ALTIJD 4:12"],
 }
@@ -408,36 +409,207 @@ async def api_state(request):
                 pass
         lines = []
         for line in osd_lines(db["settings"]):   # each line: up to three values side by side
-            parts = []
-            for ent in line:
-                st = await ha_get("/states/" + ent)
-                if not st or st.get("state") in (None, "unknown", "unavailable"):
-                    continue
-                val = st["state"]
-                try:
-                    f = float(val)
-                    val = (f"{f:.1f}".rstrip("0").rstrip(".")) if abs(f) < 1000 else str(round(f))
-                except ValueError:
-                    pass
-                unit = st.get("attributes", {}).get("unit_of_measurement", "")
-                parts.append((val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper()[:16])
+            parts = [p for p in [osd_value(await ha_get("/states/" + ent)) for ent in line] if p]
             if parts:
                 lines.append("\u00a0\u00a0\u00a0".join(parts))   # non-breaking spaces: HTML would fold normal ones into one
         out["osd"] = lines
+        # top right: the same kind of lines, but each value can be tapped for its history (Meter.exe)
+        right = []
+        for line in osd_lines(db["settings"], "osd_right", 4):
+            vals = []
+            for ent in line:
+                v = osd_value(await ha_get("/states/" + ent))
+                if v:
+                    vals.append({"e": ent, "t": v})
+            if vals:
+                right.append(vals)
+        out["osd_right"] = right
     except Exception as e:  # never break the tablet over a missing value
         out["error"] = str(e)
     return web.json_response(out)
 
 
-def osd_lines(settings):
-    """The lines under the date: a list of up to 3 lines, each a list of up to 3 entities (before 0.18.0: one entity per line)."""
+def osd_value(st):
+    """One value for the camcorder text: '21.5°C', '58%', '1234 KWH'."""
+    if not st or st.get("state") in (None, "unknown", "unavailable"):
+        return ""
+    val = st["state"]
+    try:
+        f = float(val)
+        val = (f"{f:.1f}".rstrip("0").rstrip(".")) if abs(f) < 1000 else str(round(f))
+    except ValueError:
+        pass
+    unit = (st.get("attributes") or {}).get("unit_of_measurement", "") or ""
+    return (val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper()[:16]
+
+
+def osd_lines(settings, key="osd_entities", n=3):
+    """Camcorder lines: a list of up to n lines, each a list of up to 3 entities (before 0.18.0: one entity per line)."""
     out = []
-    for line in settings.get("osd_entities") or []:
+    for line in settings.get(key) or []:
         ents = line if isinstance(line, list) else [line]
         ents = [str(e).strip() for e in ents if isinstance(e, str) and str(e).strip()][:3]
         if ents:
             out.append(ents)
-    return out[:3]
+    return out[:n]
+
+
+# ----------------------------------------------------------------- Meter.exe: the history of a value on the top right
+def _ws_url():
+    u = HA_URL.rstrip("/")
+    if u.endswith("/core/api"):
+        return u[: -len("/api")].replace("http", "ws", 1) + "/websocket"
+    return u.replace("http", "ws", 1) + "/websocket"
+
+
+async def ha_ws(msg):
+    """One question over Home Assistant's websocket (needed for long-term statistics; the REST API doesn't have them)."""
+    if not TOKEN:
+        return None
+    async with ClientSession(timeout=ClientTimeout(total=20)) as sess:
+        async with sess.ws_connect(_ws_url(), heartbeat=15) as ws:
+            first = await ws.receive_json(timeout=10)
+            if first.get("type") == "auth_required":
+                await ws.send_json({"type": "auth", "access_token": TOKEN})
+                ok = await ws.receive_json(timeout=10)
+                if ok.get("type") != "auth_ok":
+                    return None
+            await ws.send_json(dict(msg, id=1))
+            while True:
+                r = await ws.receive_json(timeout=15)
+                if r.get("id") == 1:
+                    return r.get("result") if r.get("success") else None
+
+
+def _stat_t(v):
+    if isinstance(v, (int, float)):
+        return v / 1000 if v > 1e11 else float(v)
+    return _ha_time(v)
+
+
+RANGES = {"dag": (24 * 3600, "hour"), "week": (7 * 86400, "day"), "maand": (30 * 86400, "day")}
+
+
+async def _stats(ent, start, end, period):
+    from datetime import datetime, timezone
+    iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
+    try:
+        res = await ha_ws({"type": "recorder/statistics_during_period", "start_time": iso(start), "end_time": iso(end),
+                           "statistic_ids": [ent], "period": period, "types": ["mean", "min", "max", "change", "state", "sum"]})
+    except Exception:
+        res = None
+    rows = (res or {}).get(ent) or []
+    return [dict(r, t=_stat_t(r.get("start"))) for r in rows if _stat_t(r.get("start"))]
+
+
+async def _history(ent, start, end):
+    """Fallback for values without statistics: the raw history (Home Assistant keeps about 10 days of it)."""
+    from datetime import datetime, timezone
+    iso = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    from urllib.parse import quote
+    h = await ha_get(f"/history/period/{quote(iso(start))}?filter_entity_id={ent}&end_time={quote(iso(end))}&minimal_response&no_attributes")
+    pts = []
+    for row in ((h or [[]])[0] if h else []):
+        try:
+            pts.append((_ha_time(row.get("last_changed") or row.get("last_updated")), float(row.get("state"))))
+        except (TypeError, ValueError):
+            continue
+    return [p for p in pts if p[0]]
+
+
+def _bucket(pts, start, step, n, total):
+    """Raw points into buckets: mean/min/max per hour or day, or what was used (for a meter that counts up)."""
+    out = []
+    for k in range(n):
+        a, b = start + k * step, start + (k + 1) * step
+        inside = [v for t, v in pts if a <= t < b]
+        before = [v for t, v in pts if t < a]
+        if total:
+            last_before = before[-1] if before else (inside[0] if inside else None)
+            if last_before is None or not inside:
+                out.append({"t": a, "change": 0.0 if last_before is not None else None}); continue
+            used, prev = 0.0, last_before
+            for v in inside:
+                used += v - prev if v >= prev else v   # a meter that was reset starts again from 0
+                prev = v
+            out.append({"t": a, "change": used})
+        else:
+            vals = inside or ([before[-1]] if before else [])
+            out.append({"t": a, "mean": sum(vals) / len(vals), "min": min(vals), "max": max(vals)} if vals else {"t": a})
+    return out
+
+
+async def meter_data(ent, rng):
+    span, period = RANGES.get(rng, RANGES["dag"])
+    st = await ha_get("/states/" + ent) or {}
+    at = st.get("attributes") or {}
+    sc, dc = at.get("state_class"), at.get("device_class")
+    total = sc in ("total", "total_increasing") or dc in ("energy", "gas", "water")
+    step = 3600 if period == "hour" else 86400
+    now = time.time()
+    if period == "day":   # whole days, the last one is today
+        import datetime as _d
+        today = _d.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        end = today + 86400
+    else:
+        end = (now // 3600 + 1) * 3600
+    n = int(span // step)
+    start = end - n * step
+    rows = await _stats(ent, start - n * step, end, period)   # this period and the one before (to compare)
+    src = "statistiek"
+    if not rows:
+        pts = await _history(ent, start - n * step, end)
+        src = "geschiedenis"
+        rows = _bucket(pts, start - n * step, step, 2 * n, total)
+    def val(r):
+        if total:
+            return r.get("change")
+        return r.get("mean")
+    cur = [r for r in rows if start <= r["t"] < end]
+    prev = [r for r in rows if start - n * step <= r["t"] < start]
+    series = []
+    by_t = {int(r["t"] // step): r for r in cur}
+    for k in range(n):
+        t = start + k * step
+        r = by_t.get(int(t // step)) or {}
+        series.append({"t": t, "v": val(r), "min": r.get("min"), "max": r.get("max")})
+    vals = [x["v"] for x in series if x["v"] is not None]
+    pv = [val(r) for r in prev if val(r) is not None]
+    out = {"entity": ent, "name": at.get("friendly_name", ent), "unit": at.get("unit_of_measurement", ""), "now": st.get("state"),
+           "kind": "verbruik" if total else "meting", "range": rng, "step": period, "series": series, "source": src}
+    if vals:
+        if total:
+            out["total"] = sum(vals)
+            out["avg"] = sum(vals) / len(vals)
+            hi = max((x for x in series if x["v"] is not None), key=lambda x: x["v"])
+            out["peak"] = {"v": hi["v"], "t": hi["t"]}
+            out["prev_total"] = sum(pv) if pv else None
+        else:
+            lo_s = [x for x in series if x["v"] is not None]
+            mins = [(x["min"] if x["min"] is not None else x["v"], x["t"]) for x in lo_s]
+            maxs = [(x["max"] if x["max"] is not None else x["v"], x["t"]) for x in lo_s]
+            mn, mx = min(mins), max(maxs)
+            out["min"] = {"v": mn[0], "t": mn[1]}
+            out["max"] = {"v": mx[0], "t": mx[1]}
+            out["avg"] = sum(vals) / len(vals)
+            out["prev_avg"] = sum(pv) / len(pv) if pv else None
+    return out
+
+
+async def api_meter(request):
+    """History of one value from the top right (only the ones chosen in the Studio)."""
+    ent = request.query.get("entity", "")
+    s = load_db()["settings"]
+    allowed = {e for line in osd_lines(s, "osd_right", 4) for e in line}
+    if request.app.get("studio"):
+        allowed |= {e for line in osd_lines(s) for e in line}
+    if ent not in allowed:
+        raise web.HTTPForbidden()
+    try:
+        return web.json_response(await meter_data(ent, request.query.get("range", "dag")))
+    except Exception as e:
+        log("fout", "Meter.exe: " + str(e), quiet=True)
+        return web.json_response({"entity": ent, "error": str(e)})
 
 
 async def api_entities(request):
@@ -1120,6 +1292,8 @@ async def api_settings(request):
             s["tap_url"] = str(body["tap_url"]).strip()[:500]
         if "osd_entities" in body:
             s["osd_entities"] = osd_lines({"osd_entities": body["osd_entities"]})
+        if "osd_right" in body:
+            s["osd_right"] = osd_lines({"osd_right": body["osd_right"]}, "osd_right", 4)
         if "words" in body:
             s["words"] = [str(w).strip().upper()[:60] for w in body["words"] if str(w).strip()][:200]
         save_db(db)
@@ -3317,6 +3491,7 @@ def common_routes(app):
     app.router.add_get("/display", page("display.html"))
     app.router.add_get("/api/world", api_world)
     app.router.add_get("/api/state", api_state)
+    app.router.add_get("/api/meter", api_meter)
     app.router.add_get("/media/{name}", media)
     app.router.add_static("/static/", os.path.join(APP, "static"))
     app.router.add_get("/api/live", api_live)

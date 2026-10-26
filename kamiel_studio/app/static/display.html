@@ -50,10 +50,18 @@ canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:
 /* during a film: cinema instead of VHS (no scanlines, colour fringes, camcorder stamp or tracking noise) */
 .osd,.vig{transition:opacity 1.5s}
 body.cine canvas{filter:saturate(1.04) contrast(1.05)}
-body.cine .scan,body.cine .osd{opacity:0}
+body.cine .scan,body.cine .osd,body.cine .osdr{opacity:0;pointer-events:none}
 body.cine .vig{opacity:.45}
 .vig{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 18vmin rgba(0,0,0,.7)}
 .osd{position:absolute;left:3.2vw;top:4.2vh;font-family:'VT323',ui-monospace,monospace;color:#fff;font-size:6vh;line-height:.95;text-shadow:0 0 4px rgba(255,255,255,.6),2px 2px 0 rgba(0,0,0,.35);pointer-events:none;letter-spacing:1px}
+.osdr{left:auto;right:3.2vw;text-align:right;pointer-events:none}
+.osdr .ov{pointer-events:auto;cursor:pointer;padding:0 .1em}
+.osdr .ov:active{opacity:.6}
+.meter canvas{position:static;inset:auto;width:100%;height:auto;display:block;filter:none;object-fit:fill}
+.meter .tabs{display:flex;gap:.3em;flex-wrap:wrap}
+.meter .big{font-size:2.2em;font-weight:700;line-height:1}
+.meter .sub{color:#333}
+.meter .up{color:#a00000}.meter .down{color:#006000}
 /* old-school windows */
 .desk{position:absolute;inset:0;pointer-events:none;font:clamp(12px,2.1vh,18px)/1.3 Arimo,Tahoma,Arial,sans-serif;color:#000;cursor:default}
 .win{position:absolute;pointer-events:auto;background:#c0c0c0;border:2px solid;border-color:#dfdfdf #404040 #404040 #dfdfdf;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #808080,5px 7px 0 rgba(0,0,30,.28);display:flex;flex-direction:column;animation:pop .14s steps(3)}
@@ -116,6 +124,7 @@ body.cine .vig{opacity:.45}
 <div class="stage">
   <canvas id="cv" width="960" height="600" aria-label="Kamiel in zijn droomwereld"></canvas>
   <div class="osd" id="osd"></div>
+  <div class="osd osdr" id="osdr"></div>
   <div class="desk" id="desk"></div>
   <div class="scan"></div><div class="vig"></div>
 </div>
@@ -223,7 +232,7 @@ const photoImg = (url) => photoCache[url] || (photoCache[url] = load(url));
 const WORDS = S.words && S.words.length ? S.words : ['WELKOM IN KAMIELLAND'];
 
 /* ---------- time, sun, moon, weather ---------- */
-let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [], cloudCover = null;
+let weather = params.get('w') || 'licht', haSun = null, wind = 4, osdLines = [], osdRight = [], cloudCover = null;
 const rainy = () => weather === 'regen' || weather === 'onweer';
 const WEATHER_BUCKET = { helder: 'zon', licht: 'zon', bewolkt: 'bewolkt', regen: 'regen', onweer: 'regen', sneeuw: 'sneeuw', mist: 'mist' };
 function now() {
@@ -806,6 +815,7 @@ async function pollState() {
     haSun = s.sun && typeof s.sun.alt === 'number' ? s.sun : null;   // no sun from Home Assistant: compute it ourselves (never a stale one)
     setAir(s.air);
     osdLines = s.osd || [];
+    osdRight = Array.isArray(s.osd_right) ? s.osd_right : [];
     const cov = typeof s.clouds === 'number' ? s.clouds : null;
     if (s.weather && !params.get('w')) {
       // new clouds only when it really changes (weather type, or cloud cover by more than a fifth)
@@ -1305,6 +1315,8 @@ function sendSnapshot(id) {
   const lines = document.getElementById('osd').innerText.split('\n').filter(Boolean);
   g.font = "36px 'VT323', ui-monospace, monospace"; g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,.4)'; g.shadowOffsetX = 2; g.shadowOffsetY = 2;
   lines.forEach((l, k) => g.fillText(l, 30, 52 + k * 34));
+  const rl = document.getElementById('osdr').innerText.split('\n').filter(Boolean);
+  g.textAlign = 'right'; rl.forEach((l, k) => g.fillText(l, W - 30, 52 + k * 34)); g.textAlign = 'left';
   c.toBlob(b => { if (b) fetch('api/snapshot/' + id, { method: 'POST', body: b, headers: { 'Content-Type': 'image/jpeg' } }).catch(() => {}); }, 'image/jpeg', .88);
 }
 /* ---------- split-flap signs: the departure board and the timer sign ---------- */
@@ -2093,10 +2105,15 @@ function drawVHS() {
 }
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 let lastOsd = '';
+let lastOsdR = null;
 function osd(d) {
   const h = d.getHours(), m = String(d.getMinutes()).padStart(2, '0');
   const s = (h < 12 ? 'AM ' : 'PM ') + ((h % 12) || 12) + ':' + m + '<br>' + MON[d.getMonth()] + ' ' + d.getDate() + ' ' + d.getFullYear() + osdLines.map(l => '<br>' + l.replace(/[<>&]/g, '')).join('');
   if (s !== lastOsd) { document.getElementById('osd').innerHTML = s; lastOsd = s; }
+  // top right: values you can tap (each opens Meter.exe with its history)
+  const esc0 = (t) => String(t).replace(/[&<>"]/g, '');
+  const r = osdRight.map(line => line.map(v => `<span class="ov" data-e="${esc0(v.e)}">${esc0(v.t)}</span>`).join('\u00a0\u00a0\u00a0')).join('<br>');
+  if (r !== lastOsdR) { document.getElementById('osdr').innerHTML = r; lastOsdR = r; }
 }
 function frame() {
   const d = now(), sun = sunPos(d), L = light(sun.alt);
@@ -2173,8 +2190,8 @@ setInterval(schedule, 15000);
 /* ---------- old-school windows: tap an empty spot ---------- */
 const deskEl = document.getElementById('desk');
 const WIN = Object.assign({ weer: true, vertrek: true, knoppen: true, kleerkast: true, muziek: true, wandel: true, roepen: true }, S.windows || {});
-const TITLES = Object.assign({ weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe' }, S.window_titles || {});
-const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾' };
+const TITLES = Object.assign({ meter: 'Meter.exe', weer: 'Weer.exe', vertrek: 'Vertrek.exe', knoppen: 'Knoppen.exe', kleerkast: 'Kleerkast.exe', muziek: 'Muziek.exe', wandel: 'Wandel.exe', roepen: 'Roepen.exe' }, S.window_titles || {});
+const ICON = { weer: '🌤', vertrek: '🚋', knoppen: '🎛', kleerkast: '👔', muziek: '🎵', wandel: '🦙', roepen: '🐾', meter: '📈' };
 const COND_ICON = { sunny: '☀️', 'clear-night': '🌙', partlycloudy: '⛅', cloudy: '☁️', rainy: '🌧️', pouring: '🌧️', lightning: '⛈️',
   'lightning-rainy': '⛈️', snowy: '❄️', 'snowy-rainy': '🌨️', hail: '🌨️', fog: '🌫️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
 const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
@@ -2220,7 +2237,7 @@ function spots(keys) {
 }
 let deskGen = 0;   // every opening gets a number: an older one that is still busy stops as soon as a newer one (or closing) came
 async function openDesk(only) {
-  const keys = (only || Object.keys(TITLES)).filter(k => WIN[k] !== false && (k !== 'muziek' || S.media_player));
+  const keys = (only || Object.keys(TITLES)).filter(k => k !== 'meter' && WIN[k] !== false && (k !== 'muziek' || S.media_player));
   if (!keys.length) return;
   closeDesk(true);
   const gen = ++deskGen;
@@ -2295,6 +2312,111 @@ function renderTaskbar() {
 }
 const bodyOf = (k) => wins[k] && wins[k].querySelector('.bd');
 
+/* ---------- Meter.exe: tap a value on the top right for its history ---------- */
+const MET = { ent: null, range: 'dag', line: [], data: {} };
+const nl = (v, unit) => { if (v === null || v === undefined || isNaN(v)) return '–'; const a = Math.abs(v), d = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+  return v.toFixed(d).replace('.', ',') + (unit ? (unit === '%' || unit === '°C' ? '' : ' ') + unit : ''); };
+const whenM = (t, step) => { const d = new Date(t * 1000), today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = Math.round((new Date(d).setHours(0, 0, 0, 0) - today) / 864e5);
+  if (step === 'hour') return (day === 0 ? 'vandaag ' : day === -1 ? 'gisteren ' : DAYS[d.getDay()] + ' ') + String(d.getHours()).padStart(2, '0') + ':00';
+  return (day === 0 ? 'vandaag' : day === -1 ? 'gisteren' : DAYS[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth() + 1)); };
+function openMeter(ent) {
+  const line = osdRight.find(l => l.some(v => v.e === ent)) || [{ e: ent, t: ent }];
+  MET.ent = ent; MET.line = line;
+  if (!deskOpen) {
+    closeDesk(true); deskOpen = true; deskGen++;
+    clearInterval(deskTimer); deskTimer = setInterval(() => { if (deskOpen && Date.now() - lastTouch > (S.window_close || 60) * 1000) closeDesk(); }, 5000);
+  }
+  touchDesk();
+  if (wins.meter) wins.meter.remove();
+  const el = document.createElement('div'); el.className = 'win meter'; el.dataset.k = 'meter';
+  const ob = document.getElementById('osdr').getBoundingClientRect(), dr = deskEl.getBoundingClientRect();
+  el.style.width = 'min(560px, 58%)'; el.style.right = '3%'; el.style.top = Math.round(Math.max(dr.height * .1, ob.bottom - dr.top + 10)) + 'px';
+  el.innerHTML = `<div class="tb"><span>${ICON.meter}</span><span class="tt">${escH(TITLES.meter)}</span>
+    <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div><div class="bd"></div>`;
+  deskEl.appendChild(el); wins.meter = el; front(el);
+  el.addEventListener('pointerdown', () => { front(el); touchDesk(); });
+  el.querySelector('[data-a=close]').addEventListener('click', () => closeWin('meter'));
+  el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
+  drag(el); fillMeter(); renderTaskbar();
+  requestAnimationFrame(() => { const r = el.getBoundingClientRect(); if (r.bottom > dr.bottom - 50) el.style.top = Math.max(0, dr.height - r.height - 54) + 'px'; });
+}
+async function fillMeter(reload = true) {
+  const b = bodyOf('meter'); if (!b) return;
+  const key = MET.ent + '|' + MET.range;
+  if (reload || !MET.data[key]) {
+    if (!MET.data[key]) b.innerHTML = '<p>Even ophalen…</p>';
+    try { MET.data[key] = await (await fetch('api/meter?entity=' + encodeURIComponent(MET.ent) + '&range=' + MET.range, { cache: 'no-store' })).json(); }
+    catch (e) { b.innerHTML = '<p>Kamiel Studio antwoordt niet. Probeer het zo meteen nog eens.</p>'; return; }
+    if (!wins.meter || MET.ent + '|' + MET.range !== key) return;
+  }
+  const d = MET.data[key], u = d.unit || '', per = d.step === 'hour' ? 'uur' : 'dag';
+  const tabs = MET.line.length > 1 ? `<div class="tabs">${MET.line.map(v => `<button class="b95 ${v.e === MET.ent ? 'on' : ''}" data-e="${escH(v.e)}">${escH(v.t)}</button>`).join('')}</div>` : '';
+  const rngs = `<div class="tabs">${[['dag', 'Laatste 24 uur'], ['week', '7 dagen'], ['maand', '30 dagen']].map(([k, t]) => `<button class="b95 ${k === MET.range ? 'on' : ''}" data-r="${k}">${t}</button>`).join('')}</div>`;
+  if (d.error || !d.series) { b.innerHTML = tabs + rngs + `<p>Dit kon Kamiel niet ophalen${d.error ? ' (' + escH(d.error) + ')' : ''}.</p>`; wire(b); return; }
+  const pct = (a, c) => (a === null || a === undefined || !c) ? '' : (() => { const p = (a - c) / Math.abs(c) * 100; return ` <span class="${p > 0 ? 'up' : 'down'}">${p > 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(0)}%</span>`; })();
+  const nowNum = parseFloat(d.now);
+  let rows;
+  if (d.kind === 'verbruik') {
+    rows = [['Verbruikt in deze periode', nl(d.total, u)],
+      ['Gemiddeld per ' + per, nl(d.avg, u)],
+      ['Piek', d.peak ? nl(d.peak.v, u) + ' · ' + whenM(d.peak.t, d.step) : '–'],
+      ['De periode daarvoor', d.prev_total !== null && d.prev_total !== undefined ? nl(d.prev_total, u) + pct(d.total, d.prev_total) : '–'],
+      ['Meterstand nu', nl(nowNum, u)]];
+  } else {
+    rows = [['Gemiddeld', nl(d.avg, u)],
+      ['Laagste', d.min ? nl(d.min.v, u) + ' · ' + whenM(d.min.t, d.step) : '–'],
+      ['Hoogste', d.max ? nl(d.max.v, u) + ' · ' + whenM(d.max.t, d.step) : '–'],
+      ['Gemiddeld de periode daarvoor', d.prev_avg !== null && d.prev_avg !== undefined ? nl(d.prev_avg, u) + pct(d.avg, d.prev_avg) : '–']];
+  }
+  b.innerHTML = tabs + `<div class="wnow"><div><div class="big">${escH(nl(d.kind === 'verbruik' && d.total !== undefined ? d.total : nowNum, u))}</div>
+      <div class="sub">${escH(d.name)}${d.kind === 'verbruik' ? ' · verbruikt' : ' · nu'}</div></div></div>` + rngs
+    + `<div class="inset"><canvas width="520" height="190"></canvas></div>`
+    + `<table class="lv inset"><tbody>${rows.map(([k, v]) => `<tr><td>${k}</td><td style="text-align:right">${v}</td></tr>`).join('')}</tbody></table>`
+    + `<div class="sub" style="font-size:.8em">${d.kind === 'verbruik' ? 'Per ' + per + '. ' : ''}${d.step === 'day' ? 'Vandaag telt mee tot nu. ' : ''}Uit ${d.source === 'statistiek' ? 'de statistieken' : 'de geschiedenis'} van Home Assistant.</div>`;
+  drawMeter(b.querySelector('canvas'), d); wire(b);
+  function wire(bd) {
+    bd.querySelectorAll('[data-e]').forEach(x => x.addEventListener('click', () => { MET.ent = x.dataset.e; fillMeter(false); touchDesk(); }));
+    bd.querySelectorAll('[data-r]').forEach(x => x.addEventListener('click', () => { MET.range = x.dataset.r; fillMeter(false); touchDesk(); }));
+  }
+}
+function drawMeter(c, d) {
+  const g = c.getContext('2d'), Wc = c.width, Hc = c.height, L = 44, R = 8, T = 10, B = 24, pw = Wc - L - R, ph = Hc - T - B;
+  g.fillStyle = '#fff'; g.fillRect(0, 0, Wc, Hc);
+  const S0 = d.series, n = S0.length, verb = d.kind === 'verbruik';
+  const vals = [];
+  S0.forEach(x => { if (x.v !== null && x.v !== undefined) vals.push(x.v); if (!verb) { if (x.min !== null && x.min !== undefined) vals.push(x.min); if (x.max !== null && x.max !== undefined) vals.push(x.max); } });
+  if (!vals.length) { g.fillStyle = '#000'; g.font = '13px Arimo, Arial'; g.fillText('Nog geen gegevens voor deze periode.', L, Hc / 2); return; }
+  let lo = verb ? 0 : Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { hi += 1; lo -= verb ? 0 : 1; }
+  const pad = (hi - lo) * .08; if (!verb) lo -= pad; hi += pad;
+  const X = (k) => L + (k + .5) * pw / n, Y = (v) => T + ph - (v - lo) / (hi - lo) * ph;
+  // grid: dotted, like an old chart
+  g.font = '11px Arimo, Arial'; g.fillStyle = '#000'; g.textAlign = 'right';
+  for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4, y = Math.round(Y(v)) + .5;
+    g.strokeStyle = '#c0c0c0'; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(L, y); g.lineTo(Wc - R, y); g.stroke(); g.setLineDash([]);
+    g.fillText(nl(v, '').replace(/,0+$/, ''), L - 5, y + 4); }
+  g.strokeStyle = '#000'; g.beginPath(); g.moveTo(L + .5, T); g.lineTo(L + .5, T + ph + .5); g.lineTo(Wc - R, T + ph + .5); g.stroke();
+  // x labels
+  g.textAlign = 'center';
+  const every = d.step === 'hour' ? 6 : n > 10 ? 5 : 1;
+  S0.forEach((x, k) => { if (k % every) return; const dt = new Date(x.t * 1000);
+    g.fillText(d.step === 'hour' ? String(dt.getHours()).padStart(2, '0') + 'u' : n > 10 ? dt.getDate() + '/' + (dt.getMonth() + 1) : DAYS[dt.getDay()], X(k), Hc - 8); });
+  if (verb) {
+    const bw = Math.max(3, pw / n * .7), peak = d.peak ? d.peak.t : null;
+    S0.forEach((x, k) => { if (x.v === null || x.v === undefined) return; const y = Y(x.v), y0 = Y(0);
+      g.fillStyle = x.t === peak ? '#800000' : '#000080'; g.fillRect(Math.round(X(k) - bw / 2), Math.round(y), Math.round(bw), Math.max(1, Math.round(y0 - y)));
+      g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(Math.round(X(k) - bw / 2), Math.round(y), 1, Math.max(1, Math.round(y0 - y))); });
+  } else {
+    g.fillStyle = 'rgba(16,132,208,.22)';   // the band from lowest to highest
+    S0.forEach((x, k) => { if (x.min === null || x.min === undefined || x.max === null || x.max === undefined) return;
+      g.fillRect(Math.round(X(k) - pw / n / 2), Math.round(Y(x.max)), Math.ceil(pw / n), Math.max(1, Math.round(Y(x.min) - Y(x.max)))); });
+    g.strokeStyle = '#000080'; g.lineWidth = 2; g.beginPath(); let on = false;
+    S0.forEach((x, k) => { if (x.v === null || x.v === undefined) { on = false; return; } const px = X(k), py = Y(x.v); if (!on) { g.moveTo(px, py); on = true; } else g.lineTo(px, py); });
+    g.stroke(); g.lineWidth = 1;
+    for (const [m, col] of [[d.max, '#800000'], [d.min, '#006000']]) { if (!m) continue; const k = S0.findIndex(x => x.t === m.t); if (k < 0) continue;
+      g.fillStyle = col; g.fillRect(Math.round(X(k)) - 3, Math.round(Y(m.v)) - 3, 6, 6); }
+  }
+}
 function fillWeer() {
   const b = bodyOf('weer'); if (!b) return; const w = deskData && deskData.weather;
   if (!w) { b.innerHTML = '<p class="muted">Geen weer ingesteld. Kies een weer-entiteit in Kamiel Studio → Instellingen.</p>'; return; }
@@ -2429,6 +2551,11 @@ let downAt = null;
 document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('.win, .taskbar')) return; downAt = Object.assign(canvasXY(e), { t: performance.now() }); });
 document.addEventListener('pointerup', (e) => {
   if (e.target.closest && e.target.closest('.win, .taskbar')) return;   // the windows handle their own taps
+  // a value on the top right: Meter.exe with its history
+  for (const sp of document.querySelectorAll('#osdr .ov')) {
+    const rr = sp.getBoundingClientRect();
+    if (e.clientX >= rr.left - 12 && e.clientX <= rr.right + 12 && e.clientY >= rr.top - 8 && e.clientY <= rr.bottom + 8) { openMeter(sp.dataset.e); return; }
+  }
   if (deskOpen) { closeDesk(); return; }                                // tapping the scene closes them
   const { x, y } = canvasXY(e);
   // a swipe that starts on Wifi's ball throws it
