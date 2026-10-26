@@ -95,8 +95,8 @@ DEFAULT_SETTINGS = {
     "chances": {"dag": {"grond": 100, "horizon": 100, "lucht": 60, "kader": 50},
                 "nacht": {"grond": 100, "horizon": 100, "lucht": 75, "kader": 50}},
     # how many objects of each kind per scene: [at least, at most], by day and by night
-    "counts": {"dag": {"grond": [2, 4], "horizon": [1, 3], "lucht": [1, 2], "kader": [0, 1]},
-               "nacht": {"grond": [2, 4], "horizon": [1, 3], "lucht": [1, 3], "kader": [0, 1]}},
+    "counts": {"dag": {"grond": [2, 4], "horizon": [1, 3], "lucht": [1, 2], "kader": [1, 1]},
+               "nacht": {"grond": [2, 4], "horizon": [1, 3], "lucht": [1, 3], "kader": [1, 1]}},
     "max_objects": 12,
     "spacing": 30,          # px between objects
     "lane": 94,             # px kept free on each side of Kamiel's middle
@@ -110,7 +110,12 @@ DEFAULT_SETTINGS = {
     "rules": [],
     # the tablet's own camera (Fully Kiosk PLUS: motion detection + JavaScript interface)
     "motion": {"on": False, "look": True, "wake": True, "screen_off": "nooit", "off_after": 10, "entity": "",
-               "away_off": False, "away_entity": "zone.home", "to_ha": True, "fully_pw": ""},
+               "away_off": False, "away_entity": "zone.home", "to_ha": True, "fully_pw": "",
+               # who is home: any of these says "home" (a phone on the home wifi, a person, a router tracker…);
+               # the wifi name(s) stay in the add-on's own data, never in the code
+               "away_entities": [], "home_wifi": "", "away_delay": 10},
+    # a smart plug that charges the tablet: only when the battery runs low, up to a set level (better for the battery)
+    "charge": {"entity": "", "mode": "uit", "low": 30, "high": 80},
     # lights and sockets to switch from the Lampen window on the tablet
     "lamps": [],
     # selfies on Telegram: when someone is away for days, and once a month out of the blue
@@ -204,7 +209,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air"):
+    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); cp["busy"] = sc.get("busy", cp["busy"]); s["compose"] = cp
@@ -221,6 +226,12 @@ def load_db():
     if not s.get("media_players") and s.get("media_player"):   # 0.16.4: one speaker became a list
         s["media_players"] = [{"entity": s["media_player"], "name": ""}]
     s["feest"]["v"] = 2
+    if int(stored.get("counts_v") or 0) < 2 and isinstance(stored.get("counts"), dict):
+        # 0.18.0: "0 to 1 frame" made frames rare (about one scene in three); the old default becomes "always 1"
+        for part in ("dag", "nacht"):
+            if (s["counts"].get(part) or {}).get("kader") == [0, 1]:
+                s["counts"][part]["kader"] = [1, 1]
+    s["counts_v"] = 2
     if s.get("lamps"):   # 0.11.0 had a separate Lampen window; since 0.12.0 they are ordinary buttons
         have = {b.get("entity") for b in s.get("buttons", [])}
         s["buttons"] = (s.get("buttons") or []) + [{"label": "", "icon": "", "entity": e, "service": "", "data": {}} for e in s["lamps"] if e not in have]
@@ -393,22 +404,37 @@ async def api_state(request):
             except (TypeError, ValueError, AttributeError):
                 pass
         lines = []
-        for ent in db["settings"].get("osd_entities", []):
-            st = await ha_get("/states/" + ent)
-            if not st or st.get("state") in (None, "unknown", "unavailable"):
-                continue
-            val = st["state"]
-            try:
-                f = float(val)
-                val = (f"{f:.1f}".rstrip("0").rstrip(".")) if abs(f) < 1000 else str(round(f))
-            except ValueError:
-                pass
-            unit = st.get("attributes", {}).get("unit_of_measurement", "")
-            lines.append((val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper())
+        for line in osd_lines(db["settings"]):   # each line: up to three values side by side
+            parts = []
+            for ent in line:
+                st = await ha_get("/states/" + ent)
+                if not st or st.get("state") in (None, "unknown", "unavailable"):
+                    continue
+                val = st["state"]
+                try:
+                    f = float(val)
+                    val = (f"{f:.1f}".rstrip("0").rstrip(".")) if abs(f) < 1000 else str(round(f))
+                except ValueError:
+                    pass
+                unit = st.get("attributes", {}).get("unit_of_measurement", "")
+                parts.append((val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper()[:16])
+            if parts:
+                lines.append("\u00a0\u00a0\u00a0".join(parts))   # non-breaking spaces: HTML would fold normal ones into one
         out["osd"] = lines
     except Exception as e:  # never break the tablet over a missing value
         out["error"] = str(e)
     return web.json_response(out)
+
+
+def osd_lines(settings):
+    """The lines under the date: a list of up to 3 lines, each a list of up to 3 entities (before 0.18.0: one entity per line)."""
+    out = []
+    for line in settings.get("osd_entities") or []:
+        ents = line if isinstance(line, list) else [line]
+        ents = [str(e).strip() for e in ents if isinstance(e, str) and str(e).strip()][:3]
+        if ents:
+            out.append(ents)
+    return out[:3]
 
 
 async def api_entities(request):
@@ -434,7 +460,7 @@ BUILD = _build_id()
 async def api_world(request):
     db = load_db()
     if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
-        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); db["settings"] = st
+        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
         "build": BUILD,
@@ -509,7 +535,7 @@ def _size_ok(a):
 def _measure_old_assets():
     """Elements from before 0.9.0 have no weight and colour yet: measure them once, in the background.
     And an element whose size got lost or broken is measured again from its own image (without a size the tablet
-    can't place it, and before 0.18.0 one broken element could empty a whole row of the scene)."""
+    can't place it, and before 0.17.10 one broken element could empty a whole row of the scene)."""
     db = load_db()
     found = {}
     from PIL import Image
@@ -908,6 +934,29 @@ async def api_settings(request):
                     m[k] = bool(b[k])
             if "away_entity" in b:
                 m["away_entity"] = str(b["away_entity"]).strip()[:120] or "zone.home"
+            if isinstance(b.get("away_entities"), list):
+                m["away_entities"] = [str(e).strip()[:120] for e in b["away_entities"] if isinstance(e, str) and "." in e][:8]
+            if "home_wifi" in b:
+                m["home_wifi"] = str(b["home_wifi"] or "").strip()[:200]
+            if "away_delay" in b:
+                try:
+                    m["away_delay"] = max(0, min(120, int(b["away_delay"])))
+                except (TypeError, ValueError):
+                    pass
+        if isinstance(body.get("charge"), dict):
+            c, b = s["charge"], body["charge"]
+            if "entity" in b:
+                c["entity"] = str(b["entity"] or "").strip()[:120]
+            if b.get("mode") in ("uit", "batterij", "altijd"):
+                c["mode"] = b["mode"]
+            for k, lo, hi in (("low", 5, 90), ("high", 15, 100)):
+                if k in b:
+                    try:
+                        c[k] = max(lo, min(hi, int(b[k])))
+                    except (TypeError, ValueError):
+                        pass
+            if c["high"] <= c["low"] + 5:
+                c["high"] = min(100, c["low"] + 10)
         if isinstance(body.get("feest"), dict):
             f, b = s["feest"], body["feest"]
             if "on" in b:
@@ -1062,7 +1111,7 @@ async def api_settings(request):
         if "tap_url" in body:
             s["tap_url"] = str(body["tap_url"]).strip()[:500]
         if "osd_entities" in body:
-            s["osd_entities"] = [str(e) for e in body["osd_entities"] if str(e).strip()][:3]
+            s["osd_entities"] = osd_lines({"osd_entities": body["osd_entities"]})
         if "words" in body:
             s["words"] = [str(w).strip().upper()[:60] for w in body["words"] if str(w).strip()][:200]
         save_db(db)
@@ -2611,18 +2660,123 @@ async def api_motion(request):
 TABLET = {"seen": 0, "info": {}, "last_away": None, "pushed": 0}
 
 
-async def nobody_home(s):
-    """True when nobody is home: zone.home counts the people at home (or a person/group entity that is not 'home')."""
-    ent = (s.get("motion") or {}).get("away_entity") or "zone.home"
-    st = await ha_get("/states/" + ent)
+NOT_CONNECTED = ("", "unknown", "unavailable", "none", "<not connected>", "not connected", "disconnected")
+
+
+def presence_entities(m):
+    """The entities that tell who is home (before 0.18.0 there was just one)."""
+    ents = [e for e in (m.get("away_entities") or []) if e]
+    return ents or [m.get("away_entity") or "zone.home"]
+
+
+def home_says(ent, st, wifi):
+    """Does this one entity say someone is home? True / False, or None when it can't tell."""
     if not st:
         return None
-    v = str(st.get("state", ""))
-    away = v == "0" if ent.startswith("zone.") else v not in ("home", "on", "unknown", "unavailable")
+    v = str(st.get("state", "")).strip()
+    if v.lower() in ("unknown", "unavailable"):
+        return None
+    dom = ent.split(".")[0]
+    if dom == "zone":
+        try:
+            return int(float(v)) > 0
+        except ValueError:
+            return None
+    if dom == "sensor":   # the Home Assistant app: the name of the wifi the phone is on (Android "Wifi-verbinding", iPhone "SSID")
+        if not wifi:
+            return None
+        return v.lower() in wifi
+    if dom in ("person", "device_tracker", "group"):
+        return v.lower() == "home" or (dom == "group" and v.lower() == "on")
+    return v.lower() in ("on", "home", "true", "connected")
+
+
+PRESENCE = {"t": 0, "key": None, "val": None}
+
+
+async def presence(s):
+    """Who is home, entity by entity (for the Studio), and whether at least one of them is (asked at most every 15 s)."""
+    m = s.get("motion") or {}
+    key = json.dumps([presence_entities(m), m.get("home_wifi")])
+    if PRESENCE["key"] == key and time.time() - PRESENCE["t"] < 15:
+        return PRESENCE["val"]
+    val = await _presence(m)
+    PRESENCE.update(t=time.time(), key=key, val=val)
+    return val
+
+
+async def _presence(m):
+    wifi = [w.strip().lower() for w in re.split(r"[,;\n]", m.get("home_wifi") or "") if w.strip()]
+    out = []
+    for ent in presence_entities(m):
+        st = await ha_get("/states/" + ent)
+        out.append({"entity": ent, "name": ((st or {}).get("attributes") or {}).get("friendly_name", ent), "state": (st or {}).get("state"),
+                    "home": home_says(ent, st, wifi)})
+    known = [x["home"] for x in out if x["home"] is not None]
+    return out, (any(known) if known else None)
+
+
+AWAY = {"since": None}
+
+
+async def nobody_home(s):
+    """True when nobody is home. Someone coming home counts at once; "nobody" only after a few minutes,
+    because a phone in a pocket sometimes drops the wifi for a moment."""
+    _, someone = await presence(s)
+    if someone is None:
+        return None
+    if someone:
+        AWAY["since"] = None
+        away = False
+    else:
+        AWAY["since"] = AWAY["since"] or time.time()
+        delay = int((s.get("motion") or {}).get("away_delay", 10) or 0) * 60
+        away = time.time() - AWAY["since"] >= delay
     if TABLET["last_away"] is not None and away != TABLET["last_away"]:
         log("huis", "Niemand meer thuis: het scherm gaat uit." if away else "Er is iemand thuis: het scherm gaat weer aan.")
     TABLET["last_away"] = away
     return away
+
+
+CHARGE = {"last": None, "asked": 0}
+
+
+async def charge_loop():
+    """The smart plug of the tablet's charger: on when the battery runs low, off when it is full enough.
+    If the tablet stops reporting (an empty battery?), the plug goes on, to be safe."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            c = load_db()["settings"].get("charge") or {}
+            ent, mode = c.get("entity") or "", c.get("mode") or "uit"
+            if not ent or mode == "uit" or "." not in ent:
+                continue
+            bat, silent = TABLET["info"].get("battery"), (time.time() - TABLET["seen"]) > 900 if TABLET["seen"] else True
+            want, why = None, ""
+            if mode == "altijd":
+                want, why = True, "altijd aan"
+            elif silent:
+                want, why = True, "de tablet meldt zich niet meer"
+            elif bat is not None and bat <= int(c.get("low", 30)):
+                want, why = True, f"batterij {round(bat)}%"
+            elif bat is not None and bat >= int(c.get("high", 80)):
+                want, why = False, f"batterij {round(bat)}%"
+            if want is None:
+                continue
+            st = await ha_get("/states/" + ent)
+            now_on = str((st or {}).get("state", "")).lower() == "on"
+            if st and now_on == want:
+                CHARGE["last"] = want
+                continue
+            if time.time() - CHARGE["asked"] < 240:   # give the plug (and the tablet's report) a moment before asking again
+                continue
+            CHARGE["asked"] = time.time()
+            dom = ent.split(".")[0]
+            await ha_service(dom if dom in ("switch", "input_boolean", "light") else "homeassistant", "turn_on" if want else "turn_off", {"entity_id": ent})
+            log("huis", ("Lader aan" if want else "Lader uit") + " (" + why + ").")
+            CHARGE["last"] = want
+        except Exception as e:
+            log("fout", "Slimme stekker van de lader: " + str(e), quiet=True)
 
 
 async def ha_set_state(entity, state, attrs):
@@ -2739,11 +2893,17 @@ async def api_tablet_status_get(request):
     s = load_db()["settings"]
     m = s.get("motion") or {}
     away = await nobody_home(s) if m.get("away_off") else None
-    zone = await ha_get("/states/" + (m.get("away_entity") or "zone.home"))
+    who, someone = await presence(s)
+    zone = await ha_get("/states/zone.home")
+    c = s.get("charge") or {}
+    plug = await ha_get("/states/" + c["entity"]) if c.get("entity") else None
     return web.json_response({"seen": TABLET["seen"], "ago": time.time() - TABLET["seen"] if TABLET["seen"] else None, "info": TABLET["info"],
                               "night": is_night(s), "night_start": s.get("night_start"), "night_end": s.get("night_end"),
                               "away": away, "home_count": (zone or {}).get("state"), "motion_ago": time.time() - WATCH["motion"] if WATCH["motion"] else None,
-                              "pushed": TABLET["pushed"], "connected": bool(TOKEN)})
+                              "pushed": TABLET["pushed"], "connected": bool(TOKEN),
+                              "who": [{"name": x["name"], "home": x["home"], "entity": x["entity"]} for x in who], "someone": someone,
+                              "waiting": (time.time() - AWAY["since"]) if AWAY["since"] else None,
+                              "plug": (plug or {}).get("state"), "charge": c})
 
 
 async def api_screen_test(request):
@@ -2893,6 +3053,7 @@ async def main():
     except Exception as e:
         log("fout", "Versie bijhouden mislukt: " + str(e), quiet=True)
     asyncio.ensure_future(screen_guard_loop())
+    asyncio.ensure_future(charge_loop())
     await asyncio.Event().wait()
 
 

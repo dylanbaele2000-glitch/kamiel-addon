@@ -71,6 +71,11 @@ legend{font-weight:600;margin-bottom:6px;padding:0}
 .pano img{display:block;height:180px;max-width:none}
 label.field{display:flex;flex-direction:column;gap:6px;font-weight:600;max-width:420px}
 label.field span{font-weight:400;color:var(--muted);font-size:13px}
+.settings.osdrows{grid-template-columns:1fr}
+div.field{display:flex;flex-direction:column;gap:6px;font-weight:600}
+div.field>span{font-weight:400;color:var(--muted);font-size:13px}
+.osdline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:640px){.osdline{grid-template-columns:1fr}}
 input[type=number],input[type=time],input[type=date],input[type=text],input[type=password],input[type=search],select,textarea{font:15px var(--f-ui);padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 textarea{min-height:240px;font-family:var(--f-osd);text-transform:uppercase}
 table.chances{border-collapse:collapse;width:auto}
@@ -536,13 +541,32 @@ details.fold.sub>summary{font-size:15px}
           <span>Optioneel, in plaats van (of naast) de camera van de tablet.</span>
           <select id="mEnt"></select></label>
       </div>
-      <label class="sw"><input type="checkbox" id="mAway"><span><b>Scherm uit als niemand thuis is</b><span>Komt er iemand thuis, dan gaat het weer aan. Ziet de tablet toch beweging, dan gaat het scherm even aan.</span></span></label>
+      <label class="sw"><input type="checkbox" id="mAway"><span><b>Scherm uit als niemand thuis is</b><span>Is minstens één van jullie thuis (bijvoorbeeld: verbonden met de thuiswifi), dan staat het scherm aan. Is niemand meer thuis, dan gaat het na de wachttijd uit. Komt er iemand thuis, dan gaat het meteen weer aan.</span></span></label>
+      <details class="guide">
+        <summary>Thuis = verbonden met de thuiswifi: zo stel je dat in</summary>
+        <ol class="steps">
+          <li>Open op elke gsm de <b>Home Assistant-app</b> → Instellingen → <b>Companion-app</b> → <b>Sensoren beheren</b>.</li>
+          <li>Android: zet <b>Wifi-verbinding</b> (Wi-Fi Connection) aan. iPhone: zet <b>SSID</b> aan. Die sensor toont de naam van de wifi waarmee de gsm verbonden is.</li>
+          <li>Kies hieronder bij "Wie is er thuis" die sensor van elke gsm (bijvoorbeeld <code>sensor.…_wifi_connection</code> of <code>sensor.…_ssid</code>).</li>
+          <li>Vul de naam van jullie thuiswifi in (precies zoals hij op de gsm staat). Hebben jullie er meer (bv. een 5 GHz-netwerk), zet dan een komma ertussen.</li>
+        </ol>
+        <p class="hint">Je kan ook andere dingen kiezen: een persoon of <code>device_tracker</code> (bijvoorbeeld van je router) die "thuis" zegt, <code>zone.home</code>, of een schakelaar. Eén van de gekozen dingen die "thuis" zegt, is genoeg. De naam van de wifi blijft in Kamiel Studio op je Home Assistant: hij gaat niet naar de tablet en staat nergens online.</p>
+      </details>
       <div class="settings">
-        <label class="field" for="mAwayEnt">Wie is er thuis
-          <span>Standaard <code>zone.home</code>: dat telt hoeveel personen thuis zijn. Werkt als de Home Assistant-app op jullie gsm's staat, met locatie aan.</span>
-          <select id="mAwayEnt"></select></label>
+        <div class="field">Wie is er thuis<span>Eén ervan die "thuis" zegt, is genoeg.</span>
+          <div class="osdline" id="mAwayEnts" style="grid-template-columns:repeat(2,minmax(0,1fr))"><select class="awayEnt"></select><select class="awayEnt"></select><select class="awayEnt"></select><select class="awayEnt"></select></div></div>
+        <label class="field" for="mWifi">Naam van jullie thuiswifi<span>Alleen nodig voor de wifi-sensor van de gsm.</span><input type="text" id="mWifi" maxlength="200" autocomplete="off" spellcheck="false"></label>
+        <label class="field" for="mDelay">Wachttijd voor het scherm uitgaat (minuten)<span>Een gsm in de zak verliest soms even de wifi: pas als er zo lang niemand verbonden is, gaat het scherm uit.</span><input type="number" id="mDelay" min="0" max="120"></label>
       </div>
       <label class="sw"><input type="checkbox" id="mToHa"><span><b>Batterij, scherm en beweging doorgeven aan Home Assistant</b><span>Dan heb je in Home Assistant <code>sensor.kamiel_tablet_batterij</code>, <code>binary_sensor.kamiel_tablet_lader</code>, <code>binary_sensor.kamiel_tablet_scherm</code> en <code>binary_sensor.kamiel_tablet_beweging</code>, voor je eigen automatiseringen. Daarvoor is de Fully Kiosk-integratie niet nodig.</span></span></label>
+      <div style="margin-top:14px"><b style="font-size:14px">🔌 Laden met een slimme stekker</b>
+        <p class="hint" style="margin:4px 0 8px">Steekt de lader van de tablet in een slimme stekker die Home Assistant kent? Dan kan Kamiel de lader zelf aan- en uitzetten: aan als de batterij bijna leeg is, uit als hij vol genoeg is. Een batterij die niet altijd op 100% staat, gaat veel langer mee. Meldt de tablet zich een kwartier niet meer, dan gaat de lader voor de zekerheid aan.</p>
+        <div class="settings">
+          <label class="field" for="cEnt">Slimme stekker<select id="cEnt"></select></label>
+          <label class="field" for="cMode">Hoe laden<select id="cMode"><option value="uit">Kamiel doet niets met de stekker</option><option value="batterij">Tussen twee percentages (aangeraden)</option><option value="altijd">Altijd aan</option></select></label>
+          <label class="field" for="cLow">Lader aan vanaf (%)<input type="number" id="cLow" min="5" max="90"></label>
+          <label class="field" for="cHigh">Lader uit vanaf (%)<input type="number" id="cHigh" min="15" max="100"></label>
+        </div></div>
       <div style="margin-top:14px"><b style="font-size:14px">Extra zekerheid: het scherm 's ochtends wekken vanuit Home Assistant</b>
         <p class="hint" style="margin:4px 0 8px">De tablet zet zijn scherm zelf weer aan als de nacht voorbij is. Slaapt de tablet zo diep dat dat niet lukt, dan kan Kamiel hem van hieruit wekken (ook als er weer iemand thuiskomt). Zet daarvoor in Fully Kiosk op de tablet <b>Remote Administration</b> aan (Instellingen → Remote Administration → Enable Remote Administration, en "Remote Admin from Local Network" aan), kies daar een wachtwoord en vul hetzelfde wachtwoord hier in. Leeg laten mag: dan doet de tablet het alleen zelf.</p>
         <label class="field" for="mPw" style="max-width:340px">Wachtwoord van Remote Administration<input type="password" id="mPw" maxlength="80" autocomplete="off"></label>
@@ -685,11 +709,11 @@ details.fold.sub>summary{font-size:15px}
         </label>
       </div>
       <h2 style="margin-top:8px">Onder de datum en tijd</h2>
-      <p class="hint">Kies tot drie sensoren, bijvoorbeeld een temperatuur. Hun waarde verschijnt in camcorderstijl onder de datum.</p>
-      <div class="settings">
-        <label class="field" for="sOsd0">Regel 1<select id="sOsd0" class="osdsel"></select></label>
-        <label class="field" for="sOsd1">Regel 2<select id="sOsd1" class="osdsel"></select></label>
-        <label class="field" for="sOsd2">Regel 3<select id="sOsd2" class="osdsel"></select></label>
+      <p class="hint">Tot drie regels, met op elke regel tot drie waarden naast elkaar (bijvoorbeeld de temperatuur binnen en buiten). Ze verschijnen in camcorderstijl onder de datum.</p>
+      <div class="settings osdrows">
+        <div class="field">Regel 1<div class="osdline"><select class="osdsel" data-l="0"></select><select class="osdsel" data-l="0"></select><select class="osdsel" data-l="0"></select></div></div>
+        <div class="field">Regel 2<div class="osdline"><select class="osdsel" data-l="1"></select><select class="osdsel" data-l="1"></select><select class="osdsel" data-l="1"></select></div></div>
+        <div class="field">Regel 3<div class="osdline"><select class="osdsel" data-l="2"></select><select class="osdsel" data-l="2"></select><select class="osdsel" data-l="2"></select></div></div>
       </div>
       <h2 style="margin-top:8px">Tikken op het scherm</h2>
       <p class="hint">Een script kan alles wat Home Assistant kan: lichten, muziek, een melding… Per element stel je in de bibliotheek in wat tikken erop doet.</p>
@@ -1294,9 +1318,13 @@ async function renderSettings() {
   fill('binary_sensor,input_boolean', [$('sTrigger')], [s.departure_trigger], 'Niets');
   fill('input_text', [$('sMsgEnt')], [s.message_entity], 'Geen');
   try {
-    const j = await (await fetch('api/entities?domain=sensor')).json();
-    const opts = '<option value="">Niets</option>' + j.entities.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
-    document.querySelectorAll('.osdsel').forEach((el, i) => { el.innerHTML = j.connected ? opts : '<option value="">Niet verbonden met Home Assistant</option>'; const v = (s.osd_entities || [])[i] || ''; if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v)); el.value = v; });
+    const j = await (await fetch('api/entities?domain=sensor,input_number,input_text,input_select,binary_sensor,counter')).json();
+    const opts = '<option value="">—</option>' + j.entities.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
+    // a line is a list of up to three entities (older versions: one entity per line)
+    const lines = (s.osd_entities || []).map(l => Array.isArray(l) ? l : [l]);
+    const per = [0, 0, 0];
+    document.querySelectorAll('.osdsel').forEach((el) => { const l = +el.dataset.l, v = (lines[l] || [])[per[l]++] || '';
+      el.innerHTML = j.connected ? opts : '<option value="">Niet verbonden met Home Assistant</option>'; if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v)); el.value = v; });
   } catch { }
 }
 $('setForm').addEventListener('submit', async (e) => {
@@ -1324,7 +1352,7 @@ $('setForm').addEventListener('submit', async (e) => {
     feest: { on: $('fOn').checked, boost: +$('fBoost').value || 3, days: readFDays(), holidays: Object.fromEntries([...document.querySelectorAll('.fH')].map(e => [e.dataset.k, e.checked])) },
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
     outfits_off: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => !e.checked).map(e => e.dataset.o) : undefined,
-    osd_entities: [...document.querySelectorAll('.osdsel')].map(e => e.value).filter(Boolean) };
+    osd_entities: [0, 1, 2].map(l => [...document.querySelectorAll('.osdsel[data-l="' + l + '"]')].map(e => e.value).filter(Boolean)).filter(l => l.length) };
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   status($('setStatus'), r.ok ? 'Bewaard. De tablet neemt het binnen een paar minuten over.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
@@ -1615,7 +1643,11 @@ $('dbTest').addEventListener('click', async () => {
 });
 $('mSave').addEventListener('click', async () => {
   const b = { night_start: $('sNightStart').value || '22:00', night_end: $('sNightEnd').value || '06:00', motion: { on: $('mOn').checked, look: $('mLook').checked, wake: $('mWake').checked, screen_off: $('mOff').value, off_after: +$('mAfter').value || 10, entity: $('mEnt').value,
-    away_off: $('mAway').checked, away_entity: $('mAwayEnt').value || 'zone.home', to_ha: $('mToHa').checked, fully_pw: $('mPw').value } };
+    away_off: $('mAway').checked, away_entities: [...document.querySelectorAll('.awayEnt')].map(e => e.value).filter(Boolean), home_wifi: $('mWifi').value,
+    away_delay: +$('mDelay').value || 0, to_ha: $('mToHa').checked, fully_pw: $('mPw').value },
+    charge: { entity: $('cEnt').value, mode: $('cMode').value, low: +$('cLow').value || 30, high: +$('cHigh').value || 80 } };
+  if (b.motion.away_entities.length) b.motion.away_entity = b.motion.away_entities[0];
+  if (b.motion.away_off && b.motion.away_entities.some(e => e.startsWith('sensor.')) && !b.motion.home_wifi.trim()) { status($('mStatus'), 'Vul de naam van jullie thuiswifi in: zonder die naam weet Kamiel niet of een gsm thuis is.', 'err'); return; }
   const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
   status($('mStatus'), r.ok ? 'Bewaard. Herlaad de tablet om het te laten werken.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
@@ -1631,8 +1663,12 @@ async function renderHuis() {
   $('dbPets').checked = D.pets !== false; $('dbTg').checked = D.telegram !== false; $('dbKeep').checked = !!D.keep;
   $('sNightStart').value = s.night_start || '22:00'; $('sNightEnd').value = s.night_end || '06:00';
   $('mAway').checked = !!M.away_off; $('mToHa').checked = M.to_ha !== false; $('mPw').value = M.fully_pw || '';
-  $('mAwayEnt').innerHTML = entOpts(['zone', 'group', 'person', 'binary_sensor', 'input_boolean'], M.away_entity || 'zone.home', 'zone.home (standaard)');
-  if (!M.away_entity || M.away_entity === 'zone.home') $('mAwayEnt').value = ENTMAP['zone.home'] ? 'zone.home' : '';
+  const aw = (M.away_entities && M.away_entities.length) ? M.away_entities : [M.away_entity || 'zone.home'];
+  document.querySelectorAll('.awayEnt').forEach((el, k) => { el.innerHTML = entOpts(['sensor', 'device_tracker', 'person', 'zone', 'group', 'binary_sensor', 'input_boolean'], aw[k] || '', k ? '—' : 'Kies…'); });
+  $('mWifi').value = M.home_wifi || ''; $('mDelay').value = M.away_delay === undefined ? 10 : M.away_delay;
+  const C = s.charge || {};
+  $('cEnt').innerHTML = entOpts(['switch', 'input_boolean', 'light'], C.entity || '', 'Geen'); $('cMode').value = C.mode || 'uit';
+  $('cLow').value = C.low || 30; $('cHigh').value = C.high || 80;
   $('mOn').checked = !!M.on; $('mLook').checked = M.look !== false; $('mWake').checked = M.wake !== false; $('mOff').value = M.screen_off || 'nooit'; $('mAfter').value = M.off_after || 10;
   $('mEnt').innerHTML = entOpts(['binary_sensor'], M.entity || '', 'Geen (alleen de tablet)');
   RULES = JSON.parse(JSON.stringify(s.rules || []));
@@ -1672,8 +1708,12 @@ async function tabletStatus() {
   if (!M.on || M.off === 'nooit') out.push(row(null, 'Scherm uit bij geen beweging: niet ingesteld', 'Zet hieronder "Reageren op beweging" aan en kies bij "Scherm uit als er niemand is" voor "Alleen tijdens de rusttijd". ' + nightTxt));
   else out.push(row(live && i.js && i.motion_detect ? true : false, M.off === 'nacht' ? 'Tijdens de rusttijd gaat het scherm uit' : 'Het scherm gaat uit zonder beweging', `Na ${M.after} min zonder beweging${M.off === 'nacht' ? ', alleen tijdens de rusttijd' : ''}, en weer aan bij beweging. ${nightTxt}${live && i.js && i.motion_detect ? '' : ' Werkt pas als de punten hierboven in orde zijn.'}`));
   const hc = j.home_count;
-  if (M.away) out.push(row(j.away === null ? false : true, 'Scherm uit als niemand thuis is', j.away === null ? 'Kamiel kan niet zien wie er thuis is: kies hieronder bij "Wie is er thuis" iets dat bestaat.' : `Nu ${j.away ? 'is er niemand thuis: het scherm hoort uit te zijn' : 'is er iemand thuis'}${/^\d+$/.test(hc || '') ? ` (${hc} thuis volgens zone.home)` : ''}.`));
+  const whoTxt = (j.who || []).map(x => `${esc(x.name)}: ${x.home === true ? 'thuis' : x.home === false ? 'niet thuis' : 'weet ik niet' + (x.entity.startsWith('sensor.') ? ' (thuiswifi ingevuld?)' : '')}`).join(' · ');
+  if (M.away) out.push(row(j.away === null ? false : true, 'Scherm uit als niemand thuis is', j.away === null ? 'Kamiel kan niet zien wie er thuis is: kies hieronder bij "Wie is er thuis" iets dat bestaat. ' + whoTxt : `Nu ${j.away ? 'is er niemand thuis: het scherm hoort uit te zijn' : j.someone === false ? 'is er niemand thuis, maar de wachttijd loopt nog (' + Math.round((j.waiting || 0) / 60) + ' min)' : 'is er iemand thuis'}. ${whoTxt}`));
   else out.push(row(null, 'Scherm uit als niemand thuis is: uit', /^\d+$/.test(hc || '') ? `Volgens Home Assistant zijn er nu ${hc} personen thuis.` : 'Vink het hieronder aan als je dat wil.'));
+  const C = j.charge || {};
+  if (C.entity && C.mode !== 'uit') out.push(row(j.plug === 'on' || j.plug === 'off' ? true : false, 'Slimme stekker van de lader: ' + (j.plug === 'on' ? 'aan' : j.plug === 'off' ? 'uit' : 'niet bereikbaar'),
+    C.mode === 'altijd' ? 'Staat altijd aan.' : `Aan vanaf ${C.low}%, uit vanaf ${C.high}%.${i.battery !== undefined ? ' Batterij nu ' + Math.round(i.battery) + '%.' : ''}`));
   if (M.toHa) out.push(row(j.pushed && Date.now() / 1000 - j.pushed < 150 ? true : null, 'Gegevens naar Home Assistant', j.pushed ? `Bijgewerkt ${agoNL(Date.now() / 1000 - j.pushed)}: kijk in Home Assistant naar <code>sensor.kamiel_tablet_batterij</code>.` : 'Nog niets doorgegeven (de tablet moet zich eerst melden).'));
   $('tStat').innerHTML = out.join('');
 }

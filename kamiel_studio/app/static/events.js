@@ -39,7 +39,7 @@
     { id: 'ijsberen', name: 'IJsberen', cat: 'vaak' },
     { id: 'wegrennen', name: 'Verschieten en wegrennen', cat: 'vaak' },
     { id: 'wolk', name: 'Een wolk volgen', cat: 'vaak' },
-    { id: 'wolkdier', name: 'Een huisdier zoeft voorbij op een wolk', cat: 'vaak' },
+    { id: 'wolkdier', name: 'Een huisdier zweeft voorbij op een wolk', cat: 'vaak' },
     { id: 'moonwalk-weg', name: 'Moonwalk naar de volgende scene', cat: 'vaak' },
     { id: 'moonwalk', name: 'Moonwalk ter plekke', cat: 'vaak' },
     { id: 'zoom', name: 'De camera zoomt in', cat: 'vaak' },
@@ -200,6 +200,9 @@
     const lerp = (a, b, p) => a + (b - a) * p;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const ez = (p) => p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    // smooth random wandering (value noise) for things that float or fly: organic, never a repeating wave
+    const hsh = (n) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+    const nz = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hsh(i) * (1 - u) + hsh(i + 1) * u; };
     const st = { dt: 1 / 60 };
     let cur = null, queue = [], walkEvent = null, plan = [], planDay = '';
 
@@ -1377,15 +1380,16 @@
       slee: { fest: ['kerst'], run: function* () {
         const d = rnd() < .5 ? -1 : 1, crew = PETS.filter(p => !(cfg.off || []).includes(p)).map(n => pet(n, -d));
         const sl = actor({ cx: 0, s: .32, set: 'heidi', face: d, eyes: 'blij', layer: 'front' });
+        const slSeed = rnd() * 500;
         crew.forEach(a => { a.s *= .45; a.layer = 'front'; a.pose = 'jump'; a.lockPose = true; a.face = d; });
         kam.face = d; kam.head = -.22; emote('?', 2);
         fx('front', 0, (g) => { g.fillStyle = '#b8202a'; g.fillRect(sl.cx - 26, sl.feet - 6, 52, 14); g.fillStyle = '#e8c46a'; g.fillRect(sl.cx - 30, sl.feet + 8, 60, 3); });
         const trail = particles('front', { until: cur.t + 12, emit: (ps) => { if (rnd() < .6) ps.push(P({ x: sl.cx - d * 30, y: sl.feet, vx: -d * 20, vy: 10, life: 1.2 })); },
           draw: (g, p, tt) => { g.fillStyle = `rgba(255,240,150,${1 - tt})`; g.fillRect(p.x, p.y, 3, 3); } });
         yield* tween(10, p => {
-          const x = lerp(-d * (W / 2 + 260), d * (W / 2 + 420), p) + W / 2, y = 150 + Math.sin(p * Math.PI * 2) * 30;
+          const x = lerp(-d * (W / 2 + 260), d * (W / 2 + 420), p) + W / 2, y = 150 + (nz(slSeed + p * 3) - .5) * 90;
           sl.cx = x; sl.feet = y;
-          crew.forEach((a, i) => { a.cx = x + d * (60 + i * 40); a.feet = y + 6 + Math.sin(cur.t * 8 + i) * 3; a.lift = 0; });
+          crew.forEach((a, i) => { a.cx = x + d * (60 + i * 40); a.feet = y + 6 + (nz(slSeed + 50 + i * 7 + cur.t * 2.2) - .5) * 8; a.lift = 0; });
         });
         kam.eyes = 'blij'; emote('sparks', 2); kam.head = 0; yield* wait(2); kam.eyes = '';
         crew.forEach(a => { a.alpha = 0; }); sl.alpha = 0; stop(trail);
@@ -2176,7 +2180,7 @@
         if (on.length > 1 && rnd() < .35) riders.push(pick(on.filter(p => p !== riders[0])));
         const flights = riders.map((n, i) => {
           const a = pet(n, -d); hold(a, i === 0 && rnd() < .5 ? 'lie' : 'sit'); a.face = d; a.layer = 'back'; a.noShadow = true;
-          const fl = { a, x: W / 2 - d * (W / 2 + 160), y: 120 + rnd() * 110, delay: i * (.6 + rnd() * .6), secs: 2.6 + rnd() * 1.2, puffs: [] };
+          const fl = { a, x: W / 2 - d * (W / 2 + 160), y: 120 + rnd() * 110, delay: i * (1.5 + rnd() * 2.5), secs: 8 + rnd() * 5, puffs: [], seed: rnd() * 500 };
           a.cx = fl.x; a.feet = fl.y - 6;
           fx('back', 0, (g) => { const x = fl.x, y = fl.y;
             for (const pf of fl.puffs) { const k = Math.min(1, (cur.t - pf.t) / .7); g.fillStyle = `rgba(255,255,255,${.6 * (1 - k)})`; const z = Math.round(6 + 10 * k); g.fillRect(Math.round(pf.x - z / 2), Math.round(pf.y - z / 2), z, z); }
@@ -2186,8 +2190,9 @@
         kam.head = -.2; kam.face = d * -1;
         yield* par(...flights.map(fl => (function* () {
           yield* wait(fl.delay); const x0 = fl.x, x1 = W / 2 + d * (W / 2 + 180); let lastPuff = 0;
-          yield* tween(fl.secs, p => { fl.x = lerp(x0, x1, p); const bob = Math.sin(cur.t * 5 + fl.delay) * 4; fl.a.cx = fl.x; fl.a.feet = fl.y - 6 + bob;
-            if (cur.t - lastPuff > .12) { lastPuff = cur.t; fl.puffs.push({ x: fl.x - d * 88, y: fl.y + 12 + bob, t: cur.t }); if (fl.puffs.length > 12) fl.puffs.shift(); }
+          const y0 = fl.y;
+          yield* tween(fl.secs, p => { fl.x = lerp(x0, x1, p + (nz(fl.seed + p * 3) - .5) * .06); fl.y = y0 + (nz(fl.seed + 40 + p * 2.5) - .5) * 70; const bob = (nz(fl.seed + 90 + cur.t * .9) - .5) * 8; fl.a.cx = fl.x; fl.a.feet = fl.y - 6 + bob;
+            if (cur.t - lastPuff > .3) { lastPuff = cur.t; fl.puffs.push({ x: fl.x - d * 88, y: fl.y + 12 + bob, t: cur.t }); if (fl.puffs.length > 12) fl.puffs.shift(); }
             if (Math.abs(fl.x - kx()) < 60) kam.face = d; });
           fl.a.alpha = 0;
         })()), (function* () { yield* wait(1.2); kam.eyes = 'groot'; emote('!?', 1.6); yield* wait(2.4); kam.eyes = ''; })());

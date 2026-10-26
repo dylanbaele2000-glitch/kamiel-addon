@@ -78,11 +78,13 @@
       const sub = rnd() < .5 ? 'lucht' : 'grond';   // for "verhouding"
 
       // how many of each kind: "at least" to "at most", by day and by night (Studio)
-      const DEFC = { grond: [2, 4], horizon: [1, 3], lucht: [1, 2], kader: [0, 1] };
+      const DEFC = { grond: [2, 4], horizon: [1, 3], lucht: [1, 2], kader: [1, 1] };
       const cnt = (S.counts && S.counts[night ? 'nacht' : 'dag']) || {};
       const mult = [.35, .65, 1, 1.45, 1.9][BUSY()];
       const num = (k) => { const r = cnt[k] || DEFC[k], lo0 = Math.max(0, +r[0] || 0), hi0 = Math.max(lo0, +r[1] || 0);
-        const lo = Math.round(lo0 * mult), hi = Math.max(lo, Math.round(hi0 * mult)); return lo + Math.floor(rnd() * (hi - lo + 1)); };
+        // rounded by chance (1 × 0.65 is sometimes 1, sometimes 0), so a calm setting never wipes out a kind completely
+        const sround = (v) => Math.floor(v) + (rnd() < v - Math.floor(v) ? 1 : 0);
+        const lo = sround(lo0 * mult), hi = Math.max(lo, sround(hi0 * mult)); return lo + Math.floor(rnd() * (hi - lo + 1)); };
       let nH = num('horizon'), nS = num('lucht'), nG = num('grond'), nF = num('kader');
       if (style === 'leegte') { nG = rnd() < .5 ? Math.min(nG, 1) : 0; nH = rnd() < .3 ? 0 : 1; nS = Math.min(nS, 1); nF = 0; if (!nH && rnd() < .5) { nG = 0; nS = 0; } }   // sometimes really empty
       if (style === 'verhouding' && sub === 'lucht') { nS += 1; nG = Math.max(0, nG - 1); }
