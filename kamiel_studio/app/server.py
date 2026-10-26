@@ -651,7 +651,7 @@ def _push(kind, item, keep=20):
 async def opensky_loop():
     """Planes from Home Assistant's OpenSky integration: it fires 'opensky_entry' when a plane enters the circle around home.
     Events only come over the websocket, so Kamiel keeps one open (and reconnects when it drops)."""
-    n = 0
+    n, failing, told = 0, None, False
     while True:
         try:
             if not TOKEN or not (load_db()["settings"].get("sky") or {}).get("planes", True):
@@ -664,6 +664,9 @@ async def opensky_loop():
                         if (await ws.receive_json(timeout=10)).get("type") != "auth_ok":
                             await asyncio.sleep(300); continue
                     await ws.send_json({"id": 1, "type": "subscribe_events", "event_type": "opensky_entry"})
+                    if told:
+                        log("huis", "Vliegtuigen: de verbinding met Home Assistant werkt weer.")
+                    failing, told = None, False
                     async for msg in ws:
                         if msg.type != 1:   # text
                             continue
@@ -677,8 +680,13 @@ async def opensky_loop():
                         _push("planes", {"id": f"{int(time.time())}-{n}", "t": time.time(), "cs": str(data.get("callsign") or "").strip()[:10],
                                          "alt": float(alt) if isinstance(alt, (int, float)) else None})
         except Exception as e:
-            log("fout", "OpenSky (vliegtuigen): " + str(e), quiet=True)
-        await asyncio.sleep(30)
+            # while Home Assistant restarts (for example after adding an integration) this fails for a minute or two:
+            # that's normal, so only say something when it keeps failing for a quarter of an hour
+            failing = failing or time.time()
+            if not told and time.time() - failing > 900:
+                told = True
+                log("fout", "Vliegtuigen: Kamiel kan al een kwartier niet luisteren naar Home Assistant (" + type(e).__name__ + "). Hij blijft het proberen.")
+        await asyncio.sleep(30 if not failing or time.time() - failing < 300 else 120)
 
 
 async def lightning_loop():
