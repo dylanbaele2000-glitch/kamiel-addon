@@ -126,7 +126,7 @@ DEFAULT_SETTINGS = {
     "hills": {"chance": 40, "height": 18},           # % of places with hills; how high, in % of the screen
     "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
-               "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25,
+               "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25, "pet_birthdays": {},
                "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20,
                "aurora_chance": 15, "stories_per_week": 3, "films_per_week": 2},
     # feast days and birthdays: much more happens, with decorations and events of their own
@@ -137,10 +137,14 @@ DEFAULT_SETTINGS = {
     "halls": {"chance": 12, "off": [], "custom": []},
     # air quality: with bad air Kamiel gets drowsy
     "air": {"on": False, "entity": "", "warn": 1000, "bad": 1500, "invert": False},
+    # batteries of devices (buttons, sensors…): below "low" % a little "!" appears above Kamiel
+    "battery": {"entities": [], "low": 20},
     # the real sky: what shows, how often a nebula night comes (%), and the lightning radius (km)
     "sky": {"stars": True, "planets": True, "meteors": True, "nebula": 10, "iss": True, "eclipses": True, "rainbow": True, "geese": True,
             "planes": True, "lightning": True, "lightning_km": 25, "telescope": True,
-            "rain_cloud": True, "storm": True, "frost_heat": True, "uv": True, "rain_entity": "", "uv_entity": "", "temp_entity": ""},
+            "rain_cloud": True, "storm": True, "frost_heat": True, "uv": True, "rain_entity": "", "uv_entity": "", "temp_entity": "",
+            # planes: Kamiel asks OpenSky himself (a free account's API client: id + secret, never sent to the tablet)
+            "opensky_id": "", "opensky_secret": "", "plane_km": 8, "lines": True},
     # height on screen, in % of the screen height: [smallest, largest]
     "sizes": {"grond": [10, 40], "horizon": [15, 42], "lucht": [12, 38], "kader": [18, 42]},
     "giant_chance": 10,
@@ -170,7 +174,8 @@ DEFAULT_SETTINGS = {
     "horizon_sink": 3,
     "tap_url": "",
     "osd_entities": [],
-    "osd_right": [],        # top right: up to 4 lines of values you can tap for their history
+    "osd_right": [],
+    "osd_rain_mark": "*",   # after the outside temperature when it rains (empty = nothing)        # top right: up to 4 lines of values you can tap for their history
     "words": ["WELKOM IN KAMIELLAND", "JE BENT HIER AL EENS GEWEEST", "HIER WOONT KAMIEL",
               "NIETS AAN DE HAND", "BLIJF NOG EVEN", "HET IS ALTIJD 4:12"],
 }
@@ -218,7 +223,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge", "sky"):
+    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge", "sky", "battery"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); cp["busy"] = sc.get("busy", cp["busy"]); s["compose"] = cp
@@ -458,7 +463,7 @@ async def api_state(request):
                 pass
         lines = []
         for line in osd_lines(db["settings"]):   # each line: up to three values side by side
-            parts = [p for p in [osd_value(await ha_get("/states/" + ent)) for ent in line] if p]
+            parts = [p for p in [await osd_for(ent, db["settings"]) for ent in line] if p]
             if parts:
                 lines.append("\u00a0\u00a0\u00a0".join(parts))   # non-breaking spaces: HTML would fold normal ones into one
         out["osd"] = lines
@@ -467,7 +472,7 @@ async def api_state(request):
         for line in osd_lines(db["settings"], "osd_right", 4):
             vals = []
             for ent in line:
-                v = osd_value(await ha_get("/states/" + ent))
+                v = await osd_for(ent, db["settings"])
                 if v:
                     vals.append({"e": ent, "t": v})
             if vals:
@@ -490,6 +495,32 @@ def osd_value(st):
         pass
     unit = (st.get("attributes") or {}).get("unit_of_measurement", "") or ""
     return (val + (unit if unit in ("°C", "°F", "%") else (" " + unit if unit else ""))).upper()[:16]
+
+
+OUTSIDE = "kamiel.buiten"   # a value of Kamiel's own: the outside temperature, with a mark when it rains
+RAINY = ("rainy", "pouring", "lightning-rainy", "snowy-rainy", "hail")
+
+
+async def osd_for(ent, s):
+    if ent != OUTSIDE:
+        return osd_value(await ha_get("/states/" + ent))
+    sk = s.get("sky") or {}
+    temp = None
+    if sk.get("temp_entity"):
+        try:
+            temp = float(((await ha_get("/states/" + sk["temp_entity"])) or {}).get("state"))
+        except (TypeError, ValueError):
+            temp = None
+    w = await ha_get("/states/" + s["weather_entity"]) if s.get("weather_entity") else None
+    if temp is None and w:
+        try:
+            temp = float((w.get("attributes") or {}).get("temperature"))
+        except (TypeError, ValueError):
+            temp = None
+    if temp is None:
+        return ""
+    mark = s.get("osd_rain_mark", "*") if (w and w.get("state") in RAINY) else ""
+    return f"{temp:.1f}".rstrip("0").rstrip(".") + "°C" + (mark or "")
 
 
 def osd_lines(settings, key="osd_entities", n=3):
@@ -649,6 +680,14 @@ async def api_meter(request):
     """History of one value from the top right (only the ones chosen in the Studio)."""
     ent = request.query.get("entity", "")
     s = load_db()["settings"]
+    if ent == OUTSIDE:   # the outside temperature: its history comes from your own sensor
+        ent2 = (s.get("sky") or {}).get("temp_entity")
+        if not ent2:
+            return web.json_response({"entity": ent, "error": "kies in Kamiel Studio (Huis → Lucht en ruimte) een buitentemperatuur-sensor, dan kan Kamiel de geschiedenis tonen"})
+        try:
+            return web.json_response(await meter_data(ent2, request.query.get("range", "dag")))
+        except Exception as e:
+            return web.json_response({"entity": ent, "error": str(e)})
     allowed = {e for line in osd_lines(s, "osd_right", 4) for e in line}
     if request.app.get("studio"):
         allowed |= {e for line in osd_lines(s) for e in line}
@@ -690,6 +729,17 @@ async def tle_loop():
         await asyncio.sleep(1800)
 
 
+def add_plane(cs, alt, track=None, km=None, src="OpenSky"):
+    """A plane over the house (from either source); the same callsign twice within 10 minutes counts once."""
+    cs = (cs or "").strip()[:10]
+    now = time.time()
+    if cs and any(p.get("cs") == cs and now - p["t"] < 600 for p in SKYDATA["planes"]):
+        return
+    OSKY["n"] += 1
+    _push("planes", {"id": f"{int(now)}-{OSKY['n']}", "t": now, "cs": cs, "alt": alt, "track": track, "km": km})
+    log("lucht", f"✈️ Vliegtuig {cs or '?'}" + (f" op {round(alt):,} m".replace(",", ".") if alt else "") + (f", {km:.1f} km van jullie" if km is not None else "") + f" ({src})")
+
+
 def _push(kind, item, keep=20):
     SKYDATA[kind].append(item)
     del SKYDATA[kind][:-keep]
@@ -722,11 +772,8 @@ async def opensky_loop():
                         if not ev:
                             continue
                         data = ev.get("data") or {}
-                        n += 1
                         alt = data.get("altitude")
-                        _push("planes", {"id": f"{int(time.time())}-{n}", "t": time.time(), "cs": str(data.get("callsign") or "").strip()[:10],
-                                         "alt": float(alt) if isinstance(alt, (int, float)) else None})
-                        log("lucht", f"✈️ Vliegtuig {str(data.get('callsign') or '?').strip()}" + (f" op {round(alt):,} m".replace(",", ".") if isinstance(alt, (int, float)) and alt else "") + " (OpenSky)")
+                        add_plane(str(data.get("callsign") or ""), float(alt) if isinstance(alt, (int, float)) else None, src="OpenSky-integratie")
         except Exception as e:
             # while Home Assistant restarts (for example after adding an integration) this fails for a minute or two:
             # that's normal, so only say something when it keeps failing for a quarter of an hour
@@ -735,6 +782,200 @@ async def opensky_loop():
                 told = True
                 log("fout", "Vliegtuigen: Kamiel kan al een kwartier niet luisteren naar Home Assistant (" + type(e).__name__ + "). Hij blijft het proberen.")
         await asyncio.sleep(30 if not failing or time.time() - failing < 300 else 120)
+
+
+OSKY = {"token": None, "exp": 0, "seen": {}, "err": "", "ok_t": 0, "n": 0, "near": 0}
+OSKY_TOKEN_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+
+
+async def opensky_fetch(sess, sk, lat, lon, km):
+    """The planes in a box around the house, straight from OpenSky (with the account's API client when there is one)."""
+    headers = {}
+    cid, sec = sk.get("opensky_id") or "", sk.get("opensky_secret") or ""
+    if cid and sec:
+        if not OSKY["token"] or time.time() > OSKY["exp"] - 60:
+            async with sess.post(OSKY_TOKEN_URL, data={"grant_type": "client_credentials", "client_id": cid, "client_secret": sec}) as r:
+                if r.status != 200:
+                    OSKY["token"] = None
+                    raise RuntimeError("OpenSky weigert de inlog (klopt de client id en het secret?)")
+                j = await r.json()
+                OSKY["token"], OSKY["exp"] = j.get("access_token"), time.time() + float(j.get("expires_in") or 1800)
+        headers["Authorization"] = "Bearer " + OSKY["token"]
+    import math
+    dlat, dlon = km / 111.0, km / (111.0 * max(.2, math.cos(math.radians(lat))))
+    params = {"lamin": f"{lat - dlat:.4f}", "lamax": f"{lat + dlat:.4f}", "lomin": f"{lon - dlon:.4f}", "lomax": f"{lon + dlon:.4f}"}
+    async with sess.get("https://opensky-network.org/api/states/all", params=params, headers=headers) as r:
+        if r.status == 401:
+            OSKY["token"] = None
+            raise RuntimeError("OpenSky: niet aangemeld (401)")
+        if r.status == 429:
+            raise RuntimeError("OpenSky: te veel vragen vandaag (429), Kamiel wacht even")
+        if r.status != 200:
+            raise RuntimeError(f"OpenSky antwoordt {r.status}")
+        j = await r.json(content_type=None)
+    out = []
+    for st in (j or {}).get("states") or []:
+        try:
+            icao, cs, plon, plat, alt, ground, track = st[0], (st[1] or "").strip(), st[5], st[6], st[7], st[8], st[10]
+        except (IndexError, TypeError):
+            continue
+        if ground or plat is None or plon is None:
+            continue
+        d = math.hypot((plat - lat) * 111.0, (plon - lon) * 111.0 * math.cos(math.radians(lat)))
+        out.append({"icao": icao, "cs": cs, "alt": alt if alt is None else float(alt), "track": track, "km": d})
+    return out
+
+
+async def opensky_api_loop():
+    """Every 30 s with an API client (a free account), every 4 minutes without one: who flies over the house now?"""
+    while True:
+        wait = 60
+        try:
+            sk = load_db()["settings"].get("sky") or {}
+            if sk.get("planes", True) and LOCATION.get("lat") is not None:
+                auth = bool(sk.get("opensky_id") and sk.get("opensky_secret"))
+                wait = 30 if auth else 240
+                km = float(sk.get("plane_km") or 8)
+                async with ClientSession(timeout=ClientTimeout(total=20)) as sess:
+                    planes = await opensky_fetch(sess, sk, LOCATION["lat"], LOCATION["lon"], km)
+                OSKY["ok_t"], OSKY["near"] = time.time(), len(planes)
+                if OSKY["err"]:
+                    log("lucht", "✈️ OpenSky werkt weer.")
+                OSKY["err"] = ""
+                now = time.time()
+                for p in planes:
+                    if p["km"] <= km and now - OSKY["seen"].get(p["icao"], 0) > 900:
+                        OSKY["seen"][p["icao"]] = now
+                        add_plane(p["cs"], p["alt"], p["track"], p["km"], "OpenSky")
+                OSKY["seen"] = {k: v for k, v in OSKY["seen"].items() if now - v < 3600}
+        except Exception as e:
+            msg = _osky_err(e)
+            if msg != OSKY["err"]:
+                log("lucht", "✈️ " + msg)
+            OSKY["err"] = msg
+            wait = 600 if "429" in msg else 120
+        await asyncio.sleep(wait)
+
+
+async def api_opensky_test(request):
+    """Studio: try the OpenSky account (or no account) right now."""
+    try:
+        b = await request.json()
+    except Exception:
+        b = {}
+    sk = dict(load_db()["settings"].get("sky") or {})
+    for k in ("opensky_id", "opensky_secret"):
+        if b.get(k) is not None and str(b.get(k)).strip():
+            sk[k] = str(b[k]).strip()
+    if LOCATION.get("lat") is None:
+        return web.json_response({"ok": False, "error": "Kamiel kent de plaats van jullie huis nog niet (uit Home Assistant)."})
+    OSKY["token"] = None
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=20)) as sess:
+            planes = await opensky_fetch(sess, sk, LOCATION["lat"], LOCATION["lon"], 40)
+        near = sorted(planes, key=lambda p: p["km"])[:5]
+        return web.json_response({"ok": True, "auth": bool(sk.get("opensky_id") and sk.get("opensky_secret")), "n": len(planes),
+                                  "near": [{"cs": p["cs"], "km": round(p["km"], 1), "alt": round(p["alt"] or 0)} for p in near]})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": _osky_err(e)})
+
+
+def _osky_err(e):
+    if isinstance(e, RuntimeError):
+        return str(e)
+    if isinstance(e, asyncio.TimeoutError):
+        return "OpenSky antwoordt niet (te traag). Probeer later nog eens."
+    return "OpenSky is niet bereikbaar vanaf Home Assistant (" + (str(e) or type(e).__name__)[:120] + ")."
+
+
+async def api_opensky_status(request):
+    sk = load_db()["settings"].get("sky") or {}
+    return web.json_response({"auth": bool(sk.get("opensky_id") and sk.get("opensky_secret")), "ok_ago": time.time() - OSKY["ok_t"] if OSKY["ok_t"] else None,
+                              "error": OSKY["err"], "near": OSKY["near"], "planes_today": sum(1 for p in SKYDATA["planes"] if time.time() - p["t"] < 86400)})
+
+
+BATT = {"names": {}, "levels": {}}
+
+
+def _batt_name(st, ent):
+    n = ((st or {}).get("attributes") or {}).get("friendly_name") or ent
+    return re.sub(r"\s*(battery|batterij|batterie|accu)(\s*level)?\s*$", "", n, flags=re.I).strip() or n
+
+
+async def battery_loop():
+    """Batteries of devices: when one gets low, Kamiel gets a little '!' above his head (until it's charged; tapped away it
+    comes back after a week if it's still low)."""
+    while True:
+        try:
+            db = load_db(); bt = db["settings"].get("battery") or {}
+            ents, low = bt.get("entities") or [], int(bt.get("low", 20))
+            state, changed = db.get("battery_state") or {}, False
+            for ent in ents:
+                st = await ha_get("/states/" + ent)
+                if not st or st.get("state") in (None, "unknown", "unavailable"):
+                    continue
+                v = str(st["state"])
+                if ent.startswith("binary_sensor."):
+                    level, is_low, is_ok = None, v == "on", v == "off"
+                else:
+                    try:
+                        level = float(v)
+                    except ValueError:
+                        continue
+                    is_low, is_ok = level <= low, level > low + 5
+                BATT["names"][ent], BATT["levels"][ent] = _batt_name(st, ent), level
+                if is_low and ent not in state:
+                    state[ent] = {"low_t": time.time(), "dismissed": 0}; changed = True
+                    log("huis", f"🔋 {BATT['names'][ent]} is bijna plat" + (f" ({level:.0f}%)" if level is not None else "") + ".")
+                elif is_ok and ent in state:
+                    state.pop(ent); changed = True
+                    log("huis", f"🔋 {BATT['names'][ent]} is weer opgeladen.")
+            for ent in list(state):
+                if ent not in ents:
+                    state.pop(ent); changed = True
+            if changed:
+                async with lock:   # keep a 'dismissed' that was tapped while we were asking Home Assistant
+                    db = load_db(); now_st = db.get("battery_state") or {}
+                    for e2, v2 in state.items():
+                        if e2 in now_st:
+                            v2["dismissed"] = max(v2.get("dismissed", 0), now_st[e2].get("dismissed", 0))
+                    db["battery_state"] = state; save_db(db, bump=False)
+        except Exception as e:
+            log("fout", "Batterijen: " + str(e), quiet=True)
+        BATT["kick"] = False
+        for _ in range(30):   # every 5 minutes, or right away after the settings changed
+            if BATT.get("kick"):
+                break
+            await asyncio.sleep(10)
+
+
+def battery_alerts(db):
+    now = time.time()
+    return [{"e": e, "name": BATT["names"].get(e, e), "level": BATT["levels"].get(e)} for e, st in (db.get("battery_state") or {}).items()
+            if not st.get("dismissed") or now - st["dismissed"] > 7 * 86400]
+
+
+async def api_battery_dismiss(request):
+    """Someone tapped the battery window shut: quiet for a week (unless it's charged before)."""
+    async with lock:
+        db = load_db(); state = db.get("battery_state") or {}
+        for e in state:
+            state[e]["dismissed"] = time.time()
+        db["battery_state"] = state; save_db(db, bump=False)
+    return web.json_response({"ok": True})
+
+
+async def api_sky_pref(request):
+    """From the tablet's Telescoop.exe: show the constellation lines in the sky, or not."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if "lines" not in body:
+        return web.json_response({"error": "niets"}, status=400)
+    async with lock:
+        db = load_db(); db["settings"].setdefault("sky", {})["lines"] = bool(body["lines"]); save_db(db, bump=False)
+    return web.json_response({"ok": True})
 
 
 async def lightning_loop():
@@ -835,6 +1076,7 @@ async def api_entities(request):
     states = await ha_get("/states") or []
     doms = tuple(d.strip() + "." for d in request.query.get("domain", "weather").split(",") if d.strip())
     ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]), "state": s.get("state", ""),
+             "dc": s.get("attributes", {}).get("device_class", ""),
              **({"options": s["attributes"]["options"][:60]} if isinstance(s.get("attributes", {}).get("options"), list) else {})}
             for s in states if request.query.get("domain") == "*" or s["entity_id"].startswith(doms)]
     ents.sort(key=lambda e: e["name"].lower())
@@ -854,7 +1096,7 @@ BUILD = _build_id()
 async def api_world(request):
     db = load_db()
     if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
-        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); st.get("motion", {}).pop("phones", None); db["settings"] = st
+        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); st.get("motion", {}).pop("phones", None); st.get("sky", {}).pop("opensky_secret", None); st.get("sky", {}).pop("opensky_id", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
         "build": BUILD,
@@ -1342,14 +1584,31 @@ async def api_settings(request):
                     m["away_delay"] = max(0, min(120, int(b["away_delay"])))
                 except (TypeError, ValueError):
                     pass
+        if isinstance(body.get("battery"), dict):
+            bt, b = s["battery"], body["battery"]
+            if isinstance(b.get("entities"), list):
+                bt["entities"] = [str(e).strip()[:120] for e in b["entities"] if isinstance(e, str) and "." in e][:60]
+            if "low" in b:
+                try:
+                    bt["low"] = max(5, min(60, int(b["low"])))
+                except (TypeError, ValueError):
+                    pass
+            BATT["kick"] = True
         if isinstance(body.get("sky"), dict):
             k2, b = s["sky"], body["sky"]
             for k in ("stars", "planets", "meteors", "iss", "eclipses", "rainbow", "geese", "planes", "lightning", "telescope", "rain_cloud", "storm", "frost_heat", "uv"):
                 if k in b:
                     k2[k] = bool(b[k])
-            for k in ("rain_entity", "uv_entity", "temp_entity"):
+            for k in ("rain_entity", "uv_entity", "temp_entity", "opensky_id", "opensky_secret"):
                 if k in b:
                     k2[k] = str(b[k] or "").strip()[:120]
+            if "lines" in b:
+                k2["lines"] = bool(b["lines"])
+            if "plane_km" in b:
+                try:
+                    k2["plane_km"] = max(2, min(40, int(b["plane_km"])))
+                except (TypeError, ValueError):
+                    pass
             for k, lo, hi in (("nebula", 0, 100), ("lightning_km", 1, 200)):
                 if k in b:
                     try:
@@ -1441,6 +1700,9 @@ async def api_settings(request):
                     e[k] = max(0, min(top, int(b[k])))
             if isinstance(b.get("pets_per_day"), dict):
                 e["pets_per_day"] = {k: max(0, min(12, int(v or 0))) for k, v in b["pets_per_day"].items() if k in EVENT_IDS}
+            if isinstance(b.get("pet_birthdays"), dict):
+                e["pet_birthdays"] = {k: str(v) for k, v in b["pet_birthdays"].items()
+                                      if k in EVENT_IDS and isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v)}
             if "pets_together" in b:
                 e["pets_together"] = max(0, min(100, int(b["pets_together"])))
             for k, top in (("pets_stay", 100), ("pets_lying", 100), ("pets_stay_min", 240), ("dance_chance", 500), ("aurora_chance", 100), ("stories_per_week", 30), ("films_per_week", 14)):
@@ -1525,6 +1787,8 @@ async def api_settings(request):
             s["tap_url"] = str(body["tap_url"]).strip()[:500]
         if "osd_entities" in body:
             s["osd_entities"] = osd_lines({"osd_entities": body["osd_entities"]})
+        if "osd_rain_mark" in body:
+            s["osd_rain_mark"] = str(body["osd_rain_mark"] or "")[:3]
         if "osd_right" in body:
             s["osd_right"] = osd_lines({"osd_right": body["osd_right"]}, "osd_right", 4)
         if "words" in body:
@@ -1581,6 +1845,7 @@ async def api_live(request):
            "actions": [a for a in db.get("actions", []) if a.get("at", 0) > time.time() - 120]}
     now = time.time()
     out["sky"] = {"planes": [p for p in SKYDATA["planes"] if now - p["t"] < 90], "strikes": [x for x in SKYDATA["strikes"] if now - x["t"] < 30]}
+    out["battery"] = battery_alerts(db)
     try:
         out["message"] = await current_message(db)
         if (s.get("motion") or {}).get("away_off"):
@@ -3731,6 +3996,8 @@ def common_routes(app):
     app.router.add_get("/api/world", api_world)
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/api/meter", api_meter)
+    app.router.add_post("/api/battery-dismiss", api_battery_dismiss)
+    app.router.add_post("/api/sky-pref", api_sky_pref)
     app.router.add_get("/media/{name}", media)
     app.router.add_static("/static/", os.path.join(APP, "static"))
     app.router.add_get("/api/live", api_live)
@@ -3784,6 +4051,8 @@ def make_studio():
     app.router.add_post("/api/screen-test", api_screen_test)
     app.router.add_post("/api/screen-wake", api_screen_wake)
     app.router.add_post("/api/phones-test", api_phones_test)
+    app.router.add_post("/api/opensky-test", api_opensky_test)
+    app.router.add_get("/api/opensky-status", api_opensky_status)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
     app.router.add_post("/api/halls", api_hall_upload)
     app.router.add_delete("/api/halls/{id}", api_hall_delete)
@@ -3871,6 +4140,8 @@ async def main():
     asyncio.ensure_future(opensky_loop())
     asyncio.ensure_future(lightning_loop())
     asyncio.ensure_future(rain_loop())
+    asyncio.ensure_future(opensky_api_loop())
+    asyncio.ensure_future(battery_loop())
     await asyncio.Event().wait()
 
 

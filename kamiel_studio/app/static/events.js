@@ -132,6 +132,11 @@
     return Math.floor(r() * 1440);
   }
   const num = (v, d) => (v === undefined || v === null || v === '') ? d : +v;
+  // whose birthday is it today? ("2019-04-12" in the settings: only month and day count)
+  function bdayPets(d, cfg) {
+    const md = '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'), b = (cfg && cfg.pet_birthdays) || {};
+    return PETS.filter(p => typeof b[p] === 'string' && b[p].endsWith(md) && !((cfg.off || []).includes(p)));
+  }
   function planFor(d, cfg, fest, boost, fullMoon) {
     // on the day itself everything counts fully; in the days around a feast day about half as much extra
     const out = [], r = seeded('dag ' + ymd(d)), ev = cfg.evening !== false, B = fest ? Math.max(1, fest.day === false ? Math.ceil((boost || 3) / 2) : (boost || 3)) : 1;
@@ -139,7 +144,9 @@
     for (let k = 0; k < Math.round(num(cfg.lama_per_day, 1) * B); k++) out.push({ at: minuteOf(r, ev), cat: 'lama' });
     for (let k = 0; k < Math.round(num(cfg.common_per_day, 3) * B); k++) out.push({ at: minuteOf(r, ev), cat: 'vaak' });
     const pd = cfg.pets_per_day || {};
-    for (const p of PETS) for (let k = 0; k < Math.round(num(pd[p], 2) * Math.min(B, 2)); k++) out.push({ at: minuteOf(r, ev), cat: 'dier', id: p });
+    // a pet's birthday: all the housemates come by twice as often to celebrate, the birthday one even more
+    const bd = bdayPets(d, cfg), PB = bd.length ? 2 : 1;
+    for (const p of PETS) for (let k = 0; k < Math.round(num(pd[p], 2) * Math.max(PB, Math.min(B, 2)) + (bd.includes(p) ? 2 : 0)); k++) out.push({ at: bd.length ? 480 + Math.floor(r() * 900) : minuteOf(r, ev), cat: 'dier', id: p });
     if (fest) for (let k = 0; k < (fest.day === false ? 1 : 2 + B); k++) out.push({ at: 480 + Math.floor(r() * 900), cat: 'feest' });
     // the little stories: a few times a week, the same plan all week
     const monS = new Date(d); monS.setDate(d.getDate() - ((d.getDay() + 6) % 7));
@@ -849,7 +856,7 @@
     function placeNew(i) {
       for (const a of residents.slice()) if (a.place === i && !onScreen(a) && !a.busy) { a.gone = true; residents.splice(residents.indexOf(a), 1); }
       if (cfg.on === false || residents.length >= MAXRES || rnd() * 100 >= (cfg.pets_lying === undefined ? 20 : +cfg.pets_lying)) return;
-      const free = PETS.filter(p => !isRes(p) && !(cfg.off || []).includes(p)); if (!free.length) return;
+      const free = PETS.filter(p => !isRes(p) && !(jarig && jarig.pet === p) && !(cfg.off || []).includes(p)); if (!free.length) return;
       const name = pick(free), c = A.placeCenter(i);
       let dx = 0; for (let t = 0; t < 12; t++) { dx = (rnd() * 2 - 1) * (A.PLACE / 2 - 90); if (Math.abs(dx) > 150 && residents.every(r => Math.abs(wrapD(r.wx - c - dx)) > 100)) break; }
       const a = makeResident(name, c + dx, FEET + (rnd() * 40 - 12), { pose: rnd() < .6 ? 'sleep' : LIE({ pet: name }) });
@@ -2752,11 +2759,38 @@
       if (Math.abs(A.cam() - center) > 1) { A.setCam(center); A.arrive(); }
       const f = kam.face; A.kamReset(); if (f) A.setDir(f);
     }
+    /* ---------- a birthday: the birthday pet walks along with Kamiel all day ---------- */
+    let jarig = null, buddyDay = '';
+    function buddyTick(dt) {
+      const d = A.now ? A.now() : new Date(), key = ymd(d);
+      if (key !== buddyDay) {
+        buddyDay = key; const n = bdayPets(d, cfg)[0];
+        jarig = n ? { pet: n, s: PET[n].s, cx: kx() + 140, feet: FEET - 8, face: -1, pose: 'sit', wt: 0, rate: 9, r: 0, sq: 1, sx: 1, lift: 0, alpha: 0, eyes: '', side: 1, idle: 0, bday: true } : null;
+        if (n) { for (const r of residents) if (r.pet === n && !r.busy) r.gone = true;
+          const born = +String((cfg.pet_birthdays || {})[n]).slice(0, 4), age = d.getFullYear() - born;
+          lg(NAMES[n] + ' is jarig' + (age > 0 && age < 40 ? ' en wordt ' + age : '') + '! Vandaag wandelt ' + NAMES[n] + ' de hele dag met Kamiel mee, met een feesthoedje op.'); }
+      }
+      const b = jarig; if (!b) return;
+      const want = !filming() && !kam.hide && !(cur && cur.actors.some(a => a.pet === b.pet));
+      b.alpha = clamp(b.alpha + (want ? 1 : -1) * dt * 2.5, 0, 1);
+      if (b.alpha === 0) { b.cx = kx() + b.side * 140; return; }
+      b.feet = kfeet() - 8; b.s = PET[b.pet].s * depthS(b.feet);
+      const walkingK = A.walking() && !cur, dir = A.dir();
+      let tx = walkingK ? kx() - dir * 150 : kx() + b.side * 140;
+      if (walkingK) b.side = -dir;
+      else if ((b.idle += dt) > 25 + rnd() * 400) { b.idle = 0; b.side = -b.side; }   // now and then it trots to Kamiel's other side
+      const d0 = tx - b.cx, sp = PET[b.pet].run * (walkingK ? 1.4 : .8);
+      if (walkingK) { b.pose = 'walk'; b.face = dir; b.rate = 13; b.wt += b.rate * dt; b.cx += clamp(d0, -sp * dt, sp * dt); }
+      else if (Math.abs(d0) > 4) { b.pose = 'walk'; b.face = d0 > 0 ? 1 : -1; b.rate = 10; b.wt += b.rate * dt; b.cx += Math.sign(d0) * Math.min(Math.abs(d0), sp * dt); }
+      else { b.pose = b.pet === 'dobby' ? 'up' : 'sit'; b.face = kx() > b.cx ? 1 : -1;
+        if (!cur && rnd() < dt / 40) emote(pick(['heart', 'hearts', 'sparks']), 1.6, b); }
+    }
     const SPEED = A.params && +A.params.get('snel') > 0 ? +A.params.get('snel') : 1;   // ?snel=8 plays the events (and films) eight times faster, for testing
     const filming = () => !!(cur && cur.cine);
     function tick(dt) {
       dt *= SPEED;
       st.dt = dt; clock += dt;
+      try { buddyTick(dt); } catch (e) { console.error('jarig', e); jarig = null; }
       for (const a of residents.slice()) {
         a.cx = scrX(a.wx); a.s = PET[a.pet].s * depthS(a.feet); ballStep(a, dt);
         if (a.pose === 'walk') a.wt += a.rate * dt;
@@ -2780,6 +2814,7 @@
     }
     function draw(layer, g) {
       if ((layer === 'back' || layer === 'front') && !filming()) for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) { A.drawPet(g, a); if (a.ball) drawBall(g, a); }
+      if (layer === 'back' && jarig && jarig.alpha > 0) A.drawPet(g, jarig);
       for (const f of rfx.slice()) {
         if (f.layer !== layer) continue;
         const age = clock - f.born;

@@ -138,9 +138,9 @@
         updateCatalog(d);
         g.save();
         // the lines of all constellations: very faint, like a star chart seen through the camcorder
-        g.strokeStyle = `rgba(170,190,255,${.13 * dk})`; g.lineWidth = 1; g.beginPath();
+        if (c.lines !== false) { g.strokeStyle = `rgba(170,190,255,${.13 * dk})`; g.lineWidth = 1; g.beginPath();
         for (let i = 0; i < lineSegs.length; i += 4) { if (lineSegs[i + 1] > A.HOR0 || lineSegs[i + 3] > A.HOR0) continue; g.moveTo(lineSegs[i], lineSegs[i + 1]); g.lineTo(lineSegs[i + 2], lineSegs[i + 3]); }
-        g.stroke();
+        g.stroke(); }
         const S0 = SD.STARS, n = S0.length / 4, moonDim = 1 - .45 * A.moonLight();
         for (let i = 0; i < n; i++) {
           const x = cat[i * 4], y = cat[i * 4 + 1], alt = cat[i * 4 + 2]; if (alt < 1 || x < -4 || x > W + 4 || y < -4) continue;
@@ -382,7 +382,8 @@
     function addPlane(p) {
       if (!p || seen.has(p.id)) return; seen.add(p.id);
       if (!cfg().planes) return;
-      const alt = +p.alt || 9000, dir = Math.random() < .5 ? 1 : -1, z = clamp(1.3 - alt / 11000, .5, 1.2);
+      // the real direction: the screen looks south, so a plane flying east crosses from right to left
+      const alt = +p.alt || 9000, dir = p.track !== null && p.track !== undefined ? (Math.sin(+p.track * D2R) > 0 ? -1 : 1) : (Math.random() < .5 ? 1 : -1), z = clamp(1.3 - alt / 11000, .5, 1.2);
       const cs = String(p.cs || '').trim().toUpperCase(), airline = AIRLINES[cs.slice(0, 3)] || '';
       flyers.push({ kind: 'plane', x: dir > 0 ? -60 : W + 60, y: 70 + (1 - z) * 120 + Math.random() * 60, dir, z, v: (50 + 40 * (1 - z)) * (.8 + Math.random() * .4),
         alt, cs, airline, seed: Math.random() * 100, trail: [], t0: A.t() });

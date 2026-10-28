@@ -70,6 +70,7 @@ body.cine .vig{opacity:.45}
 .telewrap{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:.6em;align-items:start}
 .tele .eyep{padding:.4em;background:#000;text-align:center}.eyep .sub{color:#ddd;font-size:.85em;margin-top:.3em}
 .telelist{max-height:58vh;overflow:auto;padding:.2em .4em}
+.telechk{display:flex;align-items:center;gap:.5em;margin-top:.5em;cursor:pointer}.telechk input{width:1.1em;height:1.1em;accent-color:#000080}
 .telesec{font-weight:700;background:#c0c0c0;margin:.4em -.4em .2em;padding:.15em .4em;border-top:1px solid #fff;border-bottom:1px solid #808080}
 .telerow{padding:.2em .2em;cursor:pointer;display:flex;flex-direction:column}.telerow span{font-size:.85em;color:#333}
 .telerow.on{background:#000080;color:#fff}.telerow.on span{color:#dde}
@@ -334,8 +335,13 @@ function sunOutfit(list) {
   return (list || []).filter(x => (O.find(o => o.id === x) || {}).slot !== slot).concat(['zonnebril']);
 }
 // a party hat on every housemate
+function petBday(name) {
+  const b = ((S.events || {}).pet_birthdays || {})[name], d = now();
+  return typeof b === 'string' && b.endsWith('-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+}
 function petHat(g, o) {
-  const f = festival(); if (!f || (f.kind !== 'verjaardag' && f.kind !== 'nieuwjaar') || !o.pet || o.alpha === 0) return;
+  if (!o.pet || o.alpha === 0) return;
+  const f = festival(); if (!((f && (f.kind === 'verjaardag' || f.kind === 'nieuwjaar')) || o.bday || petBday(o.pet))) return;
   const p = petPoint(o, 'head'), u = PET_U * (o.s || 1);
   g.save(); g.translate(p.x, p.y - u); g.rotate((o.r || 0) + (o.face > 0 ? .25 : -.25));
   g.fillStyle = ['#ff3d8b', '#3db8ff', '#ffd23f'][o.pet.length % 3];
@@ -1139,6 +1145,7 @@ async function pollLive() {
   setMessage(j.message && j.message.until * 1000 > Date.now() ? j.message : null);
   setAway(j.away);
   SKY.onLive(j.sky);
+  battAlerts = Array.isArray(j.battery) ? j.battery : [];
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
   media = m; if (j.dismissed) remDismissed = j.dismissed;
@@ -2072,6 +2079,40 @@ function kamObj() {
     eyes: !ev && calm() ? 'dicht' : (!ev && airEyes() !== null ? airEyes() : kam.eyes), eyeT: kam.eyeT, mouth: kam.mouth,
     outfit: kam.outfit || festOutfit(Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush, filter: kam.filter, deco: kam.deco };
 }
+// a battery that's nearly empty: a little speech bubble with "!" above Kamiel (tap it to see which one)
+let battAlerts = [], battHit = null;
+function drawBattBubble() {
+  battHit = null;
+  if (!battAlerts.length || kam.hide || (EV.filming && EV.filming())) return;
+  const h = llamaPoint(kamObj(), 200, -30), bob = Math.sin(t * 2.2) * 3, w = 38, hh = 34, x = h.x + 14, y = h.y - 70 + bob;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - w / 2 + 3, y - hh / 2 + 4, w, hh, 10) : ctx.rect(x - w / 2 + 3, y - hh / 2 + 4, w, hh); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#14102a'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - w / 2, y - hh / 2, w, hh, 10) : ctx.rect(x - w / 2, y - hh / 2, w, hh);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 9, y + hh / 2 - 1); ctx.lineTo(x - 16, y + hh / 2 + 13); ctx.lineTo(x - 1, y + hh / 2 - 1); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 9, y + hh / 2); ctx.lineTo(x - 16, y + hh / 2 + 13); ctx.lineTo(x - 1, y + hh / 2); ctx.stroke();
+  ctx.fillStyle = '#e2202b'; ctx.fillRect(x - 3.5, y - 11, 7, 14); ctx.fillRect(x - 3.5, y + 6, 7, 6);
+  ctx.restore();
+  battHit = { x: x - w / 2 - 12, y: y - hh / 2 - 12, w: w + 24, h: hh + 36 };
+}
+function openBattery() {
+  if (!deskOpen) { closeDesk(true); deskOpen = true; deskGen++;
+    clearInterval(deskTimer); deskTimer = setInterval(() => { if (deskOpen && Date.now() - lastTouch > (S.window_close || 60) * 1000) closeDesk(); }, 5000); }
+  touchDesk();
+  if (wins.batt) wins.batt.remove();
+  ICON.batt = '🔋'; TITLES.batt = 'Batterij.exe';
+  const el = document.createElement('div'); el.className = 'win'; el.dataset.k = 'batt';
+  el.style.width = 'min(440px, 46%)'; el.style.left = '27%'; el.style.top = '18%';
+  el.innerHTML = `<div class="tb"><span>🔋</span><span class="tt">Batterij.exe</span><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div>
+    <div class="bd"><div class="wnow"><span class="wico">⚠️</span><div>${battAlerts.map(b => `<div><b>${escH(b.name)}</b> is bijna plat${b.level !== null && b.level !== undefined ? ' (' + Math.round(b.level) + '%)' : ''}.</div>`).join('')}</div></div>
+    <div class="row95" style="justify-content:flex-end"><button class="b95" data-a="ok">OK</button></div></div>`;
+  deskEl.appendChild(el); wins.batt = el; front(el);
+  const done = () => { fetch('api/battery-dismiss', { method: 'POST' }).catch(() => {}); battAlerts = []; closeWin('batt'); };
+  el.querySelector('[data-a=close]').addEventListener('click', done); el.querySelector('[data-a=ok]').addEventListener('click', done);
+  el.addEventListener('pointerdown', () => { front(el); touchDesk(); });
+  drag(el); renderTaskbar();
+}
 // in a storm Kamiel leans into the wind, a little unsteady
 function stormLean() { const k = SKY.storm ? SKY.storm() : 0; return k ? -.07 * k + Math.sin(t * 2.7) * .03 * k : 0; }
 function drawKamiel() { if (!kam.hide) drawLlama(ctx, kamObj()); }
@@ -2217,7 +2258,7 @@ function frame() {
   if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); SKY.screen(ctx, sun, cv); }
+  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); SKY.screen(ctx, sun, cv); drawBattBubble(); }
   EV.draw('screen', ctx);
   drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
@@ -2316,7 +2357,7 @@ function spots(keys) {
 }
 let deskGen = 0;   // every opening gets a number: an older one that is still busy stops as soon as a newer one (or closing) came
 async function openDesk(only) {
-  const keys = (only || Object.keys(TITLES)).filter(k => k !== 'meter' && k !== 'info' && k !== 'tele' && WIN[k] !== false && (k !== 'muziek' || S.media_player));
+  const keys = (only || Object.keys(TITLES)).filter(k => k !== 'meter' && k !== 'info' && k !== 'tele' && k !== 'batt' && WIN[k] !== false && (k !== 'muziek' || S.media_player));
   if (!keys.length) return;
   closeDesk(true);
   const gen = ++deskGen;
@@ -2403,8 +2444,11 @@ function openTelescope() {
   el.style.width = 'min(720px, 76%)'; el.style.left = '4%'; el.style.top = '6%';
   el.innerHTML = `<div class="tb"><span>🔭</span><span class="tt">Telescoop.exe</span>
     <button class="b95 tbtn" data-a="min" aria-label="Minimaliseren">_</button><button class="b95 tbtn" data-a="close" aria-label="Sluiten">✕</button></div>
-    <div class="bd"><div class="telewrap"><div class="inset eyep"><canvas width="230" height="230"></canvas><div class="sub" id="teleCap"></div></div><div class="inset telelist"></div></div></div>`;
+    <div class="bd"><div class="telewrap"><div class="inset eyep"><canvas width="230" height="230"></canvas><div class="sub" id="teleCap"></div></div><div class="inset telelist"></div></div>
+    <label class="telechk"><input type="checkbox" id="teleLines" ${(S.sky || {}).lines === false ? '' : 'checked'}> Sterrenbeelden tekenen aan de hemel</label></div>`;
   deskEl.appendChild(el); wins.tele = el; front(el);
+  el.querySelector('#teleLines').addEventListener('change', (e) => { touchDesk(); S.sky = Object.assign({}, S.sky, { lines: e.target.checked });
+    fetch('api/sky-pref', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: e.target.checked }) }).catch(() => {}); });
   el.addEventListener('pointerdown', () => { front(el); touchDesk(); });
   el.querySelector('[data-a=close]').addEventListener('click', () => closeWin('tele'));
   el.querySelector('[data-a=min]').addEventListener('click', () => { el.hidden = true; renderTaskbar(); });
@@ -2674,6 +2718,8 @@ let downAt = null;
 document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('.win, .taskbar')) return; downAt = Object.assign(canvasXY(e), { t: performance.now() }); });
 document.addEventListener('pointerup', (e) => {
   if (e.target.closest && e.target.closest('.win, .taskbar')) return;   // the windows handle their own taps
+  // the battery bubble above Kamiel
+  { const c0 = canvasXY(e); if (battHit && c0.x >= battHit.x && c0.x <= battHit.x + battHit.w && c0.y >= battHit.y && c0.y <= battHit.y + battHit.h) { openBattery(); return; } }
   // a plane or the ISS in the sky: a little window about it
   { const c0 = canvasXY(e), info = SKY.tap(c0.x, c0.y); if (info) { openInfo(info); return; } }
   // a value on the top right: Meter.exe with its history
@@ -2718,10 +2764,10 @@ document.addEventListener('pointerup', (e) => {
     if (hh.it.board && x >= hh.x && x <= hh.x + hh.w && y >= hh.y && y <= hh.y + hh.h) { hideBoard(); return; }
   }
   const near = (p, rad) => p && Math.hypot(x - p.x, y - p.y) < rad;
-  if (S.sun_script && near(sunXY, 70)) { ring = { x: sunXY.x, y: sunXY.y, t0: performance.now() }; post('api/tap/sun'); return; }
-  if (S.moon_script && near(moonXY, 60)) { ring = { x: moonXY.x, y: moonXY.y, t0: performance.now() }; post('api/tap/moon'); return; }
+  // the sun: Weer.exe
+  if (near(sunXY, 70)) { ring = { x: sunXY.x, y: sunXY.y, t0: performance.now() }; openDesk(['weer']); return; }
   // the moon: Kamiel takes out his telescope and shows what there is to see tonight
-  if (!S.moon_script && (S.sky || {}).telescope !== false && near(moonXY, 60)) { ring = { x: moonXY.x, y: moonXY.y, t0: performance.now() }; if (EV.active) openTelescope(); else EV.request('telescoop'); return; }
+  if ((S.sky || {}).telescope !== false && near(moonXY, 60)) { ring = { x: moonXY.x, y: moonXY.y, t0: performance.now() }; if (EV.active) openTelescope(); else EV.request('telescoop'); return; }
   for (let k = hits.length - 1; k >= 0; k--) {
     const hh = hits[k], tap = hh.it.o.tap;
     if (!tap || tap.action === 'niets' || x < hh.x || x > hh.x + hh.w || y < hh.y || y > hh.y + hh.h) continue;
