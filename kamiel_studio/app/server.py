@@ -3932,10 +3932,10 @@ async def api_tablet_status_post(request):
     except ValueError:
         raise web.HTTPBadRequest()
     keep = {}
-    for k in ("fully", "js", "motion_detect", "screen", "plugged"):
+    for k in ("fully", "js", "motion_detect", "screen", "plugged", "hidden"):
         if k in b and b[k] is not None:
             keep[k] = bool(b[k])
-    for k in ("battery", "w", "h", "last_motion"):
+    for k in ("battery", "w", "h", "last_motion", "frames", "still"):
         try:
             if b.get(k) is not None:
                 keep[k] = float(b[k])
@@ -3976,6 +3976,61 @@ async def fully_screen_on(why):
         return True, ""
     except Exception as e:
         return False, "De tablet was niet bereikbaar op " + ip + ":2323 (" + type(e).__name__ + ")."
+
+
+async def fully_cmd(cmd, **extra):
+    """One command to Fully Kiosk's Remote Administration on the tablet; returns (json or None, error text)."""
+    m = load_db()["settings"].get("motion") or {}
+    ip, pw = (TABLET["info"].get("ip") or TABLET.get("ip") or ""), m.get("fully_pw") or ""
+    if not pw or not ip:
+        return None, "geen Fully-wachtwoord of adres"
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=8)) as sess:
+            async with sess.get(f"http://{ip}:2323/", params=dict({"cmd": cmd, "type": "json", "password": pw}, **extra)) as r:
+                txt = await r.text()
+        try:
+            return json.loads(txt), ""
+        except ValueError:
+            return {}, ""
+    except Exception as e:
+        return None, type(e).__name__
+
+
+async def frozen_guard_loop():
+    """From outside: the picture on the tablet may never stand still while its screen is on. The tablet reports every 30 s
+    how many frames it drew. No report for 2.5 minutes, or a report that it hasn't drawn for a minute while visible,
+    and Fully says the screen is on: then Fully loads the page again. At most once every 10 minutes."""
+    last_fix, last_frames, same_t = 0, None, 0
+    while True:
+        await asyncio.sleep(30)
+        try:
+            if not (load_db()["settings"].get("motion") or {}).get("fully_pw") or not TABLET["seen"]:
+                continue
+            i, now = TABLET["info"], time.time()
+            silent = now - TABLET["seen"] > 150
+            fr = i.get("frames")
+            if fr is not None and fr == last_frames and not i.get("hidden"):
+                same_t = same_t or now
+            else:
+                same_t = 0
+            last_frames = fr
+            stuck = (i.get("still") or 0) > 60 and not i.get("hidden") and i.get("screen") is not False
+            if not (silent or stuck or (same_t and now - same_t > 90)) or now - last_fix < 600:
+                continue
+            info, err = await fully_cmd("deviceInfo")
+            if info is None:
+                continue   # the tablet itself can't be reached (off, asleep, no wifi): nothing to fix from here
+            on = info.get("screenOn", info.get("isScreenOn", True)) if isinstance(info, dict) else True
+            if on is False:
+                continue
+            again = now - last_fix < 1800   # it was frozen half an hour ago too: reloading the page wasn't enough, restart Fully
+            last_fix = now; same_t = 0
+            why = "de tablet meldde zich al " + str(int((now - TABLET["seen"]) // 60)) + " min niet" if silent else "er werd niet meer getekend"
+            r, err = await fully_cmd("restartApp" if again else "loadStartURL")
+            log("tablet", f"Het beeld op de tablet stond stil ({why}): Kamiel " + ("herstart Fully Kiosk." if again else "laadt de pagina opnieuw via Fully.")
+                + (" Dat lukte niet: " + err if r is None else ""))
+        except Exception as e:
+            log("fout", "Stilstandwacht: " + str(e), quiet=True)
 
 
 async def screen_guard_loop():
@@ -4187,6 +4242,7 @@ async def main():
     except Exception as e:
         log("fout", "Versie bijhouden mislukt: " + str(e), quiet=True)
     asyncio.ensure_future(screen_guard_loop())
+    asyncio.ensure_future(frozen_guard_loop())
     asyncio.ensure_future(charge_loop())
     asyncio.ensure_future(phone_loop())
     asyncio.ensure_future(presence_loop())

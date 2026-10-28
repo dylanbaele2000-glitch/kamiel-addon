@@ -1211,12 +1211,13 @@ function sawSomeone(report) {
 }
 window.__kamielMotion = () => sawSomeone(true);
 if (MOT.on) fk(f => f.bind('onMotion', 'window.__kamielMotion && window.__kamielMotion();'));
-let offByUs = false;   // did Kamiel turn the screen off himself? then he turns it on again when that reason is over
+let offByUs = false, offSince = 0, wokeT = 0;   // did Kamiel turn the screen off himself? then he turns it on again when that reason is over
 function screen(on, why) {
   const isOn = fk(f => f.getScreenOn(), null);
   if (isOn === null || isOn === on) return;
   offByUs = !on;
   fk(f => on ? f.turnScreenOn() : f.turnScreenOff(true));   // true: keep running, so it can wake up again
+  if (!on) offSince = offSince || Date.now(); else setTimeout(woke, 800);
   if (why !== screenWhy) { screenWhy = why; tlog('tablet', on ? 'Scherm aan (' + why + ').' : 'Scherm uit (' + why + ').'); }
 }
 // what the screen should do now; also sent to the Studio so you can see it is working
@@ -1236,7 +1237,20 @@ function applyScreen() {
   else if (offByUs) screen(true, isNightTime(now()) ? 'weer iemand' : 'de rusttijd is voorbij');
 }
 setInterval(applyScreen, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(applyScreen, 500); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { setTimeout(applyScreen, 500); woke(); } else offSince = offSince || Date.now(); });
+/* after the screen was off a while, Android's browser sometimes keeps showing the last picture although the page runs on
+   (28 oct: frozen on 17:05 for 45 minutes). So when the screen comes back on after more than 5 minutes, the page starts
+   over with the same scene: cheap, and the picture is surely alive again. */
+function woke() {
+  const off = offSince ? Date.now() - offSince : 0; offSince = 0;
+  if (off < 300000 || Date.now() - wokeT < 30000) return; wokeT = Date.now();
+  tlog('tablet', `Scherm terug aan na ${Math.round(off / 60000)} min: het beeld wordt vers opgebouwd.`);
+  try { saveScene('wakker'); } catch (e) { }
+  setTimeout(() => location.reload(), 1200);
+}
+window.__kamielScreenOff = () => { offSince = offSince || Date.now(); };
+window.__kamielScreenOn = () => woke();
+fk(f => { f.bind('screenOff', 'window.__kamielScreenOff && window.__kamielScreenOff();'); f.bind('screenOn', 'window.__kamielScreenOn && window.__kamielScreenOn();'); });
 function setAway(a) {
   if (a === undefined || a === null || a === awayNow) return;
   awayNow = a;
@@ -1253,10 +1267,11 @@ function sceneNow() {
 function reportTablet() {
   const st = { fully: !!FK() || /fully/i.test(navigator.userAgent), js: !!FK(), version: fk(f => f.getFullyVersion(), ''), battery: fk(f => f.getBatteryLevel(), null), plugged: fk(f => f.isPlugged(), null),
     screen: fk(f => f.getScreenOn(), null), motion_detect: fk(f => f.getBooleanSetting('motionDetection'), null), ip: fk(f => f.getIp4Address(), ''),
-    w: innerWidth, h: innerHeight, last_motion: (Date.now() - lastMotion) / 1000, plan: screenPlan().join(': '), scene: sceneNow() };
+    w: innerWidth, h: innerHeight, last_motion: (Date.now() - lastMotion) / 1000, plan: screenPlan().join(': '), scene: sceneNow(),
+    frames: framesOk, still: (Date.now() - lastOk) / 1000, hidden: document.hidden };
   fetch('api/tablet-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(st) }).catch(() => {});
 }
-setTimeout(reportTablet, 4000); setInterval(reportTablet, 60000);
+setTimeout(reportTablet, 4000); setInterval(reportTablet, 30000);
 // self-heal: when the place on screen has elements but not one of them could be shown for 3 minutes,
 // every image is asked again; if that doesn't help either, the page starts over (the scene stays the same)
 let emptyFor = 0, healed = 0;
@@ -2272,13 +2287,31 @@ function frame() {
   drawVHS(); osd(d);
 }
 // one broken piece (bad data from a sensor, say) may never stop Kamiel: keep drawing, and say once what went wrong
-let loopErr = 0;
+let loopErr = 0, framesOk = 0, lastOk = Date.now(), lastTry = Date.now();
+const loopErrSeen = {};
 function loop(ts) {
   requestAnimationFrame(loop);
+  lastTry = Date.now();
   const dt = Math.min(.05, (ts - last) / 1000); last = ts;
-  try { step(dt); frame(); }
-  catch (e) { if (loopErr++ === 0) window.onerror(e.message, 'display.html', (e.stack || '').split('\n')[1] || 0); }
+  try { step(dt); frame(); framesOk++; lastOk = Date.now(); }
+  catch (e) {   // each different error once an hour in the logbook (not only the very first one ever)
+    loopErr++; const k = String(e && e.message);
+    if (!loopErrSeen[k] || Date.now() - loopErrSeen[k] > 3600000) { loopErrSeen[k] = Date.now(); tlog('fout', 'Tekenen: ' + k + ' ' + ((e && e.stack) || '').split('\n')[1]); }
+  }
 }
+/* the picture may never stand still. Every 5 s: is the screen on and visible, but no frame got drawn for 20 s
+   (the browser stopped the animation, or every frame fails)? Then the page starts over (at most once per 3 minutes;
+   the scene stays the same). The add-on keeps an eye on it too, from outside, through Fully. */
+setInterval(() => {
+  if (document.hidden || fk(f => f.getScreenOn(), true) === false) { lastOk = Math.max(lastOk, Date.now() - 5000); return; }
+  const still = (Date.now() - lastOk) / 1000; if (still < 20) return;
+  let prev = 0; try { prev = +localStorage.getItem('kamiel-stilstand') || 0; } catch (e) { }
+  if (Date.now() - prev < 180000) return;
+  try { localStorage.setItem('kamiel-stilstand', String(Date.now())); } catch (e) { }
+  tlog('tablet', `Het beeld stond ${Math.round(still)} s stil (${Date.now() - lastTry > 15000 ? 'de browser tekende niet meer' : 'tekenen mislukte'}): de pagina begint opnieuw.`);
+  try { saveScene && saveScene('stilstand'); } catch (e) { }
+  setTimeout(() => location.reload(), 600);
+}, 5000);
 // the world events get a small window onto Kamiel's world
 EV = KamielEvents.create({
   W, H, FEET, PLACE, HOR0, K, CL, OBJ, kam, kamReset, drawLlama, llamaPoint, kamObj, ready, tinted, drawPet, petPoint, PETS: Object.keys(PETART),
