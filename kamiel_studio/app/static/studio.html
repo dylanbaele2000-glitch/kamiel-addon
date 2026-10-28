@@ -115,7 +115,7 @@ details.guide pre{background:var(--card);border:1px solid var(--line);border-rad
 .otile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px;font-weight:600;cursor:pointer}
 .otile canvas{width:72px;height:72px;image-rendering:pixelated;border-radius:6px;background:#4f86f0}
 .otile input{margin:0}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.sr{position:absolute;left:0;top:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 input.cnt{width:4.2em}
 #songTable input[type=text]{min-width:16em}
 /* element library: small tiles, everything else in one clear panel */
@@ -656,6 +656,8 @@ details.fold.sub>summary{font-size:15px}
       <div class="settings">
         <label class="field" for="kyKm">Bliksem tot op (km)<input type="number" id="kyKm" min="1" max="200"></label>
       </div>
+      <div class="row"><button type="button" id="kyBzTest">Test: vindt Kamiel Blitzortung?</button><button type="button" id="kyBzFlash">⚡ Laat het nu flitsen op de tablet</button></div>
+      <p class="status" id="kyBzStatus" role="status" style="white-space:pre-line"></p>
       <p class="hint">Volle maan: de huisdieren doen die avond raar, en later in de nacht kan Kamiel een nachtmerrie hebben. Die staan bij Gebeurtenissen onder "Bij volle maan".</p>
       <div class="row"><button type="button" class="primary" id="kySave">Opslaan</button><span class="status" id="kyStatus" role="status"></span></div>
     </div>
@@ -1800,6 +1802,19 @@ $('kyOsTest').addEventListener('click', async () => {
   let j; try { j = await (await fetch('api/opensky-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ opensky_id: $('kyOsId').value.trim(), opensky_secret: $('kyOsSec').value.trim() }) })).json(); } catch { status($('kyOsStatus'), 'Testen lukte niet.', 'err'); return; }
   if (!j.ok) { status($('kyOsStatus'), j.error, 'err'); return; }
   status($('kyOsStatus'), `Het werkt${j.auth ? ' (met account)' : ' (zonder account)'}: nu ${j.n} vliegtuig(en) binnen 40 km.` + (j.near.length ? ' Dichtstbij: ' + j.near.map(p => `${p.cs || '?'} op ${p.km} km`).join(', ') + '.' : '') + ' Niet vergeten: Opslaan.', 'ok');
+});
+$('kyBzTest').addEventListener('click', async () => {
+  status($('kyBzStatus'), 'Even zoeken in Home Assistant…');
+  let j; try { j = await (await fetch('api/lightning-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json(); } catch { status($('kyBzStatus'), 'Testen lukte niet.', 'err'); return; }
+  if (j.error && !j.sensors) { status($('kyBzStatus'), j.error, 'err'); return; }
+  const S0 = j.sensors || {}, nm = { counter: 'Teller', distance: 'Afstand', azimuth: 'Richting' };
+  const rows = Object.keys(nm).map(k => S0[k] ? `${nm[k]}: ${S0[k].entity} = ${S0[k].state}${S0[k].unit ? ' ' + S0[k].unit : ''}` : `${nm[k]}: niet gevonden`).join('\n');
+  if (!j.ok) { status($('kyBzStatus'), 'Kamiel vindt de teller van Blitzortung niet. Is de integratie "Blitzortung" geïnstalleerd (via HACS) en toegevoegd bij Apparaten en diensten?\n' + rows, 'err'); return; }
+  status($('kyBzStatus'), `Het werkt: Blitzortung gevonden.\n${rows}\n` + (j.on === false ? 'Let op: "Echte bliksem in de buurt" staat uit.\n' : '') + (j.strike_ago !== null ? `Laatste bliksem: ${Math.round(j.strike_ago / 60)} min geleden.` : 'Sinds de add-on draait nog geen bliksem gezien.') + ` Kamiel toont bliksem tot op ${j.km} km.` + (j.error ? '\nLaatste fout: ' + j.error : ''), 'ok');
+});
+$('kyBzFlash').addEventListener('click', async () => {
+  try { await fetch('api/lightning-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flash: true }) }); status($('kyBzStatus'), 'Flits verstuurd: binnen een paar seconden flitst het op de tablet (als "Echte bliksem in de buurt" aan staat en is opgeslagen).', 'ok'); }
+  catch { status($('kyBzStatus'), 'Versturen lukte niet.', 'err'); }
 });
 async function renderHuis() {
   const s = world.settings, D = s.doorbell || {}, M = s.motion || {};

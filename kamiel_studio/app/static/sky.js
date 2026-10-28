@@ -429,7 +429,7 @@
       f.sy = y;
     }
     function drawGeese(g, f, light) {
-      X
+      const t = A.t(), u = 5 * f.z, col = light > .3 ? 'rgba(38,34,42,.85)' : 'rgba(12,12,20,.75)';   // dark silhouettes against the sky
       g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 1.4;
       for (const b of f.birds) {
         // the V: each bird a little behind and beside the one in front, never quite in line (they keep shifting)

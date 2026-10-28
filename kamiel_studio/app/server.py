@@ -978,24 +978,48 @@ async def api_sky_pref(request):
     return web.json_response({"ok": True})
 
 
+BLITZ = {"ents": {}, "found_t": 0, "last": None, "strike_t": 0, "err": "", "how": ""}
+
+
+async def find_blitz():
+    """The Blitzortung sensors: first via the entity registry (platform 'blitzortung', whatever the location was called),
+    otherwise by name ('blitzortung' in the entity id)."""
+    ents, how = {}, ""
+    try:
+        reg = await ha_ws({"type": "config/entity_registry/list"}) or []
+        for r in reg:
+            if r.get("platform") != "blitzortung" or r.get("disabled_by"):
+                continue
+            e, uid = r.get("entity_id", ""), str(r.get("unique_id", ""))
+            for k in ("counter", "distance", "azimuth"):
+                if (k in uid or k in e) and k not in ents and e.startswith("sensor."):
+                    ents[k] = e
+        if ents:
+            how = "register"
+    except Exception:
+        pass
+    if not ents:
+        for st in await ha_get("/states") or []:
+            e = st.get("entity_id", "")
+            if e.startswith("sensor.") and "blitzortung" in e:
+                for k in ("counter", "distance", "azimuth"):
+                    if k in e and k not in ents:
+                        ents[k] = e
+        how = "naam" if ents else ""
+    BLITZ["ents"], BLITZ["how"], BLITZ["found_t"] = ents, how, time.time()
+    return ents
+
+
 async def lightning_loop():
     """Real lightning nearby from the Blitzortung integration (HACS): when its counter goes up, Kamiel's sky flashes."""
-    ents, found_t, last = {}, 0, None
     while True:
         await asyncio.sleep(10)
         try:
             if not TOKEN or not (load_db()["settings"].get("sky") or {}).get("lightning", True):
                 continue
-            if time.time() - found_t > 600:   # look for the Blitzortung sensors now and then (they may be added later)
-                found_t = time.time()
-                states = await ha_get("/states") or []
-                ents = {}
-                for st in states:
-                    e = st.get("entity_id", "")
-                    if e.startswith("sensor.") and "blitzortung" in e:
-                        for k in ("counter", "distance", "azimuth"):
-                            if k in e and k not in ents:
-                                ents[k] = e
+            if time.time() - BLITZ["found_t"] > 600:   # look for the Blitzortung sensors now and then (they may be added later)
+                await find_blitz()
+            ents = BLITZ["ents"]
             if "counter" not in ents:
                 continue
             c = await ha_get("/states/" + ents["counter"])
@@ -1003,6 +1027,7 @@ async def lightning_loop():
                 cnt = int(float((c or {}).get("state")))
             except (TypeError, ValueError):
                 continue
+            last = BLITZ["last"]
             if last is not None and cnt > last:
                 km = az = None
                 for k in ("distance", "azimuth"):
@@ -1014,10 +1039,38 @@ async def lightning_loop():
                             pass
                 for j in range(min(3, cnt - last)):
                     _push("strikes", {"id": f"{int(time.time())}-{cnt}-{j}", "t": time.time(), "km": km, "az": az})
+                BLITZ["strike_t"] = time.time()
                 log("lucht", f"⚡ {cnt - last} blikseminslag(en)" + (f", op {km:.0f} km" if km is not None else "") + (f", richting {az:.0f}°" if az is not None else "") + " (Blitzortung)")
-            last = cnt
+            BLITZ["last"], BLITZ["err"] = cnt, ""
         except Exception as e:
-            log("fout", "Bliksem (Blitzortung): " + str(e), quiet=True)
+            BLITZ["err"] = str(e) or type(e).__name__
+            log("fout", "Bliksem (Blitzortung): " + BLITZ["err"], quiet=True)
+
+
+async def api_lightning_test(request):
+    """Studio: does Kamiel find the Blitzortung sensors, what do they say, and (on request) a test flash on the tablet."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    sk = load_db()["settings"].get("sky") or {}
+    if body.get("flash"):
+        km = max(1, float(sk.get("lightning_km") or 25) / 3)
+        for j in range(2):
+            _push("strikes", {"id": f"test-{time.time()}-{j}", "t": time.time(), "km": km, "az": 180})
+        log("lucht", "⚡ Testflits vanuit de Studio.")
+        return web.json_response({"ok": True, "flash": True})
+    try:
+        ents = await find_blitz()
+    except Exception as e:
+        return web.json_response({"ok": False, "error": "Home Assistant antwoordde niet: " + (str(e) or type(e).__name__)})
+    out = {}
+    for k, e in ents.items():
+        st = await ha_get("/states/" + e) or {}
+        out[k] = {"entity": e, "state": st.get("state"), "unit": (st.get("attributes") or {}).get("unit_of_measurement", "")}
+    return web.json_response({"ok": "counter" in ents, "how": BLITZ["how"], "sensors": out, "on": sk.get("lightning", True),
+                              "km": sk.get("lightning_km", 25), "strike_ago": time.time() - BLITZ["strike_t"] if BLITZ["strike_t"] else None,
+                              "error": BLITZ["err"]})
 
 
 RAIN = {"found_t": 0, "ent": None, "last": None}
@@ -4052,6 +4105,7 @@ def make_studio():
     app.router.add_post("/api/screen-wake", api_screen_wake)
     app.router.add_post("/api/phones-test", api_phones_test)
     app.router.add_post("/api/opensky-test", api_opensky_test)
+    app.router.add_post("/api/lightning-test", api_lightning_test)
     app.router.add_get("/api/opensky-status", api_opensky_status)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
     app.router.add_post("/api/halls", api_hall_upload)

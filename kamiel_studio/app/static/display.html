@@ -2038,6 +2038,7 @@ function petFrame(name, ph) {
 function drawPet(g, o) {
   const art = PETART[o.pet]; if (!art) return;
   const ph = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
+  if (o.s !== undefined && !(o.s > 0)) return;   // never a negative size (far up in the sky, depth gives nonsense)
   const u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u;
   g.save(); g.globalAlpha *= o.alpha === undefined ? 1 : o.alpha;
   if (!o.noShadow) {   // a soft shadow on the ground, smaller as they jump
@@ -2079,6 +2080,9 @@ function kamObj() {
     eyes: !ev && calm() ? 'dicht' : (!ev && airEyes() !== null ? airEyes() : kam.eyes), eyeT: kam.eyeT, mouth: kam.mouth,
     outfit: kam.outfit || festOutfit(Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush, filter: kam.filter, deco: kam.deco };
 }
+// the real sky must never take the rest of the picture down with it: an error there is logged once and skipped
+const skyErrs = new Set();
+function skySafe(part, f) { try { f(); } catch (e) { console.error('lucht', part, e); const k = part + ':' + (e && e.message); if (!skyErrs.has(k)) { skyErrs.add(k); tlog('fout', 'Lucht (' + part + '): ' + (e && e.message)); } } }
 // a battery that's nearly empty: a little speech bubble with "!" above Kamiel (tap it to see which one)
 let battAlerts = [], battHit = null;
 function drawBattBubble() {
@@ -2232,12 +2236,12 @@ function frame() {
   const mr = moonPos(d), arc = moonArc(d), moon = arc ? { alt: arc.alt, az: arc.az, phase: mr.phase } : { alt: -90, az: 0, phase: mr.phase };
   const hide = EV.hideWorld();   // the world crashed: only Kamiel is left
   ctx = mainCtx;
-  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else { drawSky(sun, moon); SKY.back(ctx, d, sun); drawAurora(sun, d); }
+  if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else { drawSky(sun, moon); skySafe('back', () => SKY.back(ctx, d, sun)); drawAurora(sun, d); }
   EV.draw('sky', ctx);
   ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
   frameNo++;
   // sky things in front of, between or behind the clouds (set per element); half of the clouds are 'front' clouds
-  if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); SKY.flyers(ctx, d, sun); drawClouds(sun, true); placeItems(0, undefined, 'voor');
+  if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); skySafe('flyers', () => SKY.flyers(ctx, d, sun)); drawClouds(sun, true); placeItems(0, undefined, 'voor');
     drawHills(false); placeItems(1, true); drawHills(true); SKY.rainCloud && SKY.rainCloud(ctx, sun); }
   if (kam.layer === 'far') drawKamiel();
   if (!hide) { placeItems(1, false); drawGround(); drawHalls(); drawFestGround(); }
@@ -2258,7 +2262,7 @@ function frame() {
   if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); SKY.screen(ctx, sun, cv); drawBattBubble(); }
+  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); drawBattBubble(); }
   EV.draw('screen', ctx);
   drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }

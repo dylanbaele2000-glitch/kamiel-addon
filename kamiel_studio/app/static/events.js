@@ -2771,10 +2771,10 @@
           lg(NAMES[n] + ' is jarig' + (age > 0 && age < 40 ? ' en wordt ' + age : '') + '! Vandaag wandelt ' + NAMES[n] + ' de hele dag met Kamiel mee, met een feesthoedje op.'); }
       }
       const b = jarig; if (!b) return;
-      const want = !filming() && !kam.hide && !(cur && cur.actors.some(a => a.pet === b.pet));
+      const want = !filming() && !kam.hide && Math.abs(kfeet() - FEET) < 40 && !(cur && cur.actors.some(a => a.pet === b.pet));
       b.alpha = clamp(b.alpha + (want ? 1 : -1) * dt * 2.5, 0, 1);
       if (b.alpha === 0) { b.cx = kx() + b.side * 140; return; }
-      b.feet = kfeet() - 8; b.s = PET[b.pet].s * depthS(b.feet);
+      b.feet = FEET - 8; b.s = PET[b.pet].s * depthS(b.feet);
       const walkingK = A.walking() && !cur, dir = A.dir();
       let tx = walkingK ? kx() - dir * 150 : kx() + b.side * 140;
       if (walkingK) b.side = -dir;
