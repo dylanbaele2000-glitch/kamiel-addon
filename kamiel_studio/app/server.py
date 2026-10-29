@@ -918,6 +918,11 @@ async def battery_loop():
                 if ent.startswith("binary_sensor."):
                     level, is_low, is_ok = None, v == "on", v == "off"
                 else:
+                    unit = str((st.get("attributes") or {}).get("unit_of_measurement") or "").strip()
+                    if unit and unit != "%":   # a voltage (3.0 V) is not a percentage: those sensors are skipped
+                        if ent in state:
+                            state.pop(ent); changed = True
+                        continue
                     try:
                         level = float(v)
                     except ValueError:
@@ -1129,7 +1134,7 @@ async def api_entities(request):
     states = await ha_get("/states") or []
     doms = tuple(d.strip() + "." for d in request.query.get("domain", "weather").split(",") if d.strip())
     ents = [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]), "state": s.get("state", ""),
-             "dc": s.get("attributes", {}).get("device_class", ""),
+             "dc": s.get("attributes", {}).get("device_class", ""), "unit": s.get("attributes", {}).get("unit_of_measurement") or "",
              **({"options": s["attributes"]["options"][:60]} if isinstance(s.get("attributes", {}).get("options"), list) else {})}
             for s in states if request.query.get("domain") == "*" or s["entity_id"].startswith(doms)]
     ents.sort(key=lambda e: e["name"].lower())
@@ -4023,6 +4028,10 @@ async def frozen_guard_loop():
             on = info.get("screenOn", info.get("isScreenOn", True)) if isinstance(info, dict) else True
             if on is False:
                 continue
+            if silent:   # the screen may just have come on and the page is waking up: give it a moment to report first
+                await asyncio.sleep(45)
+                if time.time() - TABLET["seen"] < 60:
+                    continue
             again = now - last_fix < 1800   # it was frozen half an hour ago too: reloading the page wasn't enough, restart Fully
             last_fix = now; same_t = 0
             why = "de tablet meldde zich al " + str(int((now - TABLET["seen"]) // 60)) + " min niet" if silent else "er werd niet meer getekend"

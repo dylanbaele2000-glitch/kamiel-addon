@@ -1221,7 +1221,9 @@ function screen(on, why) {
   if (why !== screenWhy) { screenWhy = why; tlog('tablet', on ? 'Scherm aan (' + why + ').' : 'Scherm uit (' + why + ').'); }
 }
 // what the screen should do now; also sent to the Studio so you can see it is working
+const BOOT_T = Date.now();
 function screenPlan() {
+  if (Date.now() - BOOT_T < 180000) return ['aan', 'net gestart'];   // just (re)loaded: never straight off again (the page doesn't remember the last movement)
   const idle = (Date.now() - lastMotion) / 60000, recent = Date.now() - seenMotion < 120000;
   if (MOT.away_off && awayNow && !recent) return ['uit', 'niemand thuis'];
   if (MOT.on && MOT.screen_off && MOT.screen_off !== 'nooit' && (MOT.screen_off === 'altijd' || isNightTime(now())) && idle > (MOT.off_after || 10))
@@ -2302,7 +2304,10 @@ function loop(ts) {
 /* the picture may never stand still. Every 5 s: is the screen on and visible, but no frame got drawn for 20 s
    (the browser stopped the animation, or every frame fails)? Then the page starts over (at most once per 3 minutes;
    the scene stays the same). The add-on keeps an eye on it too, from outside, through Fully. */
+let watchT = Date.now();
 setInterval(() => {
+  const gap = Date.now() - watchT; watchT = Date.now();
+  if (gap > 15000) { lastOk = Date.now(); return; }   // this check itself was asleep (screen off, page paused): just waking up, not stuck
   if (document.hidden || fk(f => f.getScreenOn(), true) === false) { lastOk = Math.max(lastOk, Date.now() - 5000); return; }
   const still = (Date.now() - lastOk) / 1000; if (still < 20) return;
   let prev = 0; try { prev = +localStorage.getItem('kamiel-stilstand') || 0; } catch (e) { }

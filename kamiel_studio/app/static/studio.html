@@ -1765,8 +1765,10 @@ $('mPhoneTest').addEventListener('click', async () => {
 function renderBatt() {
   const B = world.settings.battery || {}, on = new Set(B.entities || []);
   $('btLow').value = B.low || 20;
-  const list = ENTS.filter(e => e.dc === 'battery' || /batter|accu/i.test(e.id)).sort((a, b) => a.name.localeCompare(b.name));
-  $('btList').innerHTML = list.length ? list.map(e => `<label class="sw"><input type="checkbox" class="btE" data-e="${esc(e.id)}" ${on.has(e.id) ? 'checked' : ''}><span><b>${esc(e.name)}</b><span>${esc(e.state)}${/^\d/.test(e.state) && !e.id.startsWith('binary_sensor.') ? '%' : ''} · ${esc(e.id)}</span></span></label>`).join('')
+  // only real percentages (or a binary 'low' sensor): a battery voltage (3.0 V) would look like 3 %
+  const list = ENTS.filter(e => (e.dc === 'battery' || /batter|accu/i.test(e.id)) && e.dc !== 'voltage' && (e.id.startsWith('binary_sensor.') || e.unit === '%' || (!e.unit && e.dc === 'battery')))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $('btList').innerHTML = list.length ? list.map(e => `<label class="sw"><input type="checkbox" class="btE" data-e="${esc(e.id)}" ${on.has(e.id) ? 'checked' : ''}><span><b>${esc(e.name)}</b><span>${esc(e.state)}${e.unit ? ' ' + esc(e.unit) : ''} · ${esc(e.id)}</span></span></label>`).join('')
     : '<p class="hint">Kamiel vindt geen batterijen in Home Assistant (of hij is niet verbonden).</p>';
   const cnt = () => { $('btCount').textContent = document.querySelectorAll('.btE:checked').length + ' van ' + list.length + ' aangevinkt'; };
   $('btList').onchange = cnt; cnt();
