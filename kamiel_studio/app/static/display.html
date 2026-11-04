@@ -1243,12 +1243,25 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { se
 /* after the screen was off a while, Android's browser sometimes keeps showing the last picture although the page runs on
    (28 oct: frozen on 17:05 for 45 minutes). So when the screen comes back on after more than 5 minutes, the page starts
    over with the same scene: cheap, and the picture is surely alive again. */
+/* a reload straight after waking up can hit a wifi that is not back yet: the new page then never loads (4 nov, 19:32: three minutes
+   of a stuck picture). So first wait until the add-on answers (at most 90 s, then try anyway). Only one reload at a time. */
+let reloading = false;
+function reloadWhenOnline(delay) {
+  if (reloading) return; reloading = true;
+  setTimeout(async () => {
+    for (let i = 0; i < 30; i++) {
+      try { const r = await fetch('api/world', { cache: 'no-store' }); if (r.ok) break; } catch (e) { /* no network yet */ }
+      await new Promise(ok => setTimeout(ok, 3000));
+    }
+    location.reload();
+  }, delay);
+}
 function woke() {
   const off = offSince ? Date.now() - offSince : 0; offSince = 0;
   if (off < 300000 || Date.now() - wokeT < 30000) return; wokeT = Date.now();
   tlog('tablet', `Scherm terug aan na ${Math.round(off / 60000)} min: het beeld wordt vers opgebouwd.`);
   try { saveScene('wakker'); } catch (e) { }
-  setTimeout(() => location.reload(), 1200);
+  reloadWhenOnline(1200);
 }
 window.__kamielScreenOff = () => { offSince = offSince || Date.now(); };
 window.__kamielScreenOn = () => woke();
@@ -2315,7 +2328,7 @@ setInterval(() => {
   try { localStorage.setItem('kamiel-stilstand', String(Date.now())); } catch (e) { }
   tlog('tablet', `Het beeld stond ${Math.round(still)} s stil (${Date.now() - lastTry > 15000 ? 'de browser tekende niet meer' : 'tekenen mislukte'}): de pagina begint opnieuw.`);
   try { saveScene && saveScene('stilstand'); } catch (e) { }
-  setTimeout(() => location.reload(), 600);
+  reloadWhenOnline(600);
 }, 5000);
 // the world events get a small window onto Kamiel's world
 EV = KamielEvents.create({
