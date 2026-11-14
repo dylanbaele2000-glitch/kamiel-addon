@@ -127,7 +127,7 @@ DEFAULT_SETTINGS = {
     "stack": {"chance": 35, "max": 3},              # % chance that a carrier gets something on top; tallest stack
     "events": {"on": True, "lama_per_day": 1, "common_per_day": 3, "normal_per_week": 4, "evening": True, "off": [],
                "pets_per_day": {"wifi": 2, "snoet": 2, "pippa": 2, "pebbels": 2, "dobby": 2}, "pets_together": 25, "pet_birthdays": {},
-               "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20,
+               "pets_stay": 35, "pets_lying": 20, "pets_stay_min": 45, "dance_chance": 20, "pyro_on": True, "pyro_artists": ["Doja Cat"],
                "aurora_chance": 15, "stories_per_week": 3, "films_per_week": 2},
     # feast days and birthdays: much more happens, with decorations and events of their own
     "feest": {"on": True, "boost": 3, "v": 2,
@@ -1768,6 +1768,10 @@ async def api_settings(request):
                     e[k] = max(0, min(top, int(b[k] or 0)))
             if isinstance(b.get("off"), list):
                 e["off"] = [x for x in b["off"] if x in EVENT_IDS]
+            if "pyro_on" in b:
+                e["pyro_on"] = bool(b["pyro_on"])
+            if isinstance(b.get("pyro_artists"), list):
+                e["pyro_artists"] = [str(a).strip()[:60] for a in b["pyro_artists"] if str(a).strip()][:20]
         if isinstance(body.get("sizes"), dict):
             for kind in ("grond", "horizon", "lucht", "kader"):
                 try:

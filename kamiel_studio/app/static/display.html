@@ -43,6 +43,7 @@
 <script src="static/lib/satellite.min.js"></script>
 <script src="static/lib/skydata.js"></script>
 <script src="static/sky.js"></script>
+<script src="static/pyro.js"></script>
 <script src="static/events.js"></script>
 <script src="static/compose.js"></script>
 <script src="static/pets.js"></script>
@@ -822,6 +823,16 @@ const azX = (az) => W / 2 + (mod(az, 360) - 180) / 100 * (W / 2);
 const altY = (alt) => HOR0 - Math.max(-12, alt) / 62 * (HOR0 - 70);
 // the real sky (stars, planets, shooting stars, nebula, ISS, eclipses, rainbow, planes, geese, lightning): see sky.js
 let eclDark = 0;
+// pyro: a song by one of the artists in the Studio (Doja Cat out of the box) sets the world on fire
+const PYRO = window.KamielPyro ? window.KamielPyro.create({ W, H, ground: HOR0 + 24, horizon: HOR0 + 2, kamX: () => W / 2 + (kam ? kam.x : 0), beat: () => beatNow(), t: () => performance.now() / 1000 }) : null;
+function pyroCheck(m) {
+  if (!PYRO) return;
+  const E = S.events || {}, forced = params.get('pyro');
+  const who = (E.pyro_artists || ['Doja Cat']).map(a => String(a).trim().toLowerCase()).filter(Boolean);
+  const txt = ((m && m.artist) || '') + ' | ' + ((m && m.title) || '');   // also "Song (feat. Doja Cat)"
+  const hit = !!(m && m.playing) && E.pyro_on !== false && who.some(a => txt.toLowerCase().includes(a));
+  PYRO.set(!!forced || hit, forced ? 'test-' + forced : (m && (m.artist + '|' + m.title)) || '');
+}
 const SKY = window.KamielSky ? window.KamielSky.create({ W, H, HOR0, azX, altY, params, settings: () => S, lat: () => LAT, lon: () => LON,
   wind: () => params.get('wind') ? +params.get('wind') : wind, clouds0: () => { const c = CL.find(x => ready(x.img)); return c ? c.img : null; },
   nose: () => llamaPoint(kamObj(), 10, 340), face: () => kamObj().face || 1, eventOn: () => EV && EV.active,
@@ -1146,6 +1157,7 @@ async function pollLive() {
   setAway(j.away);
   SKY.onLive(j.sky);
   battAlerts = Array.isArray(j.battery) ? j.battery : [];
+  try { pyroCheck(j.media); } catch (e) { console.error('pyro', e); }
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
   media = m; if (j.dismissed) remDismissed = j.dismissed;
@@ -2292,7 +2304,7 @@ function frame() {
   if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); drawBattBubble(); }
+  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); if (PYRO && !(EV.filming && EV.filming())) skySafe('pyro', () => PYRO.draw(ctx)); drawBattBubble(); }
   EV.draw('screen', ctx);
   drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
