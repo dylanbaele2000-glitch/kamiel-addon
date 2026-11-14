@@ -1422,9 +1422,41 @@ async def api_edit_asset(request):
                     a["gaze"] = body["gaze"]
                 if body.get("clouds") in ("voor", "tussen", "achter"):   # sky objects: in front of, between or behind the clouds
                     a["clouds"] = body["clouds"]
+                if isinstance(body.get("windows"), list):   # windows that light up: boxes (fractions of the picture) + when
+                    a["windows"] = [w for w in (_clean_window(x) for x in body["windows"][:24]) if w]
                 save_db(db)
                 return web.json_response(a)
     raise web.HTTPNotFound()
+
+
+def _clean_window(w):
+    try:
+        x, y, ww, hh = (max(0.0, min(1.0, float(w[k]))) for k in ("x", "y", "w", "h"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if ww < .005 or hh < .005:
+        return None
+    until = str(w.get("until") or "23:00")
+    return {"x": round(x, 4), "y": round(y, 4), "w": round(min(ww, 1 - x), 4), "h": round(min(hh, 1 - y), 4),
+            "mode": w.get("mode") if w.get("mode") in ("schemer", "nacht", "toeval", "lamp") else "schemer",
+            "until": until if re.fullmatch(r"\d{2}:\d{2}", until) else "23:00",
+            "entity": str(w.get("entity") or "")[:120], "color": w.get("color") if w.get("color") in ("warm", "koel", "tv") else "warm"}
+
+
+LAMPS = {"t": 0, "states": {}}
+
+
+async def lamp_states(db):
+    """The lights that windows follow (mode 'lamp'): on or off, asked at most every 5 s."""
+    ents = sorted({w["entity"] for a in db["assets"] if a.get("active") is not False for w in (a.get("windows") or [])
+                   if w.get("mode") == "lamp" and w.get("entity")})
+    if not ents:
+        return {}
+    if time.time() - LAMPS["t"] > 5:
+        LAMPS["t"] = time.time()
+        sts = await asyncio.gather(*(ha_get("/states/" + e) for e in ents), return_exceptions=True)
+        LAMPS["states"] = {e: isinstance(s, dict) and s.get("state") == "on" for e, s in zip(ents, sts)}
+    return {e: LAMPS["states"].get(e, False) for e in ents}
 
 
 async def api_delete_asset(request):
@@ -1908,6 +1940,10 @@ async def api_live(request):
     now = time.time()
     out["sky"] = {"planes": [p for p in SKYDATA["planes"] if now - p["t"] < 90], "strikes": [x for x in SKYDATA["strikes"] if now - x["t"] < 30]}
     out["battery"] = battery_alerts(db)
+    try:
+        out["lamps"] = await lamp_states(db)
+    except Exception:
+        out["lamps"] = {}
     try:
         out["message"] = await current_message(db)
         if (s.get("motion") or {}).get("away_off"):

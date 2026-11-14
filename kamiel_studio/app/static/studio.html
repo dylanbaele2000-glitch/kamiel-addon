@@ -140,6 +140,13 @@ dialog#elDlg::backdrop{background:rgba(0,0,0,.5)}
 .dlg-prev{background:var(--sky);border-radius:12px;height:260px;display:grid;place-items:center;padding:12px}
 .dlg-prev.night{background:linear-gradient(#070b24,#1d2350)}
 .dlg-prev img{max-width:100%;max-height:236px;object-fit:contain}
+.winEd{position:relative;display:inline-block;max-width:100%;background:linear-gradient(#0b1030,#232a5c);border-radius:10px;padding:8px;touch-action:none;user-select:none;cursor:crosshair}
+.winEd img{display:block;max-width:100%;max-height:340px;pointer-events:none;-webkit-user-drag:none}
+.winEd .wbox{position:absolute;border:2px solid #ffd27a;background:rgba(255,200,90,.28);box-shadow:0 0 12px rgba(255,200,90,.6);border-radius:2px}
+.winEd .wbox span{position:absolute;left:2px;top:0;font:700 11px system-ui;color:#fff;text-shadow:0 0 3px #000}
+.winEd .wbox.new{border-style:dashed}
+.winRow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0;padding:8px;border:1px solid var(--line);border-radius:10px}
+.winRow b{min-width:4.5em}.winRow select,.winRow input{max-width:240px}
 .dlg-main{display:flex;flex-direction:column;gap:12px;min-width:0}
 .sect{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:12px}
 .sect h3{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -1050,7 +1057,8 @@ const RARE_NL = { gewoon: 'Gewoon', zeldzaam: 'Zeldzaam', heelzeldzaam: 'Heel ze
 const MOMENT_NL = { dag: 'Overdag', nacht: "'s Nachts", altijd: 'Dag en nacht' };
 
 const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-let SCRIPTS = [];
+let SCRIPTS = [], LAMPS = [];
+fetch('api/entities?domain=light,switch,input_boolean').then(r => r.json()).then(j => { LAMPS = j.entities || []; }).catch(() => {});
 fetch('api/entities?domain=script,scene,automation,input_button,button').then(r => r.json()).then(j => { SCRIPTS = j.entities || []; if (world) renderLib(); }).catch(() => {});
 const PERIOD_NL = [['altijd', 'Altijd'], ['lente', 'Lente'], ['zomer', 'Zomer'], ['herfst', 'Herfst'], ['winter', 'Winter'], ['valentijn', 'Valentijn'],
   ['pasen', 'Pasen'], ['halloween', 'Halloween'], ['sinterklaas', 'Sinterklaas'], ['kerst', 'Kerst'], ['nieuwjaar', 'Nieuwjaar'], ['eigen', 'Eigen periode']];
@@ -1217,6 +1225,7 @@ function openEl(id) {
           ${isWolk ? '' : sw('stack', a.stack, 'Kan op iets anders staan', 'Verschijnt soms bovenop een element dat kan dragen, met een logische grootte.')}
           ${sw('carry', a.carry, 'Kan iets dragen', isWolk ? 'Er kan soms iets op deze wolk staan.' : 'Er kan soms iets op staan (ook de muziek-tv).')}
         </section>
+        ${a.kind === 'grond' || a.kind === 'horizon' ? winSection(a) : ''}
         ${isWolk ? '' : `<section class="sect"><h3>Tikken</h3>
           <div class="opt"><span class="lbl">Bij tikken op dit element</span><select data-sel="tap" style="max-width:360px"><option value="niets">Niets</option><option value="vertrek" ${tapVal === 'vertrek' ? 'selected' : ''}>Toon het vertrekbord</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${tapVal === 'script:' + e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
         </section>`}
@@ -1224,6 +1233,43 @@ function openEl(id) {
       </div>
     </div>`;
   if (!dlg.open) dlg.showModal();
+  initWinEd(a);
+}
+/* windows that light up: draw a box around each window on the picture, then choose when it burns */
+const WIN_MODES = [['schemer', 'Bij schemering, tot…'], ['nacht', 'De hele nacht'], ['toeval', "'s Avonds af en toe"], ['lamp', 'Volgt een lamp']];
+const WIN_COLS = [['warm', 'Warm licht'], ['koel', 'Koel licht'], ['tv', 'Flikkerende tv']];
+function winSection(a) {
+  const W0 = a.windows || [];
+  return `<section class="sect"><h3>Ramen die branden</h3>
+    <p class="hint" style="margin-top:0">Trek met je muis of vinger een kader rond elk raam. Kies daarna per raam wanneer het brandt. Zet het element bij "Moment" op "Dag en nacht", anders verdwijnt het 's avonds.</p>
+    <div class="winEd" data-wined><img alt="" src="media/${a.files.main}">${W0.map((w, i) => `<div class="wbox" style="left:${w.x * 100}%;top:${w.y * 100}%;width:${w.w * 100}%;height:${w.h * 100}%"><span>${i + 1}</span></div>`).join('')}</div>
+    <div>${W0.map((w, i) => `<div class="winRow" data-win="${i}"><b>Raam ${i + 1}</b>
+      <select data-wf="mode" aria-label="Wanneer brandt raam ${i + 1}">${WIN_MODES.map(([k, n]) => `<option value="${k}" ${w.mode === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      ${w.mode === 'schemer' ? `<label>tot <input type="time" data-wf="until" value="${esc(w.until || '23:00')}"></label>` : ''}
+      ${w.mode === 'lamp' ? `<select data-wf="entity" aria-label="Welke lamp"><option value="">Kies een lamp…</option>${LAMPS.map(e => `<option value="${esc(e.id)}" ${w.entity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>` : ''}
+      <select data-wf="color" aria-label="Kleur van raam ${i + 1}">${WIN_COLS.map(([k, n]) => `<option value="${k}" ${(w.color || 'warm') === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <button type="button" data-wdel="${i}" aria-label="Raam ${i + 1} weghalen">✕</button></div>`).join('')}</div>
+    ${W0.length ? '<p class="hint">Een raam weghalen kan met ✕. Opnieuw tekenen kan altijd.</p>' : ''}
+  </section>`;
+}
+function initWinEd(a) {
+  const ed = $('elDlg').querySelector('[data-wined]'); if (!ed) return;
+  const img = ed.querySelector('img');
+  let start = null, box = null;
+  const rel = (e) => { const r = img.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
+  const place = (b, x0, y0, x1, y1) => { const r = img.getBoundingClientRect(), er = ed.getBoundingClientRect(), ox = r.left - er.left, oy = r.top - er.top;
+    Object.assign(b.style, { left: ox + Math.min(x0, x1) * r.width + 'px', top: oy + Math.min(y0, y1) * r.height + 'px', width: Math.abs(x1 - x0) * r.width + 'px', height: Math.abs(y1 - y0) * r.height + 'px' }); };
+  // existing boxes: position them over the picture itself (it has a padding around it)
+  const fit = () => { const r = img.getBoundingClientRect(), er = ed.getBoundingClientRect(); ed.querySelectorAll('.wbox:not(.new)').forEach((b, i) => { const w = (a.windows || [])[i]; if (w) place(b, w.x, w.y, w.x + w.w, w.y + w.h); }); };
+  if (img.complete) fit(); else img.addEventListener('load', fit);
+  ed.addEventListener('pointerdown', (e) => { start = rel(e); box = document.createElement('div'); box.className = 'wbox new'; ed.appendChild(box); ed.setPointerCapture(e.pointerId); e.preventDefault(); });
+  ed.addEventListener('pointermove', (e) => { if (!start) return; const p = rel(e); place(box, start.x, start.y, p.x, p.y); });
+  ed.addEventListener('pointerup', (e) => {
+    if (!start) return; const p = rel(e), s0 = start; start = null;
+    const w = { x: Math.min(s0.x, p.x), y: Math.min(s0.y, p.y), w: Math.abs(p.x - s0.x), h: Math.abs(p.y - s0.y), mode: 'schemer', until: '23:00', color: 'warm' };
+    if (w.w < .01 || w.h < .01) { box.remove(); return; }
+    patchEl({ windows: (a.windows || []).concat([w]) });
+  });
 }
 async function patchEl(body, reload) {
   const a = world.assets.find(x => x.id === openId); if (!a) return;
@@ -1249,6 +1295,8 @@ $('elDlg').addEventListener('click', async (e) => {
     if (key === 'sink') return patchEl({ sink: v === '' ? null : +v });
     return patchEl({ [key]: v });
   }
+  const wd = t.closest('[data-wdel]');
+  if (wd) { const a = world.assets.find(x => x.id === openId); return patchEl({ windows: (a.windows || []).filter((_, i) => i !== +wd.dataset.wdel) }); }
   const del = t.closest('[data-del]');
   if (del) {
     if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Zeker? Klik nogmaals'; setTimeout(() => { if (del.isConnected) { del.dataset.sure = ''; del.textContent = 'Verwijderen'; } }, 4000); return; }
@@ -1258,6 +1306,11 @@ $('elDlg').addEventListener('click', async (e) => {
 });
 $('elDlg').addEventListener('change', (e) => {
   const t = e.target;
+  if (t.dataset.wf) {
+    const a = world.assets.find(x => x.id === openId), i = +t.closest('[data-win]').dataset.win;
+    const list = (a.windows || []).map((w, k) => k === i ? Object.assign({}, w, { [t.dataset.wf]: t.value }) : w);
+    return patchEl({ windows: list });
+  }
   if (t.dataset.sw) return patchEl({ [t.dataset.sw]: t.checked }, t.dataset.sw === 'sign');
   if (t.dataset.text) return patchEl({ [t.dataset.text]: t.value });
   if (t.dataset.sel === 'tap') { const v = t.value; return patchEl({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } }); }

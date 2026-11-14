@@ -44,6 +44,7 @@
 <script src="static/lib/skydata.js"></script>
 <script src="static/sky.js"></script>
 <script src="static/pyro.js"></script>
+<script src="static/ground.js"></script>
 <script src="static/events.js"></script>
 <script src="static/compose.js"></script>
 <script src="static/pets.js"></script>
@@ -823,6 +824,52 @@ const azX = (az) => W / 2 + (mod(az, 360) - 180) / 100 * (W / 2);
 const altY = (alt) => HOR0 - Math.max(-12, alt) / 62 * (HOR0 - 70);
 // the real sky (stars, planets, shooting stars, nebula, ISS, eclipses, rainbow, planes, geese, lightning): see sky.js
 let eclDark = 0;
+/* windows that light up (drawn boxes per element in the Studio): when, and how they glow. They are drawn after the
+   night has darkened the world, so they really shine; a window behind Kamiel is skipped so it never glows through him. */
+let litWins = [], lampSt = {};
+const winNow = new Map();
+function winLit(wn, key) {
+  const d = now(), alt = sunPos(d).alt;
+  const mins = d.getHours() * 60 + d.getMinutes(), day = d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate();
+  let seed = 0; for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) % 100000;
+  const r = (n) => { const x = Math.sin((seed + n) * 12.9898 + day * 78.233) * 43758.5453; return x - Math.floor(x); };
+  let on = false;
+  if (wn.mode === 'lamp') on = !!lampSt[wn.entity];
+  else if (alt < -.5) {
+    const evening = d.getHours() >= 12, [uh, um] = String(wn.until || '23:00').split(':').map(Number), until = uh * 60 + um + Math.round((r(1) - .5) * 30);
+    const before = until > 720 ? (evening && mins < until) : (evening || mins < until);   // "tot 01:00" goes past midnight
+    if (wn.mode === 'nacht') on = true;
+    else if (wn.mode === 'schemer') on = before && (evening ? alt < -.5 - r(2) * 3 : true);   // not all at once at dusk
+    else if (wn.mode === 'toeval') { const slot = Math.floor((d.getTime() / 60000) / (12 + r(3) * 30)); const v = Math.sin((seed + slot) * 7.13) * 9999; on = (evening || mins < 60) && (v - Math.floor(v)) < .55; }
+  }
+  const cur = winNow.get(key) || 0, nx = cur + ((on ? 1 : 0) - cur) * .08;
+  winNow.set(key, nx);
+  return nx * (alt > 2 ? .25 : 1);
+}
+function drawLitWindows(sun) {
+  const L = light(sun.alt), kb0 = kam.hide ? null : { x: W / 2 + kam.x - 80 * (kam.s || 1), y: (kam.feet !== null ? kam.feet : FEET - kam.y) - 250 * (kam.s || 1), w: 160 * (kam.s || 1), h: 250 * (kam.s || 1) };
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const w of litWins) {
+    if (kb0 && w.x < kb0.x + kb0.w && w.x + w.w > kb0.x && w.y < kb0.y + kb0.h && w.y + w.h > kb0.y) continue;
+    const day = .3 + .7 * (1 - L), a = w.a * day;
+    let c = w.col === 'koel' ? [205, 225, 255] : w.col === 'tv' ? [110, 150, 255] : [255, 190, 90];
+    let k = 1;
+    if (w.col === 'tv') { const f = Math.sin(Math.floor(t * 7 + w.seed) * 91.7) * 999; k = .55 + .45 * (f - Math.floor(f)); }
+    else k = .94 + .06 * Math.sin(t * 2 + w.seed);
+    const cx = w.x + w.w / 2, cy = w.y + w.h / 2, R = Math.max(w.w, w.h) * 1.4 + 6;
+    const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    gr.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${.28 * a * k})`); gr.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    ctx.fillStyle = gr; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${.72 * a * k})`; ctx.fillRect(w.x, w.y, w.w, w.h);
+    ctx.fillStyle = `rgba(255,240,205,${.3 * a * k})`; ctx.fillRect(w.x + w.w * .18, w.y + w.h * .18, w.w * .64, w.h * .64);
+  }
+  ctx.restore();
+}
+// the ground remembers the weather: puddles, snow that stays, footprints, fireflies (static/ground.js)
+let wxTemp = null;
+const GROUND = window.KamielGround ? window.KamielGround.create({ W, H, HOR0, PLACE, PW, kx: () => kx, horY, weather: () => weather,
+  temp: () => wxTemp, sunAlt: () => sunPos(now()).alt, now, sky: cv, params }) : null;
+const filmNow = () => !!(EV && EV.filming && EV.filming());
 // pyro: a song by one of the artists in the Studio (Doja Cat out of the box) sets the world on fire
 const PYRO = window.KamielPyro ? window.KamielPyro.create({ W, H, ground: HOR0 + 24, horizon: HOR0 + 2, kamX: () => W / 2 + (kam ? kam.x : 0), beat: () => beatNow(), t: () => performance.now() / 1000 }) : null;
 function pyroCheck(m) {
@@ -862,6 +909,7 @@ async function pollState() {
     haSun = s.sun && typeof s.sun.alt === 'number' ? s.sun : null;   // no sun from Home Assistant: compute it ourselves (never a stale one)
     setAir(s.air);
     SKY.onState(s.sky, s);
+    wxTemp = typeof s.temp === 'number' ? s.temp : (s.temp !== null && s.temp !== undefined && s.temp !== '' && isFinite(+s.temp) ? +s.temp : null);
     osdLines = s.osd || [];
     osdRight = Array.isArray(s.osd_right) ? s.osd_right : [];
     const cov = typeof s.clouds === 'number' ? s.clouds : null;
@@ -1157,6 +1205,7 @@ async function pollLive() {
   setAway(j.away);
   SKY.onLive(j.sky);
   battAlerts = Array.isArray(j.battery) ? j.battery : [];
+  lampSt = j.lamps && typeof j.lamps === 'object' ? j.lamps : {};
   try { pyroCheck(j.media); } catch (e) { console.error('pyro', e); }
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
@@ -1897,7 +1946,11 @@ function placeItems(layer, hill, sky) {
         ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, rx, 0, 7); ctx.fill(); ctx.restore();
       }
       if (o.kind === 'kader' || o.sign) { const c = itemCanvas(it, w, h); if (c) ctx.drawImage(c, sx, y, w, h); }
-      else drawImg(o.img, sx, y, w, h, it.flip);
+      else { drawImg(o.img, sx, y, w, h, it.flip); if (GROUND && layer > 0) GROUND.snowCap(ctx, o.img, sx, y, w, h, it.flip); }
+      if (o.windows && o.windows.length && layer > 0) o.windows.forEach((wn, wi) => {
+        const a = winLit(wn, (o.id || '') + ':' + wi + ':' + i);
+        if (a > .01) litWins.push({ x: sx + (it.flip ? 1 - wn.x - wn.w : wn.x) * w, y: y + wn.y * h, w: wn.w * w, h: wn.h * h, a: a * ctx.globalAlpha, col: wn.color || 'warm', seed: wi + i * 7 });
+      });
       if (it.cloud && ready(it.cloud.img)) {   // the tv sits in a cloud
         const cw = w * 2.3, ch = cw * it.cloud.img.height / it.cloud.img.width;
         drawImg(it.cloud.img, sx + w / 2 - cw / 2, y + h * .62, cw, Math.min(ch, h * 1.1), false);
@@ -1927,6 +1980,7 @@ function drawHills(front) {
         if (ready(pano)) ctx.drawImage(pano, i * PLACE, Math.min(H - 140, HOR0 + 12), PLACE, 128, x0, minY - 2, PLACE, maxY + 32 - minY);
         else { ctx.fillStyle = '#3d8a2e'; ctx.fillRect(x0, minY, PLACE, maxY + 30 - minY); }
         ctx.fillStyle = `rgba(172,186,236,${rg.haze})`; ctx.fillRect(x0, minY - 2, PLACE, maxY + 34 - minY);
+        if (GROUND) GROUND.snowHill(ctx, x0, minY - 2, PLACE, maxY + 34 - minY);
         ctx.restore();
       }
     }
@@ -2079,6 +2133,7 @@ function petFrame(name, ph) {
 // o: { pet, cx, feet, s, face, pose (stand/blink/walk/down/jump), wt, r, sq, sx, alpha, eyes }
 function drawPet(g, o) {
   const art = PETART[o.pet]; if (!art) return;
+  if (GROUND && !filmNow()) GROUND.track(o, o, o.pet);
   const ph = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
   if (o.s !== undefined && !(o.s > 0)) return;   // never a negative size (far up in the sky, depth gives nonsense)
   const u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u;
@@ -2161,7 +2216,7 @@ function openBattery() {
 }
 // in a storm Kamiel leans into the wind, a little unsteady
 function stormLean() { const k = SKY.storm ? SKY.storm() : 0; return k ? -.07 * k + Math.sin(t * 2.7) * .03 * k : 0; }
-function drawKamiel() { if (!kam.hide) drawLlama(ctx, kamObj()); }
+function drawKamiel() { if (!kam.hide) { const o = kamObj(); drawLlama(ctx, o); if (GROUND && !filmNow()) GROUND.track('kamiel', o, 'lama'); } }
 /* the northern lights: some evenings (a chance per evening, set in the Studio), green and violet curtains in the sky */
 function seededDay(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return ((h >>> 0) % 10000) / 10000; }
 function auroraTonight(d) {
@@ -2280,19 +2335,20 @@ function frame() {
   ctx = mainCtx;
   if (hide) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); } else { drawSky(sun, moon); skySafe('back', () => SKY.back(ctx, d, sun)); drawAurora(sun, d); }
   EV.draw('sky', ctx);
-  ctx = wctx; ctx.clearRect(0, 0, W, H); hits = [];
+  ctx = wctx; ctx.clearRect(0, 0, W, H); hits = []; litWins = [];
   frameNo++;
   // sky things in front of, between or behind the clouds (set per element); half of the clouds are 'front' clouds
   if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); skySafe('flyers', () => SKY.flyers(ctx, d, sun)); drawClouds(sun, true); placeItems(0, undefined, 'voor');
     drawHills(false); placeItems(1, true); drawHills(true); SKY.rainCloud && SKY.rainCloud(ctx, sun); }
   if (kam.layer === 'far') drawKamiel();
-  if (!hide) { placeItems(1, false); drawGround(); drawHalls(); drawFestGround(); }
+  if (!hide) { placeItems(1, false); drawGround(); if (GROUND) skySafe('grond', () => GROUND.drawGround(ctx, t)); drawHalls(); drawFestGround(); }
   EV.draw('ground', ctx);
   if (kam.layer === 'mid') drawKamiel();
   if (!hide) placeItems(2);
   EV.draw('back', ctx);
   if (kam.layer === 'front') drawKamiel();
   EV.draw('front', ctx);
+  if (GROUND && !hide) GROUND.drawSplashes(ctx);
   ctx.globalCompositeOperation = 'source-atop';
   if (S.season_colors !== false && SEASON_TINT[seasonNow]) { ctx.fillStyle = SEASON_TINT[seasonNow]; ctx.fillRect(0, 0, W, H); }
   const nk = EV.nightK ? EV.nightK() : 1;
@@ -2304,7 +2360,8 @@ function frame() {
   if (auroraA > 0) { ctx.fillStyle = `rgba(60,255,160,${.06 * auroraA})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
-  if (!hide) { drawWeather(sun); drawFestScreen(); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); if (PYRO && !(EV.filming && EV.filming())) skySafe('pyro', () => PYRO.draw(ctx)); drawBattBubble(); }
+  if (!hide && litWins.length) drawLitWindows(sun);
+  if (!hide) { drawWeather(sun); if (GROUND) skySafe('vuurvliegjes', () => GROUND.drawFireflies(ctx, t)); drawFestScreen(); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); if (PYRO && !(EV.filming && EV.filming())) skySafe('pyro', () => PYRO.draw(ctx)); drawBattBubble(); }
   EV.draw('screen', ctx);
   drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
