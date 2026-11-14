@@ -28,9 +28,19 @@
     }
     layout();
 
+    /* Three moods, chosen per song (the same song always gets the same one):
+       - 94 %: a concert. Flame cannons along the ground puff short bursts with a billowing top, on the beat, in patterns
+         (all at once on the drop, a chase from left to right, the outer pair, then the inner pair…), with rests in between.
+       - 5 %: very intense: flame throwers, walls of fire, sparks, fireballs, a glowing sky.
+       - 1 %: literally hell.  ?pyro=concert / intens / hel forces one (to try it out). */
+    let mode = 'concert';
     function set(isOn, songKey) {
-      if (isOn && songKey !== key) {   // a new song: its own level, between very intense (.55) and hell (1)
-        key = songKey; base = .55 + .45 * hash(songKey || String(Math.random())); startT = A.t();
+      if (isOn && songKey !== key) {
+        key = songKey; startT = A.t(); lastBeat = -1;
+        const forced = /^test-(concert|intens|hel)$/.exec(songKey || ''), r = hash(songKey || String(Math.random()));
+        mode = forced ? forced[1] : r < .01 ? 'hel' : r < .06 ? 'intens' : 'concert';
+        const r2 = hash('lvl' + songKey);
+        base = mode === 'hel' ? 1.08 : mode === 'intens' ? .6 + .2 * r2 : .5 + .5 * r2;   // concert: how many cannons go at once
       }
       if (!isOn) key = '';
       on = !!isOn;
@@ -52,9 +62,10 @@
 
     function step(dt) {
       fade = clamp(fade + (on ? dt / 1.5 : -dt / 2.5), 0, 1);
-      if (fade <= 0 && !parts.length && !bursts.length) { lvl = 0; return; }
+      if (fade <= 0 && !parts.length && !bursts.length && !puffs.length) { lvl = 0; return; }
       const t = A.t(), b = A.beat ? A.beat() : null, bpm = (b && b.bpm) || 112;
       const pos = b ? b.pos : (t - startT) * bpm / 60;
+      if (mode === 'concert') { concertStep(dt, t, pos); return; }
       // how hot right now: the song's own level, swelling over the first 40 s, breathing with slow noise,
       // and every 16 beats a big surge (the drop)
       const into = clamp((t - startT) / 40, 0, 1), phrase = (pos % 16) / 16;
@@ -109,7 +120,8 @@
     function draw(g) {
       const now = performance.now() / 1000, dt = lastT ? now - lastT : 1 / 60; lastT = now;
       step(clamp(dt, 0, .05));
-      if (fade <= 0 && !parts.length && !bursts.length) return;
+      if (fade <= 0 && !parts.length && !bursts.length && !puffs.length) return;
+      if (mode === 'concert') { concertDraw(g); return; }
       const ground = A.ground, hell = clamp((lvl - .8) / .3, 0, 1), t = A.t();
       g.save();
       // the sky glows: orange low, red higher up; in hell the whole sky turns deep red and pulses
@@ -157,6 +169,92 @@
       g.fillStyle = kr; g.fillRect(kx - 170, ky - 170, 340, 340);
       g.globalCompositeOperation = 'source-over';
       if (flash > 0) { g.fillStyle = `rgba(255,200,120,${flash * fade})`; g.fillRect(0, 0, W, H); }
+      g.restore();
+    }
+    /* ---------- the concert ---------- */
+    const puffs = [];   // one burst of one cannon: a column that shoots up, then a fireball that lifts off and fades
+    let pattern = null;
+    function puff(c, power) {
+      puffs.push({ x: c.x, age: 0, life: .75 + .25 * power, h: (110 + 90 * power) * (.9 + .2 * Math.random()), seed: Math.random() * 100 });
+      for (let i = 0; i < 3 + power * 4; i++) spark(c.x + (Math.random() - .5) * 20, A.ground - 120 * power, 120);
+    }
+    function concertStep(dt, t, pos) {
+      lvl = fade * base;
+      const beatN = Math.floor(pos), half = Math.floor(pos * 2);
+      if (on && half !== lastBeat) {
+        lastBeat = half;
+        const inBar = half % 8, bar = Math.floor(half / 8);
+        if (inBar === 0) {   // a new bar: pick what the cannons do in it (and often nothing: the rests make the hits count)
+          const drop = bar % 4 === 3, r = hash(key + 'bar' + bar);
+          pattern = drop ? 'all' : r < .38 ? null : r < .55 ? 'chase' : r < .7 ? 'outin' : r < .85 ? 'pairs' : 'one';
+        }
+        const n = cannons.length, onBeat = half % 2 === 0, beatInBar = inBar >> 1;
+        const fire = (i, pw) => { if (cannons[i]) puff(cannons[i], pw); };
+        if (pattern === 'all' && inBar === 0) for (let i = 0; i < n; i++) fire(i, 1);
+        else if (pattern === 'all' && inBar === 4 && base > .7) for (let i = 0; i < n; i++) fire(i, .8);
+        else if (pattern === 'chase' && inBar < n) fire(inBar, .75);   // left to right on the half beats
+        else if (pattern === 'outin' && onBeat) { const k = beatInBar % 3; fire(k, .8); fire(n - 1 - k, .8); }
+        else if (pattern === 'pairs' && onBeat && beatInBar % 2 === 0) { const k = (beatInBar / 2) % 2; for (let i = k; i < n; i += 2) fire(i, .7); }
+        else if (pattern === 'one' && onBeat && beatInBar === 0) fire(Math.floor(hash(key + bar) * n), .9);
+      }
+      for (let i = puffs.length - 1; i >= 0; i--) { puffs[i].age += dt; if (puffs[i].age >= puffs[i].life) puffs.splice(i, 1); }
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i]; p.age += dt;
+        if (p.age >= p.life) { parts.splice(i, 1); continue; }
+        if (p.k === 's') { p.vy += 260 * dt; p.vx *= 1 - dt; } else if (p.k === 'm') p.s += 14 * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt;
+      }
+    }
+    // a round blob of chunky 4px pixels
+    function blob(g, x, y, r, col) {
+      if (r < 2) return; g.fillStyle = col;
+      for (let dy = -r; dy < r; dy += 4) { const w = Math.sqrt(Math.max(0, r * r - (dy + 2) * (dy + 2))); g.fillRect(Math.round((x - w) / 4) * 4, Math.round((y + dy) / 4) * 4, Math.max(4, Math.round(w * 2 / 4) * 4), 4); }
+    }
+    function concertDraw(g) {
+      const ground = A.ground, t = A.t();
+      g.save();
+      // a warm glow behind the cannons while they fire (like the light on stage), nothing else changes colour
+      let heat = 0; for (const p of puffs) heat += Math.max(0, 1 - p.age / p.life);
+      if (heat > 0) {
+        g.globalCompositeOperation = 'lighter';
+        const gl = g.createLinearGradient(0, ground - 260, 0, H);
+        gl.addColorStop(0, 'rgba(255,110,20,0)'); gl.addColorStop(.75, `rgba(255,110,20,${Math.min(.22, heat * .035)})`); gl.addColorStop(1, `rgba(255,90,10,${Math.min(.12, heat * .02)})`);
+        g.fillStyle = gl; g.fillRect(0, ground - 260, W, H - ground + 260);
+        g.globalCompositeOperation = 'source-over';
+      }
+      for (const p of puffs) {
+        const k = p.age / p.life, rise = Math.min(1, p.age / .13);   // the column shoots up in about a tenth of a second
+        const top = ground - p.h * rise, a = k < .7 ? 1 : 1 - (k - .7) / .3;
+        g.globalCompositeOperation = 'source-over';
+        // the column: full while it shoots up, then it lifts off from the bottom
+        const lift = Math.max(0, (p.age - .32) * 300);
+        if (lift < p.h * rise) {
+          const ct = g.globalAlpha; g.globalAlpha = a;
+          jet(g, p.x, ground - lift, Math.max(4, p.h * rise - lift), t * 1.5 + p.seed);
+          g.globalAlpha = ct;
+        }
+        // the plume on top: billows out and drifts up like a flame, wider low and tongued higher up,
+        // red outside, orange, a yellow-white heart (painted, not added, so it stays fiery against a blue day sky)
+        g.globalCompositeOperation = 'source-over';
+        const bk = Math.max(0, (p.age - .06) / (p.life - .06)), grow = Math.sqrt(bk), br = 12 + 34 * grow * (.9 + .2 * nz(p.seed));
+        const by = top - 6 - bk * 30, layers = [['#b8280a', 1], ['#ff6a14', .78], ['#ffb22e', .55], ['#fff0b8', .3]];
+        for (const [col, sc] of layers) {
+          g.globalAlpha = a * (sc < .5 ? 1 - bk * .7 : 1);
+          for (let i = 0; i < 10; i++) {
+            const u = i / 9;   // 0 = bottom of the plume, 1 = the tip
+            const ox = (nz(p.seed + i * 3.1 + t * 3) - .5) * br * (1.3 - u * .5), oy = -u * br * 1.8 * (.8 + .4 * nz(p.seed + i * 2 + t * 2));
+            blob(g, p.x + ox, by + oy, br * sc * (.85 - u * .5), col);
+          }
+        }
+        g.globalAlpha = 1;
+        // a dark puff of smoke when it's spent
+        if (k > .75) { g.globalAlpha = (1 - k) * 1.2; blob(g, p.x, by - br * 1.6, br * .9, 'rgba(40,20,14,.35)'); g.globalAlpha = 1; }
+      }
+      g.globalCompositeOperation = 'lighter';
+      for (const p of parts) {
+        if (p.k !== 's') continue;
+        const k = p.age / p.life; g.globalAlpha = (1 - k) * fade; g.fillStyle = HOT[(k * 3) | 0]; g.fillRect(p.x | 0, p.y | 0, 3, 3);
+      }
       g.restore();
     }
     // a flame thrower: a tapering tongue with a white-hot core, chunky 4px steps, flickering edges
