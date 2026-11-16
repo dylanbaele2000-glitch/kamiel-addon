@@ -1872,9 +1872,9 @@ $('ckSave').addEventListener('click', async () => {
   status($('ckSaveStatus'), r.ok ? 'Bewaard.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
 $('ckTest').addEventListener('click', async () => {
-  status($('ckTestStatus'), 'Even vragen aan Gemini…');
+  status($('ckTestStatus'), 'Even vragen aan Gemini… (dat kan tot een halve minuut duren)');
   try { const j = await (await fetch('api/gemini-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: $('ckKey').value.trim(), model: $('ckModel').value.trim() }) })).json();
-    status($('ckTestStatus'), j.ok ? `Het werkt (${j.model}). Niet vergeten: Opslaan.` : j.error, j.ok ? 'ok' : 'err'); } catch { status($('ckTestStatus'), 'Testen lukte niet.', 'err'); }
+    status($('ckTestStatus'), j.ok ? `Het werkt: ${j.model} (verbinding ${j.list_s} s, antwoord ${j.gen_s} s). Niet vergeten: Opslaan.` : j.error, j.ok ? 'ok' : 'err'); } catch { status($('ckTestStatus'), 'Testen lukte niet.', 'err'); }
 });
 $('ckSend').addEventListener('click', async () => {
   const text = $('ckText').value.trim(); if (!text) { status($('ckStatus'), 'Plak eerst een recept of een link.', 'err'); return; }

@@ -2636,9 +2636,10 @@ async def api_gemini_test(request):
     if not key:
         return web.json_response({"ok": False, "error": "Vul eerst een sleutel in."})
     try:
-        r = await recipes.ai_recipe(key, "Toast met kaas: 2 sneetjes brood, 2 plakjes kaas. Leg de kaas op het brood en rooster 3 minuten.", (), (b.get("model") or "").strip() or None)
-        return web.json_response({"ok": True, "model": r.get("ai"), "steps": len(r["steps"])})
+        r = await recipes.test(key, (b.get("model") or "").strip() or None)
+        return web.json_response(dict(r, ok=True))
     except Exception as e:
+        log("fout", "Gemini-test: " + str(e), quiet=True)
         return web.json_response({"ok": False, "error": str(e)})
 
 

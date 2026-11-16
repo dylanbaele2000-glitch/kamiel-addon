@@ -12,8 +12,10 @@ import json
 import re
 
 import asyncio
+import socket
+import time
 
-from aiohttp import ClientError, ClientSession, ClientTimeout
+from aiohttp import ClientError, ClientSession, ClientTimeout, TCPConnector
 
 # ---------- small helpers ----------
 UNITS = r"(?:g|gr|gram|kg|kilo|mg|ml|cl|dl|l|liter|el|tl|eetlepels?|theelepels?|koffielepels?|kl|tbsp|tsp|cups?|oz|lb|teentjes?|tenen|snufje|snuifje|scheutje|scheut|blikjes?|blik|zakjes?|pakjes?|stuks?|stuk|takjes?|plakjes?|plakken|bosjes?|handjes?|handvol|kopjes?|glas|glazen|bollen|bol|pond|ons)"
@@ -261,11 +263,67 @@ Recept:
 """
 
 
+API = "https://generativelanguage.googleapis.com/v1beta"
+
+
+def _session(read=150):
+    # IPv4 only: on some home networks an IPv6 address for Google answers nothing and the request just hangs (16 nov)
+    return ClientSession(timeout=ClientTimeout(total=None, connect=15, sock_connect=15, sock_read=read),
+                         connector=TCPConnector(family=socket.AF_INET))
+
+
+def _why(e):
+    n = type(e).__name__
+    if "Connect" in n or isinstance(e, (socket.gaierror, OSError)) and not isinstance(e, asyncio.TimeoutError):
+        return "Home Assistant kan Google niet bereiken (" + n + "). Kijk of je Home Assistant internet heeft, of een firewall of adblocker (bv. AdGuard/Pi-hole) generativelanguage.googleapis.com tegenhoudt."
+    if isinstance(e, asyncio.TimeoutError):
+        return "Gemini deed er te lang over (" + n + "). Probeer het nog eens, of kies een sneller model (bv. gemini-3.5-flash-lite)."
+    return "Gemini is niet bereikbaar (" + n + ")"
+
+
 async def gemini(key, prompt, images=(), model=None):
     try:
         return await _gemini(key, prompt, images, model)
-    except (ClientError, asyncio.TimeoutError) as e:
-        raise RuntimeError("Gemini is niet bereikbaar (" + type(e).__name__ + ")") from None
+    except (ClientError, asyncio.TimeoutError, OSError) as e:
+        raise RuntimeError(_why(e)) from None
+
+
+async def models(key):
+    """The models this key may use (quick: also tells whether Google can be reached and the key works)."""
+    try:
+        async with _session(20) as s:
+            async with s.get(API + "/models", headers={"x-goog-api-key": key}, params={"pageSize": "200"}) as r:
+                txt = await r.text()
+                if r.status in (400, 401, 403):
+                    raise RuntimeError("de Gemini-sleutel klopt niet of is niet actief")
+                if r.status >= 400:
+                    raise RuntimeError(f"Google gaf fout {r.status}")
+                j = json.loads(txt)
+    except (ClientError, asyncio.TimeoutError, OSError) as e:
+        raise RuntimeError(_why(e)) from None
+    return [m["name"].split("/", 1)[-1] for m in j.get("models", []) if "generateContent" in (m.get("supportedGenerationMethods") or [])]
+
+
+def pick_model(avail, wanted=None):
+    """The best fast model this key has: the one asked for, else our list in order, else any flash model."""
+    if wanted and wanted in avail:
+        return wanted
+    for m in MODELS:
+        if m in avail:
+            return m
+    fl = [m for m in avail if "flash" in m and not any(x in m for x in ("image", "tts", "live", "audio", "exp"))]
+    return sorted(fl, reverse=True)[0] if fl else None
+
+
+async def test(key, wanted=None):
+    t0 = time.time()
+    avail = await models(key)
+    m = pick_model(avail, wanted)
+    if not m:
+        raise RuntimeError("deze sleutel heeft geen Gemini-model om tekst mee te maken")
+    t1 = time.time()
+    r = await ai_recipe(key, "Toast met kaas: 2 sneetjes brood, 2 plakjes kaas. Leg de kaas op het brood en rooster 3 minuten.", (), m)
+    return {"model": r.get("ai"), "list_s": round(t1 - t0, 1), "gen_s": round(time.time() - t1, 1), "n_models": len(avail)}
 
 
 async def _gemini(key, prompt, images=(), model=None):
@@ -273,12 +331,17 @@ async def _gemini(key, prompt, images=(), model=None):
     parts = [{"text": prompt}] + [{"inline_data": {"mime_type": mt, "data": base64.b64encode(b).decode()}} for b, mt in images]
     body = {"contents": [{"role": "user", "parts": parts}],
             "generationConfig": {"responseMimeType": "application/json", "responseSchema": SCHEMA, "temperature": 0.2}}
+    if not model and not GOOD["model"]:   # the first time: ask Google which models this key has, and take the best fast one
+        try:
+            GOOD["model"] = pick_model(await models(key))
+        except RuntimeError:
+            pass
     tried, last = [], ""
     order = [m for m in ([model] if model else []) + ([GOOD["model"]] if GOOD["model"] else []) + MODELS if m]
-    async with ClientSession(timeout=ClientTimeout(total=90)) as s:
+    async with _session() as s:
         for m in dict.fromkeys(order):
             tried.append(m)
-            async with s.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+            async with s.post(f"{API}/models/{m}:generateContent",
                               headers={"x-goog-api-key": key, "Content-Type": "application/json"}, json=body) as r:
                 txt = await r.text()
                 if r.status == 404:
