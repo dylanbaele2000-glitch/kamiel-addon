@@ -76,6 +76,40 @@ body.cine .vig{opacity:.45}
 .telesec{font-weight:700;background:#c0c0c0;margin:.4em -.4em .2em;padding:.15em .4em;border-top:1px solid #fff;border-bottom:1px solid #808080}
 .telerow{padding:.2em .2em;cursor:pointer;display:flex;flex-direction:column}.telerow span{font-size:.85em;color:#333}
 .telerow.on{background:#000080;color:#fff}.telerow.on span{color:#dde}
+/* Recept.exe: the recipe while cooking (stays until the recipe is done) */
+#desk{z-index:6}
+#rcp[hidden]{display:none!important}
+#rcp{position:absolute;left:1.6%;top:2.5%;width:68%;height:88%;z-index:5;font:clamp(12px,2.1vh,18px)/1.3 Arimo,Tahoma,Arial,sans-serif;color:#000;animation:none}
+#rcp .tb{font-size:1.15em;padding:.3em .3em .3em .6em}#rcp .tt{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#rcp .rb{display:flex;gap:.6em;padding:.6em;flex:1;min-height:0}
+#rcp .ing{width:31%;display:flex;flex-direction:column;min-height:0;padding:0}
+#rcp .ing h4{margin:0;padding:.35em .5em;background:#c0c0c0;border-bottom:1px solid #808080;font-size:1em}
+#rcp .ing ul{list-style:none;margin:0;padding:.3em .2em;overflow:auto;flex:1}
+#rcp .ing li{display:flex;gap:.45em;align-items:flex-start;padding:.32em .35em;font-size:1.08em;line-height:1.25;cursor:pointer;border-radius:2px}
+#rcp .ing li i{flex:none;width:1em;height:1em;margin-top:.12em;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff;font-style:normal;font-size:.9em;line-height:.9em;text-align:center;font-weight:700}
+#rcp .ing li.ok{color:#888;text-decoration:line-through}#rcp .ing li.ok i::after{content:'✓';color:#000}
+#rcp .ing li.now{background:#ffe9a8}
+#rcp .main{flex:1;display:flex;flex-direction:column;gap:.5em;min-width:0;min-height:0}
+#rcp .head{display:flex;align-items:center;gap:.7em;font-weight:700;font-size:1.15em}
+#rcp .bar{flex:1;height:1.05em;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff;padding:2px;display:flex;gap:2px}
+#rcp .bar b{flex:1;background:#e3e3e3}#rcp .bar b.on{background:#000080}
+#rcp .step{flex:1;min-height:0;position:relative;overflow:hidden;padding:.5em .8em}
+#rcp .txt{font-weight:700;line-height:1.28;color:#000;white-space:pre-wrap;overflow-wrap:anywhere}
+#rcp .txt mark{background:#ffe9a8;color:inherit}
+#rcp .page{position:absolute;right:.5em;bottom:.3em;font-size:.85em;color:#555}
+#rcp .tms{display:flex;flex-wrap:wrap;gap:.5em;min-height:0}
+#rcp .tmb{font-size:1.1em;font-weight:700}
+#rcp .run{display:flex;flex-wrap:nowrap;gap:.45em;overflow-x:auto;overflow-y:hidden;min-height:2.35em;flex:none}
+#rcp .run:empty{min-height:0}
+#rcp .chip{display:flex;align-items:center;gap:.4em;font-weight:700;font-size:1.15em;padding:.25em .55em;background:#000080;color:#fff;border:2px solid;border-color:#dfdfdf #404040 #404040 #dfdfdf;cursor:pointer}
+#rcp .chip.ring{background:#e2202b;animation:ringb .5s steps(2) infinite}
+#rcp .chip small{font-weight:400;font-size:.75em;opacity:.85}
+@keyframes ringb{50%{background:#ffd23f;color:#000}}
+#rcp .nav{display:flex;gap:.6em}#rcp .nav .b95{flex:1;font-size:1.45em;font-weight:700;min-height:2.4em}
+#rcp .nav .b95[disabled]{color:#888;text-shadow:1px 1px 0 #fff}
+#rcp .nav .go{flex:1.6}
+#rcp .ask{position:absolute;inset:0;background:rgba(0,0,40,.35);display:flex;align-items:center;justify-content:center}
+#rcp .ask .win{position:relative;animation:none;min-width:40%}
 /* old-school windows */
 .desk{position:absolute;inset:0;pointer-events:none;font:clamp(12px,2.1vh,18px)/1.3 Arimo,Tahoma,Arial,sans-serif;color:#000;cursor:default}
 .win{position:absolute;pointer-events:auto;background:#c0c0c0;border:2px solid;border-color:#dfdfdf #404040 #404040 #dfdfdf;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #808080,5px 7px 0 rgba(0,0,30,.28);display:flex;flex-direction:column;animation:pop .14s steps(3)}
@@ -140,6 +174,7 @@ body.cine .vig{opacity:.45}
   <div class="osd" id="osd"></div>
   <div class="osd osdr" id="osdr"></div>
   <div class="desk" id="desk"></div>
+  <div class="win" id="rcp" hidden></div>
   <div class="scan"></div><div class="vig"></div>
 </div>
 <script>
@@ -325,6 +360,7 @@ function festival(d) {
 const FEST_HAT = { liefde: 'hartjesbril', verjaardag: 'feesthoed', nieuwjaar: 'feesthoed', halloween: 'heksenhoed', kerst: 'kerstmuts', pasen: 'paasoren', valentijn: 'hartjesbril' };
 function festOutfit(list) {
   list = sunOutfit(list);
+  if (RCP.on && S.outfit_mode !== 'uit') list = (list || []).filter(x => (KamielOutfits.OUTFITS.find(o => o.id === x) || {}).slot !== 'hoofd').concat(['koksmuts']);
   const f = festival(); if (!f || !FEST_HAT[f.kind] || S.outfit_mode === 'uit') return list;
   const id = FEST_HAT[f.kind], O = KamielOutfits.OUTFITS, slot = (O.find(o => o.id === id) || {}).slot;
   if (!slot) return list;
@@ -850,7 +886,8 @@ function drawLitWindows(sun) {
   const L = light(sun.alt), kb0 = kam.hide ? null : { x: W / 2 + kam.x - 80 * (kam.s || 1), y: (kam.feet !== null ? kam.feet : FEET - kam.y) - 250 * (kam.s || 1), w: 160 * (kam.s || 1), h: 250 * (kam.s || 1) };
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (const w of litWins) {
-    if (kb0 && w.x < kb0.x + kb0.w && w.x + w.w > kb0.x && w.y < kb0.y + kb0.h && w.y + w.h > kb0.y) continue;
+    if (w.w <= 0) { if (w.after) { ctx.save(); ctx.globalCompositeOperation = 'source-over'; w.after(ctx); ctx.restore(); } continue; }
+    if (kb0 && !w.after && w.x < kb0.x + kb0.w && w.x + w.w > kb0.x && w.y < kb0.y + kb0.h && w.y + w.h > kb0.y) continue;
     const day = .3 + .7 * (1 - L), a = w.a * day;
     let c = w.col === 'koel' ? [205, 225, 255] : w.col === 'tv' ? [110, 150, 255] : [255, 190, 90];
     let k = 1;
@@ -862,8 +899,129 @@ function drawLitWindows(sun) {
     ctx.fillStyle = gr; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
     ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${.72 * a * k})`; ctx.fillRect(w.x, w.y, w.w, w.h);
     ctx.fillStyle = `rgba(255,240,205,${.3 * a * k})`; ctx.fillRect(w.x + w.w * .18, w.y + w.h * .18, w.w * .64, w.h * .64);
+    if (w.after) { ctx.save(); ctx.globalCompositeOperation = 'source-over'; w.after(ctx); ctx.restore(); }
   }
   ctx.restore();
+}
+/* ---------- Recept.exe: cooking with Kamiel ----------
+   A recipe sent over Telegram (or pasted in the Studio) stays on the screen, step by step, until it's done.
+   One step at a time in letters as big as fit (a step too long for even small letters is split into pages),
+   the ingredients beside it (tap = ticked off; the ones the step needs light up), kitchen timers with a big
+   countdown that ring here and on Telegram. Kamiel puts on his chef's hat and stands aside on the right. */
+const RCP = { on: false, rev: -1, r: null, page: 0, pages: [], off: 0, waveT: 0, beepT: 0, ac: null, lastKey: '' };
+let kamSlide = false;
+const rcpEl = document.getElementById('rcp');
+async function rcpFetch() {
+  try {
+    const j = await (await fetch('api/recipe', { cache: 'no-store' })).json();
+    RCP.rev = j.rev; RCP.off = (j.now || Date.now() / 1000) * 1000 - Date.now();
+    const was = RCP.on, prevStep = RCP.r ? RCP.r.step : -1;
+    RCP.r = j.recipe; RCP.on = !!j.recipe;
+    if (RCP.on && !was) { tlog('keuken', 'Recept.exe open: ' + RCP.r.title); fk(f => f.turnScreenOn()); screen(true, 'recept'); }
+    if (!RCP.on && was) { kam.face = 0; }
+    if (RCP.on && RCP.r.step !== prevStep) RCP.page = 0;
+    rcpRender();
+  } catch (e) { }
+}
+async function rcpAct(action, arg) {
+  if (!RCP.ac) try { RCP.ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { }   // a tap: sound is allowed from now on
+  if (action === 'next' && RCP.page < RCP.pages.length - 1) { RCP.page++; rcpRender(); return; }   // first the rest of a long step
+  if (action === 'prev' && RCP.page > 0) { RCP.page--; rcpRender(); return; }
+  try { await fetch('api/recipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, arg }) }); } catch (e) { }
+  if (action === 'prev') RCP.page = -1;   // going back: land on the last page of the step before
+  rcpFetch();
+}
+// the words of an ingredient that matter ("200 g fijne spaghetti" -> spaghetti, fijne)
+function ingWords(t) {
+  return String(t).toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[\d½¼¾⅓⅔.,\/-]+/g, ' ').split(/\s+/)
+    .filter(w => w.length >= 4 && !/^(gram|kilo|liter|eetlepels?|theelepels?|stuks?|blik|blikje|zakje|takjes?|teentjes?|snufje|scheutje|fijn|grote?|kleine?|vers|verse|naar|smaak|eventueel|gehakt|gesneden|ongeveer)$/.test(w))
+    .map(w => w.slice(0, Math.max(4, w.length - 2)));
+}
+function rcpRender() {
+  if (!RCP.on) { rcpEl.hidden = true; rcpEl.innerHTML = ''; RCP.lastKey = ''; return; }
+  const r = RCP.r, n = r.steps.length, st = r.steps[r.step] || { text: '', timers: [] }, low = st.text.toLowerCase();
+  const key = r.rev + ':' + RCP.page;
+  if (key === RCP.lastKey && !rcpEl.hidden) { rcpTimers(); return; }
+  RCP.lastKey = key; rcpEl.hidden = false;
+  const now = r.ingredients.map(i => ingWords(i).some(w => low.includes(w)));
+  rcpEl.innerHTML = `<div class="tb"><span>🍳</span><span class="tt">Recept.exe — ${escH(r.title)}</span><button class="b95" data-r="done" style="min-height:1.7em;padding:.05em .7em;font-weight:700">Klaar ✓</button></div>
+    <div class="rb">
+      ${r.ingredients.length ? `<aside class="ing inset"><h4>Ingrediënten${r.servings ? ' · ' + escH(r.servings) : ''}</h4><ul>${r.ingredients.map((x, i) => `<li data-i="${i}" class="${(r.checked || []).includes(i) ? 'ok' : ''} ${now[i] ? 'now' : ''}"><i></i><span>${escH(x)}</span></li>`).join('')}</ul></aside>` : ''}
+      <div class="main">
+        <div class="run"></div>
+        <div class="head"><span>Stap ${r.step + 1} van ${n}</span><div class="bar">${r.steps.map((_, i) => `<b class="${i <= r.step ? 'on' : ''}"></b>`).join('')}</div></div>
+        <div class="step inset"><div class="txt"></div><span class="page"></span></div>
+        ${st.timers && st.timers.length ? `<div class="tms">${st.timers.map((t, i) => (r.timers || []).some(x => x.step === r.step && x.label === t.label) ? `<button class="b95 tmb" disabled>⏲ ${escH(t.label)} loopt</button>` : `<button class="b95 tmb" data-tm="${i}">⏲ ${escH(t.label)} starten</button>`).join('')}</div>` : ''}
+        <div class="nav"><button class="b95" data-r="prev" ${r.step === 0 && RCP.page <= 0 ? 'disabled' : ''}>◀ Vorige</button><button class="b95 go" data-r="next">${r.step >= n - 1 ? 'Laatste stap ✓' : 'Volgende ▶'}</button></div>
+      </div>
+    </div>`;
+  rcpTimers();
+  rcpFit(st.text);
+}
+// the biggest letters that fit; if even small letters don't fit, the step is split into pages (by sentence)
+function rcpFit(text) {
+  const box = rcpEl.querySelector('.step'), el = rcpEl.querySelector('.txt'), pg = rcpEl.querySelector('.page');
+  const fits = (t, fs) => { el.style.fontSize = fs + 'px'; el.textContent = t; return el.scrollHeight <= box.clientHeight - 14; };
+  const best = (t) => { let lo = 18, hi = 64, ok = 0; while (lo <= hi) { const m = (lo + hi) >> 1; if (fits(t, m)) { ok = m; lo = m + 1; } else hi = m - 1; } return ok; };
+  let pages = [text];
+  if (!best(text) || best(text) < 26) {   // too long: pages of whole sentences, each as big as possible (at least 26px)
+    const sents = text.split(/(?<=[.!?;])\s+/); pages = []; let cur = '';
+    for (const s0 of sents) { const tryT = cur ? cur + ' ' + s0 : s0; if (cur && !fits(tryT, 26)) { pages.push(cur); cur = s0; } else cur = tryT; }
+    if (cur) pages.push(cur);
+  }
+  RCP.pages = pages;
+  if (RCP.page < 0 || RCP.page >= pages.length) RCP.page = RCP.page < 0 ? pages.length - 1 : 0;
+  const t = pages[RCP.page], fs = best(t) || 18;
+  el.style.fontSize = fs + 'px';
+  // the ingredients this step needs, highlighted in the text too
+  const words = [...new Set(RCP.r.ingredients.flatMap(ingWords))].filter(w => w.length >= 4).sort((a, b) => b.length - a.length);
+  let h = escH(t);
+  if (words.length) h = h.replace(new RegExp('(' + words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')([a-zà-ÿ]*)', 'gi'), '<mark>$1$2</mark>');
+  el.innerHTML = h;
+  pg.textContent = pages.length > 1 ? `deel ${RCP.page + 1} van ${pages.length}` : '';
+  const prev = rcpEl.querySelector('[data-r=prev]'); if (prev) prev.disabled = RCP.r.step === 0 && RCP.page === 0;
+  const go = rcpEl.querySelector('[data-r=next]'); if (go && RCP.page < pages.length - 1) go.textContent = 'Verder ▶';
+}
+const mmss = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+function rcpTimers() {
+  const run = rcpEl.querySelector('.run'); if (!run || !RCP.r) return;
+  const nowS = (Date.now() + RCP.off) / 1000, ts = RCP.r.timers || [];
+  const html = ts.map(t => { const left = t.end - nowS, ring = left <= 0;
+    return `<span class="chip ${ring ? 'ring' : ''}" data-tid="${t.id}">⏲ ${escH(t.label)} ${ring ? 'is klaar! ✓' : mmss(left)} <small>${ring ? 'tik om te stoppen' : 'stap ' + (t.step + 1)}</small></span>${ring ? '' : `<button class="b95" data-add="${t.id}" style="min-height:1.6em;padding:0 .5em">+1 min</button>`}`; }).join('');
+  if (run.innerHTML !== html) { const had = !!run.innerHTML; run.innerHTML = html; if (had !== !!html && RCP.r) rcpFit(RCP.r.steps[RCP.r.step].text); }
+  if (ts.some(t => t.end - nowS <= 0)) rcpBeep();
+}
+function rcpBeep() {
+  if (!RCP.ac || Date.now() - RCP.beepT < 1600) return; RCP.beepT = Date.now();
+  try { const ac = RCP.ac; [0, .22, .44].forEach(d => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = 880; g.gain.value = .08; o.connect(g); g.connect(ac.destination); o.start(ac.currentTime + d); o.stop(ac.currentTime + d + .14); }); } catch (e) { }
+  if (!EV.active && Math.random() < .3) { kam.y = 0; }
+}
+setInterval(() => { if (RCP.on) rcpTimers(); }, 500);
+setInterval(() => { if (RCP.on) rcpFetch(); }, 4000);
+setTimeout(rcpFetch, 1500);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { RCP.lastKey = ''; if (RCP.on) rcpRender(); });
+addEventListener('resize', () => { RCP.lastKey = ''; if (RCP.on) rcpRender(); });
+rcpEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-r],[data-i],[data-tm],[data-tid],[data-add],[data-ask]'); if (!b) return;
+  if (b.dataset.r === 'done' || (b.dataset.r === 'next' && RCP.r.step >= RCP.r.steps.length - 1 && RCP.page >= RCP.pages.length - 1)) {   // finished? ask first
+    const ask = document.createElement('div'); ask.className = 'ask';
+    ask.innerHTML = `<div class="win"><div class="tb"><span>🍳</span><span class="tt">Recept.exe</span></div><div class="bd" style="padding:1em;font-size:1.2em"><p style="margin:.2em 0 1em">Is "${escH(RCP.r.title)}" klaar? Dan gaat het van het scherm.</p>
+      <div style="display:flex;gap:.6em;justify-content:flex-end"><button class="b95" data-ask="nee" style="font-size:1.1em">Nog niet</button><button class="b95" data-ask="ja" style="font-size:1.1em;font-weight:700">Klaar, smakelijk!</button></div></div></div>`;
+    rcpEl.appendChild(ask); return;
+  }
+  if (b.dataset.ask) { const a = rcpEl.querySelector('.ask'); if (a) a.remove(); if (b.dataset.ask === 'ja') { rcpAct('done'); EV.request && setTimeout(() => EV.request('blij'), 800); } return; }
+  if (b.dataset.r) return rcpAct(b.dataset.r);
+  if (b.dataset.i !== undefined) { b.classList.toggle('ok'); return rcpAct('check', +b.dataset.i); }
+  if (b.dataset.tm !== undefined) { const t = RCP.r.steps[RCP.r.step].timers[+b.dataset.tm]; b.disabled = true; b.textContent = '⏲ loopt…'; return rcpAct('timer', { sec: t.sec, label: t.label }); }
+  if (b.dataset.tid) { const t = (RCP.r.timers || []).find(x => x.id === b.dataset.tid); if (t && t.end - (Date.now() + RCP.off) / 1000 <= 0) return rcpAct('timer_stop', t.id); return; }
+  if (b.dataset.add) return rcpAct('timer_add', b.dataset.add);
+});
+// Kamiel walks to the right of the recipe window and back when it's done
+function rcpSlide(dt) {
+  if (EV.active || walking || kam.hide || BED.mode) { kamSlide = false; return; }
+  const want = RCP.on ? W * .33 : 0, d = want - kam.x;
+  if (Math.abs(d) < 2) { kamSlide = false; if (RCP.on) kam.face = -1; else if (kam.x !== 0) { kam.x = 0; kam.face = 0; } return; }
+  kamSlide = true; kam.face = d > 0 ? 1 : -1; kam.x += Math.sign(d) * Math.min(Math.abs(d), 90 * dt);
 }
 // the ground remembers the weather: puddles, snow that stays, footprints, fireflies (static/ground.js)
 let wxTemp = null;
@@ -1061,6 +1219,8 @@ function schedule() {
   updateSeason();
   if (remShown && !params.get('r') && !KamielReminder.isActive(remShown, d)) remShown = null;
   if (calm()) return;   // the quiet mode (a rule, or 'niet storen'): no walking, no events
+  bedCheck(d);
+  if (RCP.on || BED.mode) return;   // cooking (Kamiel stands by the recipe) or bedtime: no walking, no other events
   airTick();
   EV.check(d);
   if (walking || EV.active) return;
@@ -1206,6 +1366,7 @@ async function pollLive() {
   SKY.onLive(j.sky);
   battAlerts = Array.isArray(j.battery) ? j.battery : [];
   lampSt = j.lamps && typeof j.lamps === 'object' ? j.lamps : {};
+  if (j.recipe && j.recipe.rev !== RCP.rev) rcpFetch();
   try { pyroCheck(j.media); } catch (e) { console.error('pyro', e); }
   if (Array.isArray(j.outfit) && Date.now() - outfitTouched > 8000) outfit = j.outfit;
   const m = j.media, playing = !!(m && m.playing);
@@ -1268,7 +1429,8 @@ function sawSomeone(report) {
   const n = Date.now(), recent = n - lastMotion < 25000; lastMotion = n; seenMotion = n;
   if (report) fetch('api/motion', { method: 'POST' }).catch(() => {});
   if (MOT.wake !== false) screen(true, 'beweging');
-  if (!recent && MOT.look !== false && !calm()) EV.request('kijken');
+  if (RCP.on) { if (!recent && (S.cook || {}).wave && n - RCP.waveT > 6000) { RCP.waveT = n; rcpAct('next'); } return; }
+  if (!recent && MOT.look !== false && !calm() && !BED.mode) EV.request('kijken');
 }
 window.__kamielMotion = () => sawSomeone(true);
 if (MOT.on) fk(f => f.bind('onMotion', 'window.__kamielMotion && window.__kamielMotion();'));
@@ -1284,6 +1446,7 @@ function screen(on, why) {
 // what the screen should do now; also sent to the Studio so you can see it is working
 const BOOT_T = Date.now();
 function screenPlan() {
+  if (RCP.on) return ['aan', 'recept'];
   if (Date.now() - BOOT_T < 180000) return ['aan', 'net gestart'];   // just (re)loaded: never straight off again (the page doesn't remember the last movement)
   const idle = (Date.now() - lastMotion) / 60000, recent = Date.now() - seenMotion < 120000;
   if (MOT.away_off && awayNow && !recent) return ['uit', 'niemand thuis'];
@@ -1598,7 +1761,8 @@ function step(dt) {
     if ((dir > 0 && kx >= target) || (dir < 0 && kx <= target)) { kx = target; walking = false; lastWalk = Date.now(); arrived(); }
   }
   EV.tick(dt);
-  if (!walking) EV.pump(msToWalk());
+  if (!walking) EV.pump(RCP.on ? 0 : msToWalk());
+  rcpSlide(dt);
   // fade in when he stands still, out as soon as he walks on or the reminder's time is over
   const want = remShown && !walking && !message && !EV.active ? 1 : 0;
   if (message && message.until * 1000 < Date.now()) message = null;
@@ -2172,7 +2336,7 @@ function llamaPoint(o, fx, fy) {
 function kamObj() {
   const ev = EV.active;
   return { cx: W / 2 + kam.x, feet: kam.feet !== null ? kam.feet : FEET - kam.y, s: kam.s, face: kam.face || dir,
-    pose: ev ? (kam.pose || (blinkT < 0 ? 'blink' : 'stand')) : (walking ? 'walk' : (blinkT < 0 ? 'blink' : 'stand')),
+    pose: ev ? (kam.pose || (blinkT < 0 ? 'blink' : 'stand')) : (walking || kamSlide ? 'walk' : (blinkT < 0 ? 'blink' : 'stand')),
     wt: ev ? kam.wt : t * 6 * airWalk(), r: kam.r + (ev ? 0 : stormLean()), sq: kam.sq, sx: kam.sx, head: ev ? kam.head : (calm() ? .14 : nodAngle() + airHead()),
     eyes: !ev && calm() ? 'dicht' : (!ev && airEyes() !== null ? airEyes() : kam.eyes), eyeT: kam.eyeT, mouth: kam.mouth,
     outfit: kam.outfit || festOutfit(Date.now() < tempOutfitUntil ? tempOutfit : outfit), tint: kam.tint, alpha: kam.alpha, blur: kam.blur, cold: kam.cold, clipY: kam.clipY, blush: kam.blush, filter: kam.filter, deco: kam.deco };
@@ -2180,6 +2344,90 @@ function kamObj() {
 // the real sky must never take the rest of the picture down with it: an error there is logged once and skipped
 const skyErrs = new Set();
 function skySafe(part, f) { try { f(); } catch (e) { console.error('lucht', part, e); const k = part + ':' + (e && e.message); if (!skyErrs.has(k)) { skyErrs.add(k); tlog('fout', 'Lucht (' + part + '): ' + (e && e.message)); } } }
+/* ---------- bedtime: Kamiel's house and his night ----------
+   20 minutes (settable) before the night's rest begins he gets ready for bed: a different little ritual every evening
+   (events 'bedtijd'), ending inside his house with the light out. Asleep, the house stays with zzz from the window;
+   when the night is over he comes out ('opstaan'). While a recipe is on, bedtime waits. */
+const BED = { mode: '', day: '', house: null, a: 0, door: 0, light: 0, shadow: 0, zzz: 0, lantern: 0,
+  secsLeft: () => { const d = now(), m = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60, a = minutesOf(S.night_start); return Math.round(((a - m + 1440) % 1440) * 60); },
+  save: () => { try { localStorage.setItem('kamiel-bed', JSON.stringify({ mode: BED.mode, day: BED.day, house: BED.house, lantern: BED.lantern, t: Date.now() })); } catch (e) { } } };
+// the evening a night belongs to (after midnight it is still yesterday's night)
+const bedDay = (d) => { const e = new Date(d); if (e.getHours() < 12) e.setDate(e.getDate() - 1); return e.getFullYear() + '-' + (e.getMonth() + 1) + '-' + e.getDate(); };
+try { const b = JSON.parse(localStorage.getItem('kamiel-bed') || 'null'); if (b && b.mode === 'slaapt' && b.day === bedDay(now()) && isNightTime(now())) Object.assign(BED, { mode: 'slaapt', day: b.day, house: b.house, a: 1, zzz: 1, lantern: b.lantern || 0 }); else if (b) BED.day = b.day; } catch (e) { }
+function bedCheck(d) {
+  const C = S.cook || {};
+  if (BED.mode === 'slaapt' && (!isNightTime(d) || RCP.on)) { BED.mode = 'wakker'; BED.reqT = Date.now(); EV.request('opstaan'); return; }
+  if (BED.mode === 'wakker' && !EV.active && !EV.current()) { if (BED.house === null || BED.a <= 0) BED.mode = ''; }
+  // the ritual got cut off (or never started): don't stay stuck in it
+  if (BED.mode === 'ritueel' && EV.current() !== 'bedtijd' && Date.now() - (BED.reqT || 0) > 90000) { if (BED.zzz) BED.mode = 'slaapt'; else { BED.mode = ''; BED.house = null; } BED.save(); }
+  if (BED.mode === 'wakker' && EV.current() !== 'opstaan' && Date.now() - (BED.reqT || 0) > 90000) { BED.mode = ''; BED.house = null; BED.save(); }
+  if (C.bedtime === false || BED.mode || RCP.on || filmNow() || (EV.active && EV.current() === 'bedtijd')) return;
+  if (BED.day === bedDay(d)) return;
+  const left = BED.secsLeft() / 60, night = isNightTime(d);
+  // in the minutes before the night, or (after a late recipe) early in the night itself
+  if ((left > 0 && left <= (C.bed_min || 20)) || (night && d.getHours() >= 18 && fk(f => f.getScreenOn(), true) !== false)) {
+    BED.day = bedDay(d); BED.mode = 'ritueel'; BED.reqT = Date.now(); BED.save(); EV.request('bedtijd');
+  }
+}
+if (params.get('bed')) setTimeout(() => { BED.day = ''; BED.reqT = Date.now(); BED.mode = params.get('bed') === 'slaapt' ? '' : 'ritueel'; if (params.get('bed') === 'slaapt') Object.assign(BED, { mode: 'slaapt', house: kx + 330, a: 1, zzz: 1 }); else EV.request('bedtijd'); }, 3000);   // ?bed=1 / ?bed=slaapt, to try it out
+// Kamiel's house: drawn in pixels, a little cottage with a round door, a window with curtains, a chimney and his name
+function drawBedHouse(g) {
+  if (BED.house === null || BED.a <= 0) return;
+  const cam = kx - W / 2, sx = mod(BED.house - cam + PW / 2, PW) - PW / 2, u = 8, base = FEET - 10;
+  if (sx < -300 || sx > W + 300) return;
+  const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
+  const X = (v) => sx + v * u, Y = (v) => base - v * u, snow = GROUND ? GROUND.snowK() : 0;
+  g.save(); g.globalAlpha = BED.a;
+  // path stones and a bit of shadow
+  R(X(-17), base - 2, 34 * u, 6, 'rgba(0,0,0,.18)');
+  for (let i = 0; i < 4; i++) R(X(-8 - i * 2.2), base + 4 + i * 7, 2.6 * u, 4, '#a8a39a');
+  // walls: wooden planks
+  R(X(-17), Y(30), 34 * u, 30 * u, '#c98a4b');
+  for (let r = 3; r < 30; r += 3) R(X(-17), Y(r), 34 * u, 2, '#a86e36');
+  R(X(15), Y(30), 2 * u, 30 * u, 'rgba(60,30,10,.25)');
+  // roof: red tiles, stepping in
+  for (let i = 0; i < 15; i++) { const w = 40 - i * 2.6, y = Y(30 + i + 1); R(sx - w * u / 2, y, w * u, u, i % 2 ? '#9e2a21' : '#b8352a'); if (snow > .05) R(sx - w * u / 2, y, w * u, 3 * snow, '#f4f7fd'); }
+  R(X(-20), Y(31), 40 * u, 3, '#6e1c16');
+  // chimney with a little smoke when he's up (or zzz when he's asleep)
+  R(X(8), Y(44), 4 * u, 9 * u, '#8a8f99'); R(X(7.5), Y(44), 5 * u, u, '#6d727c');
+  for (let r = 0; r < 9; r += 2) R(X(8), Y(44 - r), 4 * u, 1, '#727782');
+  if (BED.light > .1 || BED.mode === 'ritueel') for (let k = 0; k < 3; k++) { const a = (t * .35 + k / 3) % 1; g.fillStyle = `rgba(220,220,230,${.45 * (1 - a)})`; const z = 8 + 14 * a; g.fillRect(X(10) - z / 2 + Math.sin(t + k) * 6 * a, Y(45) - a * 70 - z / 2, z, z); }
+  // the round door (open: dark inside, with the light)
+  const dx0 = X(-12), dw = 10 * u, dh = 24 * u, dy0 = base - dh;
+  R(dx0 - 4, dy0 - 4, dw + 8, dh + 4, '#7a4a24');
+  if (BED.door > .02) {
+    R(dx0, dy0 + u, dw, dh - u, BED.light > .1 ? '#5a3a1a' : '#1e140c'); R(dx0 + u, dy0, dw - 2 * u, u, BED.light > .1 ? '#5a3a1a' : '#1e140c');
+    const w2 = dw * (1 - BED.door * .85); R(dx0, dy0 + u, w2, dh - u, '#6b3d1c'); R(dx0 + u, dy0, Math.max(0, w2 - u), u, '#6b3d1c');
+  } else {
+    R(dx0, dy0 + u, dw, dh - u, '#6b3d1c'); R(dx0 + u, dy0, dw - 2 * u, u, '#6b3d1c');
+    for (let c = 2; c < 10; c += 3) R(dx0 + c * u, dy0 + u, 2, dh - u, '#563015');
+    R(dx0 + dw - 2 * u, dy0 + dh / 2, u, u, '#f2c14e');
+  }
+  // the name plate above the door
+  R(dx0 - u, dy0 - 3.4 * u, dw + 2 * u, 2.6 * u, '#e8d7b0'); R(dx0 - u, dy0 - 3.4 * u, dw + 2 * u, 2, '#b89b66');
+  g.font = 'bold 15px VT323, monospace'; g.fillStyle = '#5a3a1a'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('KAMIEL', dx0 + dw / 2, dy0 - 2.1 * u);
+  // the window with curtains and a flower box
+  const wx0 = X(2), wy0 = Y(23), ww = 11 * u, wh = 10 * u;
+  R(wx0 - u, wy0 - u, ww + 2 * u, wh + 2 * u, '#f3efe6');
+  R(wx0, wy0, ww, wh, BED.light > .05 ? '#ffd27a' : '#22305e');
+  R(wx0 + ww / 2 - 2, wy0, 4, wh, '#f3efe6'); R(wx0, wy0 + wh / 2 - 2, ww, 4, '#f3efe6');
+  R(wx0, wy0, 2.2 * u, wh, '#e98fb1'); R(wx0 + ww - 2.2 * u, wy0, 2.2 * u, wh, '#e98fb1');
+  R(wx0 - u, wy0 + wh + u, ww + 2 * u, 2.4 * u, '#8a5a2b');
+  for (let i = 0; i < 6; i++) { R(wx0 + i * 2 * u, wy0 + wh + .3 * u, 6, 6, ['#ff6fb5', '#ffd23f', '#9ad1ff'][i % 3]); R(wx0 + i * 2 * u + 2, wy0 + wh + u, 2, 6, '#3f9a3a'); }
+  // the lantern by the door
+  const lx = X(-15.5), ly = base - 9 * u;
+  R(lx - 1, ly, 3, 9 * u, '#3a2a1a'); R(lx - 7, ly - 14, 15, 14, '#2a2a2a'); R(lx - 5, ly - 12, 11, 10, BED.lantern > .05 ? '#ffd27a' : '#556');
+  g.restore();
+  // what shines (after the night darkened the world): the window, the lantern, and zzz
+  if (BED.light > .02) litWins.push({ x: wx0, y: wy0, w: ww, h: wh, a: BED.light * BED.a, col: 'warm', seed: 3, after: BED.shadow ? (c) => {
+    const k = Math.sin(t * 5); c.fillStyle = 'rgba(40,24,40,.55)'; c.fillRect(wx0 + 2.2 * u, wy0 + wh * .35 + k * 6, ww - 4.4 * u, wh * .3);
+    c.fillRect(wx0 + ww * .55, wy0 + wh * .15, 10, wh * .5); } : null });
+  if (BED.lantern > .02) litWins.push({ x: lx - 5, y: ly - 12, w: 11, h: 10, a: BED.lantern * BED.a, col: 'warm', seed: 7 });
+  if (BED.zzz > 0) litWins.push({ x: wx0, y: wy0, w: 0, h: 0, a: 0, col: 'warm', seed: 0, after: (c) => {
+    c.font = 'bold 26px VT323, monospace'; c.textAlign = 'center';
+    for (let k = 0; k < 3; k++) { const a = (t * .25 + k / 3) % 1; c.fillStyle = `rgba(255,255,255,${(1 - a) * .9 * BED.a})`; c.font = `bold ${18 + 16 * a}px VT323, monospace`; c.fillText('Z', wx0 + ww * .7 + a * 40, wy0 - 10 - a * 90); }
+  } });
+}
 // a battery that's nearly empty: a little speech bubble with "!" above Kamiel (tap it to see which one)
 let battAlerts = [], battHit = null;
 function drawBattBubble() {
@@ -2216,7 +2464,7 @@ function openBattery() {
 }
 // in a storm Kamiel leans into the wind, a little unsteady
 function stormLean() { const k = SKY.storm ? SKY.storm() : 0; return k ? -.07 * k + Math.sin(t * 2.7) * .03 * k : 0; }
-function drawKamiel() { if (!kam.hide) { const o = kamObj(); drawLlama(ctx, o); if (GROUND && !filmNow()) GROUND.track('kamiel', o, 'lama'); } }
+function drawKamiel() { if (BED.mode === 'slaapt') return; if (!kam.hide) { const o = kamObj(); drawLlama(ctx, o); if (GROUND && !filmNow()) GROUND.track('kamiel', o, 'lama'); } }
 /* the northern lights: some evenings (a chance per evening, set in the Studio), green and violet curtains in the sky */
 function seededDay(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return ((h >>> 0) % 10000) / 10000; }
 function auroraTonight(d) {
@@ -2345,6 +2593,7 @@ function frame() {
   EV.draw('ground', ctx);
   if (kam.layer === 'mid') drawKamiel();
   if (!hide) placeItems(2);
+  if (!hide) drawBedHouse(ctx);
   EV.draw('back', ctx);
   if (kam.layer === 'front') drawKamiel();
   EV.draw('front', ctx);
@@ -2411,6 +2660,7 @@ EV = KamielEvents.create({
   sky: () => lastSun || lastMoon,
   moon: () => lastMoon,
   openTelescope: () => openTelescope(),
+  bed: BED,
   // a full-moon night: the moon (nearly) full this evening, so the pets act strange and a nightmare may come
   fullMoon: (d) => { const e = new Date(d); e.setHours(22, 0, 0, 0); const ph = moonPos(e).phase; return Math.abs(ph - .5) < .034 || params.get('volle') === '1'; },
   night: () => isDark(now()),

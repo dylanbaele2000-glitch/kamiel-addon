@@ -79,6 +79,8 @@
     { id: 'kijken', name: 'Iemand staat voor de tablet', cat: 'intern' },
     { id: 'begroeten', name: 'Een huisdier komt Kamiel begroeten', cat: 'intern' },
     { id: 'telescoop', name: 'Kamiel kijkt door zijn telescoop (tik op de maan)', cat: 'intern' },
+    { id: 'bedtijd', name: 'Kamiels slaapritueel (voor de nachtrust)', cat: 'intern' },
+    { id: 'opstaan', name: 'Kamiel staat op (na de nachtrust)', cat: 'intern' },
     { id: 'dansfeest', name: 'Dansfeest: iedereen danst op het nummer', cat: 'muziek' },
     { id: 'heidiwraak', name: 'Heidi’s wraak: ze kaapt het scherm', cat: 'verhaal' },
     { id: 'ufo', name: 'Dobby wordt ontvoerd door een ufo', cat: 'verhaal' },
@@ -289,6 +291,123 @@
     }
     const P = (o) => Object.assign({ x: 0, y: 0, vx: 0, vy: 0, age: 0, life: 1, grav: 0 }, o);
 
+    /* ---------- bedtime: the little things Kamiel does before bed (each fills `d` seconds) ---------- */
+    const mouth = () => kp(30, 400);
+    function* idle(d, every) {   // standing there a while, blinking, swaying a little
+      let a = 0; while (a < d) { a += st.dt; kam.sq = 1 + Math.sin(a * 1.3) * .006; if (every) every(a); yield; } kam.sq = 1;
+    }
+    function prop(layer, draw) { return fx(layer, 0, draw); }
+    const BEDACT = {
+      muts: function* (d) {
+        emote('sparks', 1.4); yield* wait(.8);
+        withOutfit(rnd() < .55 ? ['slaapmuts', 'pyjama'] : ['slaapmuts']); kam.eyes = 'blij';
+        yield* hop(18, .45); emote('hearts', 2); yield* idle(Math.max(3, d - 1.5)); kam.eyes = '';
+      },
+      tanden: function* (d) {
+        const pr = { on: 1 }, foam = particles('front', { emit: (ps) => { if (pr.on && rnd() < .5) { const m = mouth(); ps.push(P({ x: m.x + (rnd() - .5) * 18, y: m.y + (rnd() - .5) * 8, vy: -14 - rnd() * 10, vx: (rnd() - .5) * 14, life: 1 + rnd() })); } },
+          draw: (g, p, k) => { g.fillStyle = `rgba(255,255,255,${.9 * (1 - k)})`; const z = 3 + 3 * k; g.fillRect(p.x - z / 2, p.y - z / 2, z, z); } });
+        const br = prop('front', (g) => { if (!pr.on) return; const m = mouth(), f = kface(), x = m.x + Math.sin(cur.t * 16) * 6 * f;
+          g.fillStyle = '#5fb0e8'; g.fillRect(x - (f > 0 ? 0 : 34), m.y + 2, 34, 6); g.fillStyle = '#fff'; g.fillRect(x + (f > 0 ? 0 : -6) - 2, m.y - 6, 8, 9); g.fillStyle = '#9fd6ff'; g.fillRect(x + (f > 0 ? 0 : -6) - 2, m.y - 6, 8, 3); });
+        kam.eyes = 'dicht'; yield* idle(d * .8, (a) => { kam.head = Math.sin(a * 5) * .03; });
+        pr.on = 0; stop(br); kam.eyes = 'blij'; emote('sparks', 2); yield* idle(d * .2); stop(foam); kam.eyes = '';
+      },
+      melk: function* (d) {
+        const mug = prop('front', (g) => { const m = mouth(), f = kface(), x = m.x + f * 4, y = m.y + 12;
+          g.fillStyle = '#f4f1ea'; g.fillRect(x - 11, y, 22, 22); g.fillStyle = '#d65a5a'; g.fillRect(x - 11, y + 7, 22, 4); g.fillStyle = '#f4f1ea'; g.fillRect(x + (f > 0 ? 11 : -17), y + 5, 6, 10);
+          g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 2; for (let k = 0; k < 2; k++) { g.beginPath(); for (let j = 0; j < 6; j++) { const yy = y - 4 - j * 5, xx = x - 4 + k * 8 + Math.sin(j * .9 + cur.t * 3 + k) * 3; j ? g.lineTo(xx, yy) : g.moveTo(xx, yy); } g.stroke(); } });
+        let a = 0; while (a < d) { yield* tween(1.2, p => { kam.head = .12 * Math.sin(p * Math.PI); }); kam.eyes = 'blij'; yield* wait(2.5); kam.eyes = ''; yield* wait(1.5 + rnd() * 2); a += 5.5; if (rnd() < .3) emote('hearts', 1.6); }
+        stop(mug);
+      },
+      boek: function* (d) {
+        const bk = { flip: 0 };
+        const book = prop('front', (g) => { const c = kp(160, 560), f = kface(), x = c.x + f * 26, y = c.y - 4;
+          g.fillStyle = '#7a3b2a'; g.fillRect(x - 30, y, 60, 34); g.fillStyle = '#fbf6e8'; g.fillRect(x - 27, y + 2, 26, 30); g.fillRect(x + 1, y + 2, 26, 30);
+          g.fillStyle = '#c9c0a8'; for (let k = 0; k < 5; k++) { g.fillRect(x - 24, y + 7 + k * 5, 20, 1); g.fillRect(x + 4, y + 7 + k * 5, 20, 1); }
+          if (bk.flip > 0) { g.fillStyle = '#fff'; g.fillRect(x + 1, y + 2, 26 * (1 - bk.flip), 30); } });
+        const lamp = prop('back', (g) => { const c = kp(160, 900), x = c.x - kface() * 70, y = FEET - 2; g.fillStyle = '#3a2a1a'; g.fillRect(x - 2, y - 70, 4, 70); g.fillRect(x - 12, y - 2, 24, 3);
+          g.fillStyle = '#f2c94c'; g.beginPath(); g.moveTo(x - 16, y - 70); g.lineTo(x + 16, y - 70); g.lineTo(x + 9, y - 88); g.lineTo(x - 9, y - 88); g.fill();
+          const gr = g.createRadialGradient(x, y - 70, 2, x, y - 70, 70); gr.addColorStop(0, 'rgba(255,220,130,.45)'); gr.addColorStop(1, 'rgba(255,220,130,0)'); g.fillStyle = gr; g.fillRect(x - 70, y - 140, 140, 140); });
+        kam.head = .1; let a = 0;
+        while (a < d) {
+          yield* wait(3 + rnd() * 3); yield* tween(.5, p => { bk.flip = p; }); bk.flip = 0; a += 5;
+          if (rnd() < .35 && a < d - 6) { kam.eyes = 'dicht'; yield* tween(2, p => { kam.head = .1 + .12 * p; }); emote('zzz', 3); yield* wait(3); kam.eyes = 'groot'; emote('!', 1); kam.head = .05; yield* wait(1.2); kam.eyes = ''; kam.head = .1; a += 6; }
+        }
+        stop(book); stop(lamp); kam.head = 0;
+      },
+      sterren: function* (d) {
+        kam.face = -1; yield* tween(1.2, p => { kam.head = -.28 * ez(p); });
+        let a = 0; while (a < d - 2) {
+          const sx = W * (.15 + rnd() * .5), sy = 40 + rnd() * 120;
+          if (rnd() < .5) fx('screen', 1.2, (g, age) => { const k = age / 1.2, x = sx + 160 * k, y = sy + 50 * k; g.strokeStyle = `rgba(255,255,255,${1 - k})`; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y); g.lineTo(x - 40, y - 12); g.stroke(); });
+          emote(rnd() < .5 ? 'sparks' : 'stars', 2); yield* wait(3 + rnd() * 3); a += 4.5;
+        }
+        yield* tween(1.2, p => { kam.head = -.28 * (1 - ez(p)); });
+      },
+      maan: function* (d) {
+        const mo = A.moon && A.moon(); if (!mo) { yield* BEDACT.sterren(d); return; }
+        kam.face = mo.x > kx() ? 1 : -1; yield* tween(1.2, p => { kam.head = -.25 * ez(p); });
+        kam.eyes = 'blij'; emote('heart', 2); yield* hop(14, .4); yield* wait(1); yield* hop(14, .4);
+        yield* idle(Math.max(2, d - 5)); kam.eyes = ''; yield* tween(1, p => { kam.head = -.25 * (1 - p); });
+      },
+      dieren: function* (d) {
+        const near = residents.filter(a => !a.gone && onScreen(a));
+        if (!near.length) { yield* BEDACT.gapen(d); return; }
+        const per = d / near.length;
+        for (const a of near) {
+          yield* walkTo(clamp(a.cx - W / 2 + (a.cx < kx() ? 70 : -70), -W / 2 + 80, W / 2 - 80), 55); kam.face = a.cx > kx() ? 1 : -1;
+          emote('hearts', 2); a.face = -kam.face; yield* wait(1.6);
+          a.busy = true; a.pose = a.pet === 'dobby' ? 'lie' : 'sleep'; emote('zzz', 9999, a);   // tucked in for the night
+          yield* wait(Math.max(2, per - 4));
+        }
+      },
+      schaapjes: function* (d) {
+        const fx0 = kx() - 170, sh = []; let n = 0;
+        const fence = prop('back', (g) => { g.fillStyle = '#8a5a2b'; for (const dx of [-26, 26]) g.fillRect(fx0 + dx - 3, FEET - 46, 6, 46); g.fillRect(fx0 - 32, FEET - 40, 64, 5); g.fillRect(fx0 - 32, FEET - 22, 64, 5); });
+        const sheep = prop('back', (g) => { for (const q of sh) {
+          const k = clamp((cur.t - q.t0) / 3.2, 0, 1), x = fx0 - 130 + 260 * k, y = FEET - 4 - Math.max(0, Math.sin(clamp((k - .3) / .4, 0, 1) * Math.PI)) * 70, bob = Math.sin(cur.t * 14) * (k < .3 || k > .7 ? 1.5 : 0);
+          if (k >= 1) continue;
+          g.fillStyle = '#2a2a2a'; g.fillRect(x - 10, y - 8, 3, 8); g.fillRect(x + 7, y - 8, 3, 8);
+          g.fillStyle = '#f7f5ef'; for (const [ox, oy, rr] of [[-8, -16, 9], [0, -20, 10], [8, -16, 9], [0, -12, 9]]) g.fillRect(x + ox - rr, y + oy - rr + bob, rr * 2, rr * 2);
+          g.fillStyle = '#2a2a2a'; g.fillRect(x + 12, y - 24 + bob, 9, 9); g.fillStyle = '#fff'; g.fillRect(x + 17, y - 22 + bob, 2, 2);
+          if (k > .5 && !q.counted) { q.counted = true; n++; }
+          if (q.counted) { g.font = '22px VT323, monospace'; g.fillStyle = `rgba(255,255,255,${1 - (k - .5) * 2})`; g.fillText(String(q.no), fx0 - 6, FEET - 90 - (k - .5) * 40); }
+        } });
+        kam.face = -1; let a = 0, no = 0;
+        while (a < d) { sh.push({ t0: cur.t, no: ++no }); if (sh.length > 4) sh.shift(); yield* wait(2.4); a += 2.4; if (no === 5) kam.eyes = 'dicht'; if (no === 9) emote('zzz', 4); }
+        yield* wait(3); stop(fence); stop(sheep); kam.eyes = '';
+      },
+      kussen: function* (d) {
+        const pl = { y: 0 };
+        const pil = prop('front', (g) => { const c = kp(200, -60), f = kface(), x = c.x + f * 10 + Math.sin(cur.t * 9) * 8, y = c.y - 10 + pl.y;
+          g.fillStyle = '#f2f4ff'; g.fillRect(x - 30, y - 14, 60, 28); g.fillStyle = '#c9cfe8'; g.fillRect(x - 30, y + 10, 60, 4); g.fillStyle = '#9fb3ff'; g.fillRect(x - 6, y - 4, 12, 8); });
+        const feathers = particles('front', { emit: (ps) => { if (rnd() < .15) { const c = kp(200, -60); ps.push(P({ x: c.x + (rnd() - .5) * 50, y: c.y - 10, vx: (rnd() - .5) * 30, vy: 15 + rnd() * 10, life: 3 + rnd() * 2 })); } },
+          draw: (g, p, k) => { g.fillStyle = `rgba(255,255,255,${1 - k})`; g.fillRect(p.x + Math.sin(p.age * 3) * 6, p.y, 6, 2); } });
+        kam.eyes = 'blij'; yield* idle(d * .75, (a) => { pl.y = Math.abs(Math.sin(a * 4)) * -10; kam.head = Math.sin(a * 4) * .04; });
+        stop(feathers); emote('hearts', 2); yield* idle(d * .25); stop(pil); kam.eyes = '';
+      },
+      gapen: function* (d) {
+        let a = 0;
+        while (a < d) {
+          yield* tween(1.4, p => { const e = ez(p); kam.sq = 1 + .12 * e; kam.head = -.14 * e; }); kam.eyes = 'dicht'; kam.mouth = .9;
+          yield* wait(1.6); kam.mouth = 0; yield* tween(1, p => { kam.sq = 1.12 - .12 * p; kam.head = -.14 * (1 - p); });
+          kam.eyes = ''; if (rnd() < .5) emote('zzz', 3); yield* idle(4 + rnd() * 5); a += 9;
+        }
+      },
+      bloemen: function* (d, B, SPOT, HX) {
+        yield* walkTo(HX - 200, 45); kam.face = 1;
+        const can = prop('front', (g) => { const m = kp(40, 420), f = kface(), x = m.x + f * 14, y = m.y + 6;
+          g.fillStyle = '#3f8f5a'; g.fillRect(x - 12, y, 26, 18); g.fillRect(x + f * 14, y + 2, 16 * f || 16, 4); g.fillStyle = '#2f6f45'; g.fillRect(x - 12, y + 14, 26, 4); });
+        const drops = particles('front', { emit: (ps) => { if (rnd() < .5) { const m = kp(40, 420), f = kface(); ps.push(P({ x: m.x + f * 44, y: m.y + 8, vx: f * 20, vy: 40, grav: 300, life: .7 })); } },
+          draw: (g, p, k) => { g.fillStyle = `rgba(150,200,255,${1 - k})`; g.fillRect(p.x, p.y, 2, 4); } });
+        yield* idle(d * .7, (a) => { kam.head = .12; }); stop(drops); stop(can); kam.head = 0;
+        emote('sparks', 2); yield* idle(d * .3); yield* walkTo(SPOT, 45);
+      },
+      lantaarn: function* (d, B, SPOT, HX) {
+        yield* walkTo(HX - 136 - 80, 45); kam.face = 1; yield* wait(1.2);
+        emote('sparks', 1.2); yield* tween(1.5, p => { B.lantern = p; }); kam.eyes = 'blij'; yield* idle(Math.max(2, d - 6)); kam.eyes = '';
+        yield* walkTo(SPOT, 45);
+      },
+    };
     /* ---------- building blocks (generators: one step per frame) ---------- */
     function* wait(s) { let a = 0; while (a < s) { a += st.dt; yield; } }
     function* tween(s, fn) { let a = 0; for (;;) { a += st.dt; const p = Math.min(1, a / s); fn(p); if (p >= 1) return; yield; } }
@@ -2323,6 +2442,62 @@
         yield* wait(1); kam.eyes = 'triest'; emote('sweat', 3); yield* wait(3); kam.eyes = '';
       } },
       // tap on the moon: Kamiel sets up his telescope, looks, and shows what there is to see tonight
+      /* ---------- bedtime: every evening a different little ritual, ending in bed when the screen goes off ---------- */
+      bedtijd: { max: 2700, run: function* () {
+        const B = A.bed; if (!B) return;
+        const total = Math.max(150, B.secsLeft()), r = seeded(ymd(A.now()) + 'bed');
+        const HX = 330, DOOR = HX - 64, SPOT = HX - 235;   // house middle, its door and where Kamiel stands (kam.x)
+        B.house = A.cam() + HX; B.a = 0; B.door = 0; B.light = 0; B.shadow = 0; B.zzz = 0; B.lantern = 0; B.save();
+        // the house appears, with a little sparkle
+        kam.face = 1; emote('!', 1.6);
+        particles('front', { dur: 3, until: 1.8, emit: (ps) => { if (rnd() < .6) ps.push(P({ x: W / 2 + HX + (rnd() - .5) * 260, y: FEET - rnd() * 300, vy: -20, life: 1.2 })); },
+          draw: (g, p, k) => { g.fillStyle = `rgba(255,240,180,${1 - k})`; g.fillRect(p.x - 2, p.y - 2, 4, 4); g.fillRect(p.x - 6, p.y, 12, 1); g.fillRect(p.x, p.y - 6, 1, 12); } });
+        yield* tween(2.4, p => { B.a = ez(p); });
+        kam.eyes = 'blij'; emote('hearts', 2); yield* wait(2); kam.eyes = '';
+        yield* walkTo(SPOT, 50); kam.face = -1; yield* wait(1);
+        // what tonight looks like: a few things from the list, in a different order every evening
+        const pool = ['tanden', 'melk', 'boek', 'sterren', 'dieren', 'schaapjes', 'kussen', 'gapen', 'maan', 'bloemen', 'lantaarn'];
+        for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+        const k = clamp(Math.round((total - 140) / 170), 2, 6), acts = ['muts'].concat(pool.slice(0, k));
+        if (r() < .5 && acts.length > 2) [acts[0], acts[1]] = [acts[1], acts[0]];   // sometimes the nightcap comes a bit later
+        const per = Math.max(20, (total - 30 - 2.4 - 6 - 75) / acts.length);
+        A.log && A.log('event', `Bedtijd: ${acts.join(', ')}.`);
+        for (const a of acts) { yield* (BEDACT[a] || BEDACT.gapen)(per, B, SPOT, HX); kam.pose = ''; kam.head = 0; kam.mouth = 0; kam.x = SPOT; kam.face = -1; }
+        // the end: in through the door, the light on for a bit (he makes his bed), out, and asleep
+        yield* walkTo(DOOR, 45); kam.face = 1;
+        yield* tween(1.2, p => { B.door = ez(p); });
+        yield* tween(2, p => { kam.s = 1 - .15 * p; kam.alpha = 1 - p; kam.x = DOOR + 18 * p; });
+        kam.hide = true; B.light = 1;
+        yield* tween(1.2, p => { B.door = 1 - ez(p); });
+        B.shadow = 1; yield* wait(16); B.shadow = 0;       // the shadow of a blanket being shaken out, behind the curtains
+        yield* wait(8);
+        yield* tween(2, p => { B.light = 1 - p; });
+        B.zzz = 1; B.mode = 'slaapt'; B.save();
+        A.log && A.log('event', 'Kamiel ligt in zijn bed. Slaapwel!');
+        yield* wait(2);
+      } },
+      opstaan: { max: 120, run: function* () {
+        const B = A.bed; if (!B || !B.house) return;
+        const HX = B.house - A.cam(), DOOR = HX - 64;
+        kam.hide = true; B.zzz = 0; B.a = 1;
+        yield* tween(1.5, p => { B.light = p; }); yield* wait(2.5);
+        yield* tween(1, p => { B.door = ez(p); });
+        kam.hide = false; kam.x = DOOR + 18; kam.face = -1; withOutfit(['slaapmuts']);
+        yield* tween(1.6, p => { kam.alpha = p; kam.s = .85 + .15 * p; kam.x = DOOR + 18 - 30 * p; });
+        yield* tween(1, p => { B.door = 1 - ez(p); B.light = 1 - p; });
+        yield* walkTo(HX - 235, 40); kam.face = -1;
+        // a big stretch and a yawn
+        yield* tween(1.6, p => { const e = ez(p); kam.sq = 1 + .16 * e; kam.sx = 1 - .07 * e; kam.head = -.16 * e; }); kam.eyes = 'dicht'; kam.mouth = .8;
+        yield* wait(1.6); kam.mouth = 0;
+        yield* tween(1, p => { const e = ez(p); kam.sq = 1.16 - .16 * e; kam.sx = .93 + .07 * e; kam.head = -.16 * (1 - e); });
+        kam.eyes = ''; yield* wait(1);
+        kam.outfit = null; emote('sparks', 1.6); yield* wait(1.2);
+        kam.eyes = 'blij'; emote('hearts', 2); yield* wait(1.5);
+        yield* tween(2.2, p => { B.a = 1 - p; });
+        B.house = null; B.mode = ''; B.save();
+        yield* walkTo(0, 55); kam.eyes = '';
+        A.log && A.log('event', 'Goeiemorgen! Kamiel is opgestaan.');
+      } },
       telescoop: { run: function* () {
         const mo = (A.moon && A.moon()) || { x: W * .7, y: 110 }, side = mo.x > kx() ? 1 : -1;
         const sc = { x: kx() + side * 70, a: 0, up: 0 };
@@ -2810,7 +2985,7 @@
       let done = false;
       try { done = cur.gen.next().done; } catch (e) { console.error('event', cur.id, e); done = true; }
       if (!done && cur.cine) cineTick(cur.cine, dt);
-      if (done || cur.t > (DEF[cur.id] && DEF[cur.id].film ? FILM_MAX : DEF[cur.id] && DEF[cur.id].long ? 150 : 66)) finish();
+      if (done || cur.t > (DEF[cur.id] && DEF[cur.id].max ? DEF[cur.id].max : DEF[cur.id] && DEF[cur.id].film ? FILM_MAX : DEF[cur.id] && DEF[cur.id].long ? 150 : 66)) finish();
     }
     function draw(layer, g) {
       if ((layer === 'back' || layer === 'front') && !filming()) for (const a of residents) if (a.alpha > 0 && (a.feet > FEET + 2) === (layer === 'front') && a.cx > -90 && a.cx < W + 90) { A.drawPet(g, a); if (a.ball) drawBall(g, a); }

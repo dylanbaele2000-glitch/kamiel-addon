@@ -612,6 +612,28 @@ details.fold.sub>summary{font-size:15px}
       <div class="row"><button type="button" class="primary" id="btSave">Opslaan</button><span class="status" id="btStatus" role="status"></span></div>
     </div>
 
+    <div class="card" id="cardCook">
+      <h2>🍳 Koken met Kamiel</h2>
+      <p class="hint">Stuur Kamiel via Telegram <b>/recept</b> en daarna het recept: geplakte tekst, een link naar een receptensite, of een foto (die laatste alleen met Gemini). Het recept blijft op de tablet staan tot het klaar is, stap per stap in grote letters, met de ingrediënten ernaast en kookwekkers. Doorgaan: tik op de tablet of stuur <b>/volgende</b>, <b>/vorige</b>, <b>/stap 3</b>, <b>/wekker 10 pasta</b>; klaar: <b>/klaar</b>. Zolang er een recept op staat, blijft het scherm aan.</p>
+      <h3 style="margin:14px 0 4px;font-size:16px">Met AI (optioneel): Gemini</h3>
+      <p class="hint" style="margin-top:0">Zonder AI leest Kamiel links (de meeste receptensites) en deelt hij geplakte tekst zelf op. Met Gemini kan hij ook foto's van een kookboek lezen, rommelige recepten netjes opdelen en vertalen. Een gratis sleutel maak je op <b>aistudio.google.com</b> → <b>Get API key</b>. Wat je als recept doorstuurt gaat dan naar Google; verder niets. De sleutel blijft in je Home Assistant.</p>
+      <label class="sw"><input type="checkbox" id="ckUse"><span><b>Gemini gebruiken</b><span>Uit: altijd zonder AI, ook als er een sleutel staat.</span></span></label>
+      <div class="settings">
+        <label class="field" for="ckKey">Gemini API-sleutel<input type="password" id="ckKey" autocomplete="off" placeholder="AIza…"></label>
+        <label class="field" for="ckModel">Model (optioneel)<span>Leeg = het nieuwste snelle model ("gemini-flash-latest").</span><input type="text" id="ckModel" placeholder="gemini-flash-latest"></label>
+      </div>
+      <div class="row"><button type="button" id="ckTest">Test Gemini</button><span class="status" id="ckTestStatus" role="status"></span></div>
+      <label class="sw"><input type="checkbox" id="ckWave"><span><b>Zwaaien = volgende stap</b><span>Met de bewegingsdetectie van de tablet (Huis → Scherm): zwaai voor de camera na een moment stilte. Handig met vuile handen, maar wie ervoor heen en weer loopt kan een stap overslaan.</span></span></label>
+      <h3 style="margin:14px 0 4px;font-size:16px">Een recept hier plakken</h3>
+      <label class="field" for="ckText">Tekst of link<textarea id="ckText" rows="5" placeholder="Plak hier een recept of een link naar een recept"></textarea></label>
+      <div class="row"><button type="button" id="ckSend">Op de tablet zetten</button><button type="button" id="ckResume">Vorig recept terug</button><span class="status" id="ckStatus" role="status" style="white-space:pre-line"></span></div>
+      <h2 style="margin-top:18px">🌙 Slaapritueel</h2>
+      <p class="hint">Voor de nachtrust begint (de rusttijd bij Scherm, nu <b id="ckNight">22:00</b>) maakt Kamiel zich klaar om te slapen: hij gaat naar zijn huisje, zet zijn slaapmuts op en doet elke avond een paar andere dingen (tanden poetsen, warme melk, een boekje, schaapjes tellen, de huisdieren welterusten zeggen…). Daarna gaat hij naar binnen, het licht gaat uit en hij slaapt tot de ochtend. Is er een recept bezig, dan wacht hij.</p>
+      <label class="sw"><input type="checkbox" id="ckBed"><span><b>Slaapritueel</b></span></label>
+      <div class="settings"><label class="field" for="ckBedMin">Minuten voor de nachtrust<input type="number" id="ckBedMin" min="5" max="40"></label></div>
+      <div class="row"><button type="button" class="primary" id="ckSave">Opslaan</button><span class="status" id="ckSaveStatus" role="status"></span></div>
+    </div>
+
     <div class="card" id="cardSky">
       <h2>🌌 Lucht en ruimte</h2>
       <p class="hint">Kamiels lucht volgt de echte: de sterrenbeelden en planeten die nu echt boven jullie staan (het scherm kijkt naar het zuiden), vallende sterren (veel meer tijdens de echte meteorenzwermen, zoals de Perseïden in augustus), het ISS als het echt overkomt, zons- en maansverduisteringen op hun echte datum, een regenboog na de regen, en in het voor- en najaar trekkende ganzen. Op sommige nachten hangt er een nevel aan de hemel.</p>
@@ -1837,6 +1859,33 @@ $('btSave').addEventListener('click', async () => {
   if (r.ok) world.settings.battery = b;
   status($('btStatus'), r.ok ? `Bewaard: Kamiel houdt ${b.entities.length} batterij(en) in de gaten.` : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
 });
+function renderCook() {
+  const A2 = world.settings.ai || {}, C = world.settings.cook || {};
+  $('ckUse').checked = A2.use !== false; $('ckKey').value = A2.gemini_key || ''; $('ckModel').value = A2.model || '';
+  $('ckWave').checked = !!C.wave; $('ckBed').checked = C.bedtime !== false; $('ckBedMin').value = C.bed_min || 20;
+  $('ckNight').textContent = world.settings.night_start || '22:00';
+}
+$('ckSave').addEventListener('click', async () => {
+  const body = { ai: { use: $('ckUse').checked, gemini_key: $('ckKey').value.trim(), model: $('ckModel').value.trim() }, cook: { wave: $('ckWave').checked, bedtime: $('ckBed').checked, bed_min: +$('ckBedMin').value || 20 } };
+  const r = await fetch('api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (r.ok) { world.settings.ai = body.ai; world.settings.cook = body.cook; }
+  status($('ckSaveStatus'), r.ok ? 'Bewaard.' : 'Opslaan mislukt.', r.ok ? 'ok' : 'err');
+});
+$('ckTest').addEventListener('click', async () => {
+  status($('ckTestStatus'), 'Even vragen aan Gemini…');
+  try { const j = await (await fetch('api/gemini-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: $('ckKey').value.trim(), model: $('ckModel').value.trim() }) })).json();
+    status($('ckTestStatus'), j.ok ? `Het werkt (${j.model}). Niet vergeten: Opslaan.` : j.error, j.ok ? 'ok' : 'err'); } catch { status($('ckTestStatus'), 'Testen lukte niet.', 'err'); }
+});
+$('ckSend').addEventListener('click', async () => {
+  const text = $('ckText').value.trim(); if (!text) { status($('ckStatus'), 'Plak eerst een recept of een link.', 'err'); return; }
+  status($('ckStatus'), 'Even lezen…');
+  try { const j = await (await fetch('api/recipe-new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })).json();
+    status($('ckStatus'), j.ok ? `Staat op de tablet: ${j.title} (${j.ingredients} ingrediënten, ${j.steps} stappen${j.ai ? ', met Gemini' : ''}).` + (j.note ? '\n' + j.note : '') : j.error, j.ok ? 'ok' : 'err'); } catch { status($('ckStatus'), 'Lukte niet.', 'err'); }
+});
+$('ckResume').addEventListener('click', async () => {
+  const j = await (await fetch('api/recipe-new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resume: true }) })).json();
+  status($('ckStatus'), j.ok ? 'Het vorige recept staat weer op de tablet.' : j.error, j.ok ? 'ok' : 'err');
+});
 const SKYK = { kyStars: 'stars', kyPlanets: 'planets', kyMeteors: 'meteors', kyIss: 'iss', kyEclipses: 'eclipses', kyRainbow: 'rainbow', kyGeese: 'geese', kyPlanes: 'planes', kyLightning: 'lightning', kyLines: 'lines',
   kyTele: 'telescope', kyRainCloud: 'rain_cloud', kyStorm: 'storm', kyFrost: 'frost_heat', kyUv: 'uv' };
 function renderSky() {
@@ -1898,7 +1947,7 @@ async function renderHuis() {
   $('ruleExamples').innerHTML = '<span class="hint" style="flex-basis:100%;max-width:none">Voorbeelden (klik om toe te voegen):</span>' + EXAMPLES.map(([n], k) => `<button type="button" class="ex" data-k="${k}">${esc(n)}</button>`).join('');
   renderRules();
   BTNS = JSON.parse(JSON.stringify(s.buttons || [])); renderBtns(); renderQuick();
-  renderSelfie(); tabletStatus(); renderAir(); renderHalls(); renderSky(); renderBatt();
+  renderSelfie(); tabletStatus(); renderAir(); renderHalls(); renderSky(); renderBatt(); renderCook();
 }
 $('ruleExamples').addEventListener('click', (e) => {
   const b = e.target.closest('.ex'); if (!b) return;

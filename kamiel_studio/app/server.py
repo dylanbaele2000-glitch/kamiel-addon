@@ -17,6 +17,7 @@ from aiohttp import ClientSession, ClientTimeout, web
 
 import house
 import process
+import recipes
 
 APP = os.path.dirname(os.path.abspath(__file__))
 DATA = os.environ.get("KAMIEL_DATA", "/data")
@@ -139,6 +140,9 @@ DEFAULT_SETTINGS = {
     "air": {"on": False, "entity": "", "warn": 1000, "bad": 1500, "invert": False},
     # batteries of devices (buttons, sensors…): below "low" % a little "!" appears above Kamiel
     "battery": {"entities": [], "low": 20},
+    # cooking with Kamiel: Gemini (optional) and the bedtime ritual
+    "ai": {"gemini_key": "", "model": "", "use": True},
+    "cook": {"wave": False, "bedtime": True, "bed_min": 20},
     # the real sky: what shows, how often a nebula night comes (%), and the lightning radius (km)
     "sky": {"stars": True, "planets": True, "meteors": True, "nebula": 10, "iss": True, "eclipses": True, "rainbow": True, "geese": True,
             "planes": True, "lightning": True, "lightning_km": 25, "telescope": True,
@@ -223,7 +227,7 @@ def load_db():
                     s["counts"][part][kind] = [0, 0]
     ev = copy.deepcopy(DEFAULT_SETTINGS["events"]); ev.update(stored.get("events") or {}); s["events"] = ev
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
-    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge", "sky", "battery"):
+    for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge", "sky", "battery", "ai", "cook"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); cp["busy"] = sc.get("busy", cp["busy"]); s["compose"] = cp
@@ -256,7 +260,7 @@ def load_db():
 
 
 # ----------------------------------------------------------------- the logbook (Studio → Logboek)
-LOG_KINDS = ("event", "dier", "weer", "huis", "deurbel", "telegram", "selfie", "tablet", "systeem", "fout")
+LOG_KINDS = ("event", "dier", "weer", "huis", "keuken", "deurbel", "telegram", "selfie", "tablet", "systeem", "fout")
 LOG = {"items": None, "dirty": False, "n": 0}
 LOG_MAX = 1500
 SKYLOG = {"items": None, "dirty": False, "n": 0}
@@ -1154,7 +1158,7 @@ BUILD = _build_id()
 async def api_world(request):
     db = load_db()
     if not request.app.get("studio"):   # the tablet never gets Telegram chat ids
-        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); st.get("motion", {}).pop("phones", None); st.get("sky", {}).pop("opensky_secret", None); st.get("sky", {}).pop("opensky_id", None); db["settings"] = st
+        st = copy.deepcopy(db["settings"]); st.get("selfie", {}).pop("people", None); st.get("motion", {}).pop("fully_pw", None); st.get("motion", {}).pop("home_wifi", None); st.get("motion", {}).pop("phones", None); st.get("sky", {}).pop("opensky_secret", None); st.get("sky", {}).pop("opensky_id", None); st.pop("ai", None); db["settings"] = st
     return web.json_response({
         "version": db.get("version", 0),
         "build": BUILD,
@@ -1674,6 +1678,24 @@ async def api_settings(request):
                     m["away_delay"] = max(0, min(120, int(b["away_delay"])))
                 except (TypeError, ValueError):
                     pass
+        if isinstance(body.get("ai"), dict):
+            a2, b = s["ai"], body["ai"]
+            if isinstance(b.get("gemini_key"), str):
+                a2["gemini_key"] = b["gemini_key"].strip()[:200]
+            if isinstance(b.get("model"), str):
+                a2["model"] = re.sub(r"[^a-z0-9.\-]", "", b["model"].strip().lower())[:60]
+            if "use" in b:
+                a2["use"] = bool(b["use"])
+        if isinstance(body.get("cook"), dict):
+            c2, b = s["cook"], body["cook"]
+            for k in ("wave", "bedtime"):
+                if k in b:
+                    c2[k] = bool(b[k])
+            if "bed_min" in b:
+                try:
+                    c2["bed_min"] = max(5, min(40, int(b["bed_min"])))
+                except (TypeError, ValueError):
+                    pass
         if isinstance(body.get("battery"), dict):
             bt, b = s["battery"], body["battery"]
             if isinstance(b.get("entities"), list):
@@ -1940,6 +1962,8 @@ async def api_live(request):
     now = time.time()
     out["sky"] = {"planes": [p for p in SKYDATA["planes"] if now - p["t"] < 90], "strikes": [x for x in SKYDATA["strikes"] if now - x["t"] < 30]}
     out["battery"] = battery_alerts(db)
+    rc = db.get("recipe") or {}
+    out["recipe"] = {"rev": rc.get("rev", 0), "on": bool(rc.get("on"))}
     try:
         out["lamps"] = await lamp_states(db)
     except Exception:
@@ -2155,6 +2179,8 @@ TG_HELP = ("Stuur me gewoon een tekst en hij verschijnt op het scherm thuis.\n"
            "/bus  de volgende trams en bussen\n/kijk  een foto van het scherm nu\n/wis  het bericht weghalen\n"
            "/muziek Titel 127  Kamiel knikt mee op dat nummer (127 = tempo)\n/muziek  de lijst met nummers\n"
            "/event  er gebeurt iets in Kamielland\n/event lijst  alle events\n/selfie  Kamiel stuurt een selfie\n"
+           "/recept  koken met Kamiel: stuur daarna (of meteen erachter) een recept als tekst, link of foto\n"
+           "/volgende /vorige /stap 3  door het recept · /wekker 10 pasta  een kookwekker · /klaar  recept af\n"
            "/logboek  wat er de voorbije 24 uur gebeurde (/logboek 6 = de voorbije 6 uur; /logboek lucht = vliegtuigen, vallende sterren, ISS…)\n\n"
            "Zet \"tijd\" voor of achter je bericht, dan komt het uur waarop je het stuurde eronder.")
 
@@ -2256,7 +2282,7 @@ async def tg_handle(token, upd):
         except ValueError:
             hours = 24
         since = time.time() - hours * 3600
-        icon = {"event": "✨", "dier": "🐾", "weer": "🌦", "huis": "🏠", "deurbel": "🔔", "telegram": "💬", "selfie": "🤳",
+        icon = {"event": "✨", "dier": "🐾", "weer": "🌦", "huis": "🏠", "keuken": "🍳", "deurbel": "🔔", "telegram": "💬", "selfie": "🤳",
                 "tablet": "📟", "systeem": "⚙️", "fout": "⚠️", "lucht": "🌌"}
         lines, day = [], None
         for it in (_sky_items() if sky else _log_items()):
@@ -2318,8 +2344,34 @@ async def tg_handle(token, upd):
             save_db(db, bump=False)
         name = next((n for e, n, c in EVENTS if e == eid), "")
         return await tg_say(chat, f"✨ {name}… kijk maar op het scherm." if eid else "✨ Er gebeurt iets in Kamielland… kijk maar op het scherm.")
+    rest = text.split(None, 1)[1].strip() if cmd and len(text.split(None, 1)) > 1 else ""
+    if cmd in ("/recept", "/koken"):
+        rc = load_db().get("recipe") or {}
+        if not rest and not msg.get("photo"):
+            RCOLLECT[chat] = {"until": time.time() + 180, "texts": [], "photos": [], "task": None, "who": who, "token": token, "auto": False}
+            extra = f"\n\nNu bezig: {rc['title']} (stap {rc.get('step', 0) + 1} van {len(rc.get('steps') or [])}). Een nieuw recept vervangt het." if rc.get("on") else ""
+            return await tg_say(chat, "🍳 Stuur me nu het recept: plak de tekst, stuur een link, of een foto (met Gemini aan)." + extra)
+        if rest.lower() in ("terug", "weer", "vorige", "opnieuw"):
+            async with lock:
+                db = load_db(); err = _recipe_change(db, "resume"); save_db(db, bump=False)
+            return await tg_say(chat, err or "🍳 Het vorige recept staat weer op het scherm.")
+        await recipe_collect(chat, who, token, rest, msg, auto=False)
+        return
+    if cmd in ("/volgende", "/v", "/verder", "/vorige", "/terug", "/stap", "/klaar", "/wekker", "/ingredienten", "/ingrediënten", "/boodschappen"):
+        return await tg_say(chat, await recipe_command(cmd, rest))
     if cmd:
         return await tg_say(chat, "Dat commando ken ik niet.\n\n" + TG_HELP)
+    # busy collecting a recipe (a long text arrives in pieces, or the photos of a page)
+    col = RCOLLECT.get(chat)
+    if col and col["until"] > time.time() and (text or msg.get("photo")):
+        await recipe_collect(chat, who, token, text, msg, auto=col.get("auto", False))
+        return
+    if text and not msg.get("photo") and (recipes.looks_like_recipe(text) or re.fullmatch(r"\s*https?://\S+\s*", text)):
+        await recipe_collect(chat, who, token, text, msg, auto=True)
+        return
+    if msg.get("photo") and re.search(r"\brecept", text, re.I):
+        await recipe_collect(chat, who, token, re.sub(r"(?i)\brecept\b[:\s]*", "", text), msg, auto=False)
+        return
     if msg.get("photo"):
         big = msg["photo"][-1]
         f = await tg_call(token, "getFile", {"file_id": big["file_id"]})
@@ -2347,6 +2399,274 @@ async def tg_handle(token, upd):
             save_db(db, bump=False)
         return await tg_say(chat, f"✓ Staat op het scherm tot {_hm(now + minutes * 60)}.")
     await tg_say(chat, "Dat kan ik niet tonen. Stuur een tekst of een foto.")
+
+
+# ---------- cooking with Kamiel ----------
+RCOLLECT = {}   # chat -> what came in so far for a recipe (texts, photos), finished 4 s after the last piece
+
+
+async def _tg_file(token, file_id):
+    f = await tg_call(token, "getFile", {"file_id": file_id})
+    async with ClientSession(timeout=ClientTimeout(total=30)) as s:
+        async with s.get(f"{TG_URL}/file/bot{token}/{f['file_path']}") as r:
+            return await r.read()
+
+
+async def recipe_collect(chat, who, token, text, msg, auto):
+    col = RCOLLECT.get(chat)
+    if not col or col["until"] < time.time():
+        col = RCOLLECT[chat] = {"until": time.time() + 180, "texts": [], "photos": [], "task": None, "who": who, "token": token, "auto": auto}
+    if text:
+        col["texts"].append(text)
+    if msg.get("photo"):
+        try:
+            col["photos"].append((await _tg_file(token, msg["photo"][-1]["file_id"]), "image/jpeg"))
+        except Exception as e:
+            log("fout", "Recept: foto ophalen lukte niet: " + str(e), quiet=True)
+    if col.get("task"):
+        col["task"].cancel()
+    col["task"] = asyncio.ensure_future(_recipe_finish_later(chat))
+
+
+async def _recipe_finish_later(chat):
+    try:
+        await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        return
+    col = RCOLLECT.pop(chat, None)
+    if not col:
+        return
+    text = "\n".join(col["texts"]).strip()
+    try:
+        r, note = await recipe_from(text, col["photos"])
+    except Exception as e:
+        if col.get("auto") and not col["photos"]:   # it only looked like a recipe: show it as an ordinary message after all
+            now = time.time(); minutes = tg_conf().get("minutes", 60)
+            async with lock:
+                db = load_db()
+                db["message"] = {"id": uuid.uuid4().hex[:8], "text": text[:200], "since": now, "until": now + minutes * 60, "sign": col["who"].split(" ")[0][:30], "chat": chat}
+                save_db(db, bump=False)
+            return await tg_say(chat, f"✓ Staat op het scherm tot {_hm(now + minutes * 60)}.")
+        return await tg_say(chat, "🍳 Daar kon ik geen recept van maken: " + str(e))
+    await recipe_start(r, col["who"])
+    n, k = len(r["steps"]), len(r["ingredients"])
+    msg = f"🍳 {r['title']}" + (f" ({r['servings']})" if r.get("servings") else "") + f": {k} ingrediënten, {n} stappen. Staat op het scherm."
+    if note:
+        msg += "\n" + note
+    msg += "\n\nTik op de tablet of stuur /volgende, /vorige, /stap 3, /wekker 10. Klaar? /klaar"
+    await tg_say(chat, msg)
+
+
+def _ai_conf():
+    a = load_db()["settings"].get("ai") or {}
+    return (a.get("gemini_key") or "") if a.get("use", True) else "", a.get("model") or None
+
+
+async def recipe_from(text, photos=()):
+    """Text, a link and/or photos -> (recipe, a note for the reply). Raises with a Dutch reason."""
+    key, model = _ai_conf()
+    urls = recipes.URL_RE.findall(text or "")
+    if photos:
+        if not key:
+            raise ValueError("voor een foto heb ik Gemini nodig (Kamiel Studio → Huis → Koken). Stuur anders de tekst of een link.")
+        return await recipes.ai_recipe(key, text, photos, model), "Gelezen met Gemini."
+    if urls and len((text or "").strip()) < len(urls[0]) + 40:
+        page = await recipes.fetch(urls[0].rstrip(").,"))
+        r = recipes.parse_jsonld(page)
+        if r and r["steps"]:
+            r["source"] = urls[0]; return r, ""
+        body = recipes.page_text(page)
+        if key:
+            try:
+                r = await recipes.ai_recipe(key, body[:20000], (), model); r["source"] = urls[0]
+                return r, "Die site had geen nette receptgegevens; Gemini haalde het recept eruit."
+            except ValueError:
+                raise ValueError("op die pagina staat geen recept")
+        raise ValueError("die site geeft zijn recept niet in een vorm die ik zonder AI kan lezen. Kopieer de tekst en plak die hier, of zet Gemini aan.")
+    if not (text or "").strip():
+        raise ValueError("er kwam niets door")
+    if key:
+        try:
+            return await recipes.ai_recipe(key, text, (), model), ""
+        except Exception as e:
+            r = recipes.parse_text(text)
+            if r and r["steps"]:
+                return r, f"(Gemini lukte niet: {e}. Zelf opgedeeld.)"
+            raise
+    r = recipes.parse_text(text)
+    if not r or not r["steps"]:
+        raise ValueError("ik vond geen stappen in die tekst")
+    return r, ""
+
+
+async def recipe_start(r, who=""):
+    now = time.time()
+    async with lock:
+        db = load_db()
+        old = db.get("recipe") or {}
+        r.update({"on": True, "step": 0, "checked": [], "timers": [], "since": now, "by": who, "rev": old.get("rev", 0) + 1})
+        db["recipe"] = r
+        save_db(db, bump=False)
+    log("keuken", f"Recept op het scherm: {r['title']} ({len(r['steps'])} stappen" + (", met Gemini" if r.get("ai") else "") + ").")
+    if (load_db()["settings"].get("motion") or {}).get("fully_pw"):
+        try:
+            await fully_screen_on("recept")
+        except Exception:
+            pass
+
+
+def _recipe_change(db, action, arg=None):
+    """One change to the running recipe. Returns a short Dutch answer."""
+    r = db.get("recipe") or {}
+    if action == "resume":
+        if not r.get("steps"):
+            return "Er is nog geen recept. Stuur /recept."
+        r["on"] = True
+    elif not r.get("on"):
+        return "Er staat geen recept op het scherm. Stuur /recept (of /recept terug voor het vorige)."
+    n = len(r.get("steps") or [])
+    if action == "next":
+        r["step"] = min(n - 1, r.get("step", 0) + 1)
+    elif action == "prev":
+        r["step"] = max(0, r.get("step", 0) - 1)
+    elif action == "goto":
+        r["step"] = max(0, min(n - 1, int(arg or 1) - 1))
+    elif action == "check":
+        ch = set(r.get("checked") or []); i = int(arg); ch.symmetric_difference_update({i}); r["checked"] = sorted(ch)
+    elif action == "timer":
+        sec, label = int(arg.get("sec", 0)), str(arg.get("label") or "")[:24]
+        if not 10 <= sec <= 12 * 3600:
+            return "Die tijd klopt niet."
+        r.setdefault("timers", []).append({"id": uuid.uuid4().hex[:6], "label": label or f"{round(sec / 60)} min", "end": time.time() + sec, "sec": sec, "step": r.get("step", 0), "rang": False})
+        r["timers"] = r["timers"][-6:]
+    elif action == "timer_stop":
+        r["timers"] = [t for t in r.get("timers") or [] if t["id"] != arg]
+    elif action == "timer_add":
+        for t in r.get("timers") or []:
+            if t["id"] == arg:
+                t["end"] = max(t["end"], time.time()) + 60; t["rang"] = False
+    elif action == "done":
+        r["on"] = False; r["timers"] = []
+    r["rev"] = r.get("rev", 0) + 1
+    db["recipe"] = r
+    return ""
+
+
+async def recipe_command(cmd, rest):
+    async with lock:
+        db = load_db(); r = db.get("recipe") or {}
+        if cmd in ("/ingredienten", "/ingrediënten", "/boodschappen"):
+            if not r.get("ingredients"):
+                return "Er is geen recept met ingrediënten."
+            return "🧺 " + r["title"] + "\n" + "\n".join("• " + i for i in r["ingredients"])
+        if cmd in ("/volgende", "/v", "/verder"):
+            err = _recipe_change(db, "next")
+        elif cmd in ("/vorige", "/terug"):
+            err = _recipe_change(db, "prev")
+        elif cmd == "/stap":
+            try:
+                err = _recipe_change(db, "goto", int(rest.split()[0]))
+            except (ValueError, IndexError):
+                return "Welke stap? Bv. /stap 3"
+        elif cmd == "/wekker":
+            m = re.match(r"(\d+(?:[.,]\d+)?)\s*(?:min|minuten|m)?\s*(.*)", rest or "")
+            if not m:
+                return "Hoeveel minuten? Bv. /wekker 10 pasta"
+            err = _recipe_change(db, "timer", {"sec": float(m.group(1).replace(",", ".")) * 60, "label": m.group(2) or f"{m.group(1)} min"})
+            if not err:
+                save_db(db, bump=False)
+                return f"⏲ Wekker gezet: {m.group(1)} min. Ik laat het weten als hij afloopt."
+        elif cmd == "/klaar":
+            err = _recipe_change(db, "done")
+            if not err:
+                save_db(db, bump=False); log("keuken", f"Recept klaar: {r.get('title', '')}. Smakelijk!")
+                return "🍽 Smakelijk! Het recept is van het scherm. (Toch nog nodig? /recept terug)"
+        else:
+            err = "?"
+        if err:
+            return err
+        save_db(db, bump=False)
+        r = db["recipe"]; st = r["steps"][r["step"]]
+        return f"Stap {r['step'] + 1} van {len(r['steps'])}: {st['text'][:300]}"
+
+
+async def api_recipe_get(request):
+    r = load_db().get("recipe") or {}
+    return web.json_response({"recipe": r if r.get("on") else None, "rev": r.get("rev", 0), "now": time.time()})
+
+
+async def api_recipe_post(request):
+    try:
+        b = await request.json()
+    except Exception:
+        b = {}
+    act = b.get("action")
+    if act not in ("next", "prev", "goto", "check", "timer", "timer_stop", "timer_add", "done", "resume"):
+        return web.json_response({"error": "onbekend"}, status=400)
+    async with lock:
+        db = load_db()
+        title = (db.get("recipe") or {}).get("title", "")
+        err = _recipe_change(db, act, b.get("arg"))
+        if err:
+            return web.json_response({"error": err}, status=409)
+        save_db(db, bump=False)
+    if act == "done":
+        log("keuken", f"Recept klaar: {title}. Smakelijk!")
+    return web.json_response({"ok": True})
+
+
+async def api_recipe_new(request):
+    """Studio: paste a recipe (text or link) without Telegram."""
+    b = await request.json()
+    if b.get("resume"):
+        async with lock:
+            db = load_db(); err = _recipe_change(db, "resume"); save_db(db, bump=False)
+        return web.json_response({"ok": not err, "error": err})
+    try:
+        r, note = await recipe_from(str(b.get("text") or "")[:60000])
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    await recipe_start(r, "de Studio")
+    return web.json_response({"ok": True, "title": r["title"], "steps": len(r["steps"]), "ingredients": len(r["ingredients"]), "note": note, "ai": r.get("ai")})
+
+
+async def api_gemini_test(request):
+    b = await request.json()
+    key = (b.get("key") or "").strip() or (load_db()["settings"].get("ai") or {}).get("gemini_key", "")
+    if not key:
+        return web.json_response({"ok": False, "error": "Vul eerst een sleutel in."})
+    try:
+        r = await recipes.ai_recipe(key, "Toast met kaas: 2 sneetjes brood, 2 plakjes kaas. Leg de kaas op het brood en rooster 3 minuten.", (), (b.get("model") or "").strip() or None)
+        return web.json_response({"ok": True, "model": r.get("ai"), "steps": len(r["steps"])})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+async def recipe_timer_loop():
+    """Kitchen timers: when one runs out, the tablet rings and a Telegram message goes out."""
+    while True:
+        await asyncio.sleep(1)
+        try:
+            r = load_db().get("recipe") or {}
+            if not r.get("on") or not r.get("timers"):
+                continue
+            due = [t for t in r["timers"] if not t.get("rang") and t["end"] <= time.time()]
+            old = [t for t in r["timers"] if t.get("rang") and time.time() - t["end"] > 900]
+            if not due and not old:
+                continue
+            async with lock:
+                db = load_db(); rr = db.get("recipe") or {}
+                for t in rr.get("timers") or []:
+                    if any(d["id"] == t["id"] for d in due):
+                        t["rang"] = True
+                rr["timers"] = [t for t in rr.get("timers") or [] if not any(o["id"] == t["id"] for o in old)]
+                rr["rev"] = rr.get("rev", 0) + 1
+                save_db(db, bump=False)
+            for t in due:
+                log("keuken", f"⏲ Wekker afgelopen: {t['label']} (stap {t.get('step', 0) + 1}).")
+                await tg_broadcast(f"⏲ {t['label']} is klaar! (stap {t.get('step', 0) + 1} van {r['title']})")
+        except Exception as e:
+            log("fout", "Kookwekker: " + str(e), quiet=True)
 
 
 async def tg_loop():
@@ -4154,6 +4474,8 @@ def common_routes(app):
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/api/meter", api_meter)
     app.router.add_post("/api/battery-dismiss", api_battery_dismiss)
+    app.router.add_get("/api/recipe", api_recipe_get)
+    app.router.add_post("/api/recipe", api_recipe_post)
     app.router.add_post("/api/sky-pref", api_sky_pref)
     app.router.add_get("/media/{name}", media)
     app.router.add_static("/static/", os.path.join(APP, "static"))
@@ -4210,6 +4532,8 @@ def make_studio():
     app.router.add_post("/api/phones-test", api_phones_test)
     app.router.add_post("/api/opensky-test", api_opensky_test)
     app.router.add_post("/api/lightning-test", api_lightning_test)
+    app.router.add_post("/api/recipe-new", api_recipe_new)
+    app.router.add_post("/api/gemini-test", api_gemini_test)
     app.router.add_get("/api/opensky-status", api_opensky_status)
     app.router.add_get("/api/selfie-preview", api_selfie_preview)
     app.router.add_post("/api/halls", api_hall_upload)
@@ -4301,6 +4625,7 @@ async def main():
     asyncio.ensure_future(rain_loop())
     asyncio.ensure_future(opensky_api_loop())
     asyncio.ensure_future(battery_loop())
+    asyncio.ensure_future(recipe_timer_loop())
     await asyncio.Event().wait()
 
 

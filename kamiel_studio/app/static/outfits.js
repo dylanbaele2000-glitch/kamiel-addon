@@ -64,6 +64,12 @@
     { id: 'kerstmuts', name: 'Kerstmuts', slot: 'hoofd', x: 10, y: -20, pal: { R: '#d7262e', r: '#9e1820', W: '#f6f3ee', w: '#d9d3c7' },
       rows: ['.................WW.', '...............rRWWW', '.............RRRR.W.', '...........RRRRRR...', '.........RRRRRRRr...',
              '.......RRRRRRRRRr...', '.....RRRRRRRRRRRr...', '...RRRRRRRRRRRRRRr..', '..WWWWWWWWWWWWWWWWW.', '..WwWwWwWwWwWwWwWwW.'] },
+    { id: 'slaapmuts', name: 'Slaapmuts', slot: 'hoofd', x: 10, y: -20, pal: { B: '#3b5bc4', b: '#2a4296', Y: '#ffe27a', W: '#f6f3ee', w: '#d9d3c7' },
+      rows: ['.................WW.', '...............bBWWW', '.............BBBB.W.', '...........BBYBBB...', '.........BBBBBBBb...',
+             '.......BBBBBBYBBb...', '.....BBYBBBBBBBBb...', '...BBBBBBBBBYBBBBb..', '..WWWWWWWWWWWWWWWWW.', '..WwWwWwWwWwWwWwWwW.'] },
+    { id: 'koksmuts', name: 'Koksmuts', slot: 'hoofd', x: 40, y: -140, pal: { W: '#fbfaf6', w: '#dcd8cf', G: '#c9c4b8' },
+      rows: ['....WWWW..WWWW....', '..WWWWWWWWWWWWWW..', '.WWWWWWWWWWWWWWWW.', 'WWWWWWWWWWWWWWWWWw', 'WWWWWWWWWWWWWWWWWw', '.WWWWWWWWWWWWWWWw.',
+             '..WWWWWWWWWWWWWw..', '..WWWWWWWWWWWWWw..', '..WWWWWWWWWWWWWw..', '..WWWWWWWWWWWWWw..', '..GGGGGGGGGGGGGG..', '..WWWWWWWWWWWWWw..'] },
     { id: 'paasoren', name: 'Paasoortjes', slot: 'hoofd', x: 50, y: -190, pal: { W: '#f7f4f0', P: '#ffb0cc', K: '#ff7fb0' },
       rows: ['...WW......WW...', '..WWWW....WWWW..', '..WPPW....WPPW..', '..WPPW....WPPW..', '..WPPW....WPPW..', '..WPPW....WPPW..',
              '..WPPW....WPPW..', '..WPPW....WPPW..', '..WPPW....WPPW..', '..WWWW....WWWW..', '...WW......WW...', 'KKKKKKKKKKKKKKKK'] },
@@ -101,6 +107,11 @@
         g.fillStyle = '#f6f3ee'; for (let x = 0; x < 780; x += 40) { g.fillRect(X(x), Y(760 + (x / 40 % 2) * 20), X(20), Y(20)); g.fillRect(X(x), Y(1000 - (x / 40 % 2) * 20), X(20), Y(20)); }
         g.fillStyle = '#2f8a3a'; g.fillRect(X(0), Y(860), X(780), Y(60)); g.fillRect(X(0), Y(1120), X(780), Y(40));
         g.fillStyle = '#f6f3ee'; for (let x = 20; x < 780; x += 80) g.fillRect(X(x), Y(880), X(20), Y(20));
+      }) },
+    { id: 'pyjama', name: 'Pyjama', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
+        g.fillStyle = '#9cc3ef'; g.fillRect(X(0), Y(560), X(780), Y(810));
+        g.fillStyle = '#eef5ff'; for (let x = 0; x < 780; x += 80) g.fillRect(X(x), Y(560), X(20), Y(810));
+        g.fillStyle = '#ffe27a'; for (let x = 40; x < 780; x += 160) for (let y = 520; y < 1300; y += 180) g.fillRect(X(x + (y / 180 % 2) * 60), Y(y), X(20), Y(20));
       }) },
     { id: 'regenjas', name: 'Regenjas', slot: 'lijf', cx: 450, cy: 800, paint: suit((g, X, Y) => {
         g.fillStyle = '#f2c230'; g.fillRect(X(0), Y(440), X(780), Y(800));
