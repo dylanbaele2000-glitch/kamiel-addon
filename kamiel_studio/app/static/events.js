@@ -112,6 +112,13 @@
     { id: 'valentijn', name: 'Verliefd (Valentijn)', cat: 'feest' },
     { id: 'pepernoten', name: 'Pepernoten (Sinterklaas)', cat: 'feest' },
     { id: 'liefdesfeest', name: 'Een groot hart (jullie dagen, Valentijn)', cat: 'feest' },
+    { id: 'kamielfeest', name: 'Kamiels verjaardagsfeest (en Heidi wil de taart)', cat: 'feest' },
+    { id: 'lampionstoet', name: 'Lampionnenstoet (Gentse Feesten)', cat: 'feest' },
+    { id: 'smoutebollen', name: 'Smoutebollen van de kermis (Gentse Feesten)', cat: 'feest' },
+    { id: 'stoet', name: 'Carnavalsstoet met prinses Heidi (Carnaval)', cat: 'feest' },
+    { id: 'defile', name: 'Defilé en vliegtuigjes in driekleur (21 juli)', cat: 'feest' },
+    { id: 'boekentas', name: 'De eerste schooldag', cat: 'feest' },
+    { id: 'sintpaard', name: 'Sinterklaas op zijn paard (Sinterklaas)', cat: 'feest' },
     { id: 'volle-maan', name: 'Volle maan: de huisdieren doen raar', cat: 'maan' },
     { id: 'nachtmerrie', name: 'Een nachtmerrie (ogen in de lucht)', cat: 'maan' },
   ];
@@ -217,6 +224,34 @@
   }
   const sprC = (g, s, cx, cy, u, flip) => spr(g, s, cx - s.rows[0].length * u / 2, cy - s.rows.length * u / 2, u, flip);
 
+  // Sinterklaas on his white horse, in chunky pixels (face 1 = looking right); ph: trotting, eat: head down, wave: the staff raised
+  function drawSint(g, x, feet, face, ph, eat, wave) {
+    const u = 5, R = (a, b, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(a * u), Math.round(b * u), Math.ceil(w * u), Math.ceil(h * u)); };
+    const bob = Math.abs(Math.sin(ph)) * -.8;
+    g.save(); g.translate(x, feet); g.scale(face, 1);
+    g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(0, 2, 15 * u, 2.2 * u, 0, 0, 7); g.fill();
+    // legs (two pairs, trotting)
+    [[-8, 0], [-5, Math.PI], [5, Math.PI], [8, 0]].forEach(([lx, o], i) => { const sw = Math.sin(ph + o) * 1.4, up = Math.max(0, Math.sin(ph + o)) * 1.2;
+      R(lx + sw - 1, -12 + bob, 2, 12 - up, i % 3 ? '#f2f2f2' : '#dcdcdc'); R(lx + sw - 1, -1 - up, 2, 1, '#6a6a6a'); });
+    g.translate(0, bob * u);
+    // tail and body
+    R(-12, -20, 2, 3, '#cfcfcf'); R(-13, -18, 2, 5, '#cfcfcf'); R(-13.5, -14, 2, 3, '#bdbdbd');
+    R(-10, -21, 20, 9, '#f6f6f6'); R(-10, -13, 20, 1, '#d6d6d6');
+    // neck and head (down when he eats)
+    g.save(); g.translate(8 * u, -19 * u); g.rotate(eat * 1.05);
+    R(-1, -8, 4, 9, '#f6f6f6'); R(-2, -9, 2, 7, '#c9c9c9');
+    R(0, -12, 7, 5, '#f6f6f6'); R(5, -10, 3, 3, '#ececec'); R(6.6, -9.4, 1, 1, '#7a6a6a'); R(3.2, -11, 1, 1, '#222'); R(0.5, -13.5, 1.4, 2, '#f6f6f6');
+    g.restore();
+    // saddle cloth, red with gold
+    R(-5, -23, 10, 8, '#c0182c'); R(-5, -16, 10, 1, '#f5c518'); R(-5, -23, 1, 8, '#f5c518'); R(4, -23, 1, 8, '#f5c518');
+    // Sinterklaas: red cloak, white alb, beard, mitre, golden staff
+    R(-3, -36, 7, 14, '#c0182c'); R(-3, -24, 7, 2, '#ffffff'); R(3, -36, 1, 14, '#f5c518');
+    R(-1, -40, 4, 4, '#f2c9a0'); R(-1.5, -37.5, 5, 5, '#f8f8f8'); R(-1.5, -39, 1.2, 1, '#f8f8f8'); R(2.3, -39, 1.2, 1, '#f8f8f8'); R(1.6, -39.6, .9, .9, '#222');
+    R(-1.5, -47, 5, 7, '#c0182c'); R(-.5, -49, 3, 2, '#c0182c'); R(.6, -46, .8, 4, '#f5c518'); R(-.4, -44.6, 2.8, .8, '#f5c518'); R(-1.5, -41, 5, 1, '#f5c518');
+    const sy = wave ? -6 : 0; R(5, -48 + sy, 1, 28, '#f5c518'); R(5, -50 + sy, 3, 1, '#f5c518'); R(7, -50 + sy, 1, 3, '#f5c518'); R(6, -48 + sy, 1, 1, '#f5c518');
+    R(4, -33 + sy * .5, 2, 2, '#f8f8f8');   // his glove on the staff
+    g.restore();
+  }
   function create(A) {
     const W = A.W, H = A.H, FEET = A.FEET, kam = A.kam, rnd = Math.random;
     const cfg = A.settings || {};
@@ -581,7 +616,7 @@
         emote('sparks', 2); yield* idle(d * .3); yield* walkTo(SPOT, 45);
       },
       lantaarn: function* (d, B, SPOT, HX) {
-        yield* walkTo(HX - 136 - 80, 45); kam.face = 1; yield* wait(1.2);
+        yield* walkTo(B.geom ? HX - (B.geom().HX - B.geom().LANT) : HX - 216, 45); kam.face = 1; yield* wait(1.2);
         emote('sparks', 1.2); yield* tween(1.5, p => { B.lantern = p; }); kam.eyes = 'blij'; yield* idle(Math.max(2, d - 6)); kam.eyes = '';
         yield* walkTo(SPOT, 45);
       },
@@ -1763,7 +1798,246 @@
         yield* par(walkTo(0, 70), ...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)));
         kam.eyes = '';
       } },
-      begroeten: { can: () => !!greetFor && !greetFor.gone && !greetFor.busy && onScreen(greetFor), run: function* () { yield* greetRun(greetFor); } },
+      /* ---------- Ghent, Belgium and Kamiel's own birthday ---------- */
+      // Kamiel's birthday: the whole gang, a cake with a candle for every year... and Heidi, who wants that cake
+      kamielfeest: { fest: ['kamiel'], long: true, max: 200, run: function* () {
+        const F = A.festival ? A.festival() || {} : {}, age = Math.max(1, F.age || 1), n = Math.min(age, 9);
+        const f = kface(), side = -f;   // Heidi comes from behind him
+        const C = { x: kx() + f * 120, y: FEET + 6, s: 1, on: 0, tilt: 0, dent: 0, lit: n, cream: 0 };
+        fx('front', 0, (g) => {
+          if (C.on <= 0) return; const s = C.s, x = C.x, y = C.y;
+          g.save(); g.globalAlpha = C.on; g.translate(x, y); g.rotate(C.tilt); g.scale(s, s);
+          g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(0, 2, 56, 7, 0, 0, 7); g.fill();
+          g.fillStyle = '#8a5a3a'; g.fillRect(-50, -36, 100, 36); g.fillStyle = '#fff4e0'; g.fillRect(-50, -40, 100, 7);
+          for (let k = 0; k < 10; k++) { g.fillStyle = '#fff4e0'; g.fillRect(-48 + k * 10, -34, 5, 4 + (k % 3) * 3); }
+          if (!C.dent) { g.fillStyle = '#ffd23f'; g.fillRect(-34, -64, 68, 24); g.fillStyle = '#fff'; g.fillRect(-34, -67, 68, 5); }
+          else {   // a bite out of the top (Heidi)
+            g.fillStyle = '#ffd23f'; g.fillRect(-34, -64, 52, 24); g.fillRect(18, -52, 16, 12); g.fillStyle = '#fff'; g.fillRect(-34, -67, 52, 5);
+            g.fillStyle = '#e8b830'; g.fillRect(18, -55, 16, 3); g.fillRect(18, -64, 3, 9); g.fillStyle = '#fff'; g.fillRect(22, -49, 3, 3); g.fillRect(28, -46, 2, 2); }
+          for (let k = 0; k < 9; k++) { g.fillStyle = ['#ff3d8b', '#3db8ff', '#7ee0a0'][k % 3]; g.fillRect(-44 + k * 11, -22, 5, 5); }
+          // the number on a little flag
+          g.fillStyle = '#5a3a1a'; g.fillRect(-32, -100, 2, 34); g.fillStyle = '#ff3d8b'; g.fillRect(-54, -100, 22, 15);
+          g.font = 'bold 18px VT323, monospace'; g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(age), -43, -92);
+          for (let k = 0; k < n; k++) { const cx = n > 1 ? -22 + k * 36 / (n - 1) : -4;
+            g.fillStyle = ['#7ee0a0', '#3db8ff', '#ffd23f', '#ff3d8b', '#b98cff'][k % 5]; g.fillRect(cx - 2, -82, 4, 15);
+            if (k < C.lit) { const fl = Math.sin(cur.t * 20 + k) * 1.5; g.fillStyle = '#ffd23f'; g.beginPath(); g.ellipse(cx, -88 + fl * .3, 3, 6 + fl, 0, 0, 7); g.fill(); g.fillStyle = '#fff6c0'; g.fillRect(cx - 1, -88, 2, 4); } }
+          g.restore();
+        });
+        shout('HOERA!', W / 2, 150, 2, '#ff3d8b'); kam.eyes = 'groot'; emote('!', 1.2);
+        yield* tween(1, p => { C.on = p; });
+        kam.face = f; kam.eyes = 'blij'; emote('hearts', 2); yield* wait(1);
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map((nm, i) => pet(nm, i % 2 ? -1 : 1));
+        gang.forEach(a => { a.bday = true; });
+        yield* par(...gang.map((a, i) => petTo(a, C.x + (i - 2) * 62 + (i >= 2 ? 60 : -60), PET[a.pet].run)));
+        gang.forEach(a => { hold(a, a.pet === 'dobby' ? 'up' : 'sit'); a.face = a.cx < C.x ? 1 : -1; });
+        A.log && A.log('event', `Kamiel wordt ${age} jaar!`);
+        for (let k = 0; k < 6; k++) { gang.forEach(a => a.lift = (k % 2) * 6); if (k % 2) emote('notes', 1, gang[k % gang.length]); yield* wait(.5); }
+        gang.forEach(a => { a.lift = 0; });
+        // ...and there she is, creeping in from behind
+        const h = actor({ cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: 'vies', layer: 'front' });
+        kam.head = .12; kam.mouth = .5; kam.eyes = 'dicht';   // he's making a wish
+        yield* actorTo(h, C.x + side * 60, 38); h.face = -side;
+        emote('!', 1, gang[0]);
+        // grab!
+        let held = true;
+        const carry = fx('front', 0, () => { if (!held) return; const m = A.llamaPoint(h, 560, 470); C.x = m.x; C.y = m.y + 4; C.s = .6; C.tilt = Math.sin(cur.t * 9) * .08; });
+        kam.eyes = 'groot'; kam.mouth = 0; kam.head = 0; emote('!?', 2);
+        gang.forEach(a => { hold(a, null); emote('!', 1.2, a); });
+        h.eyes = 'blij'; yield* wait(.4); h.face = side;
+        const dogs = gang.filter(a => DOGS.includes(a.pet)), rest = gang.filter(a => !DOGS.includes(a.pet));
+        yield* par(actorTo(h, W / 2 + side * (W / 2 + 160), 150),
+          (function* () { yield* wait(.5); yield* par(...dogs.map(a => petTo(a, W / 2 + side * (W / 2 + 100), PET[a.pet].run * 2.2))); })(),
+          (function* () { kam.eyes = 'triest'; emote('tears', 3); yield* wait(3); })());
+        rest.forEach(a => { a.face = side; });
+        shout('WAF! WAF!', side > 0 ? W - 120 : 120, FEET - 160, 1.4, '#fff'); yield* wait(1.2);
+        shout('BOEM!', side > 0 ? W - 90 : 90, FEET - 120, 1.2, '#ffd23f'); yield* shiver(.6, 3); yield* wait(1);
+        // back she comes, the other way, full of cream, with the dogs on her heels
+        C.cream = 1; h.eyes = 'vies'; h.face = -side;
+        const creamFx = fx('front', 0, (g) => { if (!C.cream || h.alpha <= 0) return; g.fillStyle = '#fffaf0'; [[40, 330, 12], [80, 300, 9], [20, 370, 8], [120, 260, 7]].forEach(([fx0, fy0, r]) => { const q = A.llamaPoint(h, fx0, fy0); g.beginPath(); g.arc(q.x, q.y, r, 0, 7); g.fill(); }); });
+        dogs.forEach(a => { a.cx = W / 2 + side * (W / 2 + 60); });
+        yield* par(actorTo(h, kx() + f * 90, 160),
+          ...dogs.map((a, i) => (function* () { yield* wait(.4 + i * .3); yield* petTo(a, kx() + side * (70 + i * 40), PET[a.pet].run * 2); })()));
+        // she drops it (with a bite out of it) and runs off
+        held = false; stop(carry); C.s = 1; C.tilt = side * .08; C.dent = 1;
+        yield* tween(.45, p => { C.x = lerp(C.x, kx() + f * 120, p); C.y = lerp(C.y, FEET + 6, ez(p)); });
+        emote('angry', 1.5, h); yield* actorTo(h, W / 2 - side * (W / 2 + 160), 170); h.alpha = 0; stop(creamFx);
+        dogs.forEach(a => { a.face = a.cx < C.x ? 1 : -1; hold(a, 'sit'); emote('heart', 1.5, a); });
+        rest.forEach(a => { a.face = a.cx < C.x ? 1 : -1; hold(a, a.pet === 'dobby' ? 'up' : 'sit'); });
+        kam.face = f; kam.eyes = 'blij'; emote('hearts', 1.5); yield* wait(1.2);
+        // blow!
+        kam.head = .12; kam.mouth = .7;
+        particles('front', { until: cur.t + 2, emit: (ps) => { const m = kp(20, 395); ps.push(P({ x: m.x, y: m.y, vx: f * (180 + rnd() * 80), vy: (rnd() - .5) * 40, life: .6 })); },
+          draw: (g, p, tt) => { g.fillStyle = `rgba(255,255,255,${.6 * (1 - tt)})`; g.fillRect(p.x, p.y, 6, 2); } });
+        while (C.lit > 0) { yield* wait(1.6 / n); C.lit--; }
+        kam.mouth = 0; kam.head = 0;
+        particles('screen', { until: cur.t + .1, emit: (ps) => { for (let k = 0; k < 90; k++) ps.push(P({ x: C.x, y: FEET - 90, vx: (rnd() - .5) * 600, vy: -220 - rnd() * 320, grav: 500, life: 2.2, c: k % 4 })); },
+          draw: (g, p, tt) => { g.fillStyle = ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0'][p.c]; g.globalAlpha = 1 - tt; g.fillRect(p.x, p.y, 6, 3); g.globalAlpha = 1; } });
+        shout(age + ' JAAR!', W / 2, 140, 2.4, '#ffd23f');
+        gang.forEach(a => emote('hearts', 2.5, a)); emote('hearts', 2.5);
+        for (let k = 0; k < 3; k++) yield* par(hop(36, .45), ...gang.map(a => petJump(a, 22, .4)));
+        yield* wait(2);
+        yield* par(...gang.map(a => petLeave(a, a.cx < W / 2 ? -1 : 1, PET[a.pet].run)), tween(1.5, p => { C.on = 1 - p; }));
+        kam.eyes = '';
+      } },
+      // Gentse Feesten: a little lantern parade, everyone with a paper lantern on a stick
+      lampionstoet: { fest: ['gentsefeesten'], run: function* () {
+        const d = rnd() < .5 ? -1 : 1, gang = PETS.filter(p => !(cfg.off || []).includes(p)).map(nm => pet(nm, -d));
+        gang.forEach((a, i) => { a.cx = W / 2 - d * (W / 2 + 70 + i * 85); a.face = d; });
+        const cols = ['#ff5a3c', '#ffb02e', '#ff3d8b', '#ffd84a', '#ff7a2e', '#e8463a'];
+        const lant = (g, x, y, c, k) => { const sw = Math.sin(cur.t * 3 + k) * 4, lx = x + 18 * d + sw, ly = y - 44;
+          g.strokeStyle = '#5a3a1a'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 18 * d, y - 54); g.stroke();
+          g.strokeStyle = 'rgba(40,30,30,.8)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x + 18 * d, y - 54); g.lineTo(lx, ly - 8); g.stroke();
+          const gl = g.createRadialGradient(lx, ly + 4, 1, lx, ly + 4, 34); gl.addColorStop(0, 'rgba(255,200,110,.45)'); gl.addColorStop(1, 'rgba(255,200,110,0)'); g.fillStyle = gl; g.beginPath(); g.arc(lx, ly + 4, 34, 0, 7); g.fill();
+          g.fillStyle = c; g.beginPath(); g.ellipse(lx, ly + 4, 10, 12, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(255,240,190,.55)'; g.beginPath(); g.ellipse(lx, ly + 4, 5, 9, 0, 0, 7); g.fill();
+          g.fillStyle = '#3a2a20'; g.fillRect(lx - 5, ly - 9, 10, 3); g.fillRect(lx - 5, ly + 15, 10, 3); };
+        fx('screen', 0, (g) => { gang.forEach((a, i) => { if (a.alpha <= 0) return; const h = A.petPoint(a, 'head'); lant(g, h.x, h.y - 2, cols[i % cols.length], i); });
+          const m = kp(40, 420); lant(g, m.x, m.y, '#ffd23f', 9); });
+        kam.face = d; kam.eyes = 'blij'; emote('sparks', 1.6);
+        yield* par(...gang.map((a, i) => petTo(a, W / 2 + d * (W / 2 + 90 + (4 - i) * 10), 42)),
+          (function* () { yield* wait(3); yield* walkTo(d * 120, 32, 4); yield* wait(4); yield* walkTo(d * 220, 32, 4); kam.face = -d; emote('hearts', 2); yield* wait(2); yield* walkTo(0, 40); })());
+        gang.forEach(a => { a.alpha = 0; });
+        kam.eyes = '';
+      } },
+      // Gentse Feesten: a smoutebollen cart; powdered sugar everywhere, and a sneeze
+      smoutebollen: { fest: ['gentsefeesten'], run: function* () {
+        const side = rnd() < .5 ? -1 : 1, CART = { x: W / 2 + side * (W / 2 + 120) }, stop0 = kx() + side * 190;
+        fx('back', 0, (g) => { const x = CART.x, y = FEET + 2;
+          g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(x, y, 80, 8, 0, 0, 7); g.fill();
+          g.fillStyle = '#f2ece0'; g.fillRect(x - 70, y - 70, 140, 58); g.fillStyle = '#d9cfbf'; g.fillRect(x - 70, y - 20, 140, 8);
+          g.fillStyle = '#5a3a1a'; g.fillRect(x - 66, y - 120, 5, 50); g.fillRect(x + 61, y - 120, 5, 50);
+          for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#ffffff' : '#e8463a'; g.fillRect(x - 78 + k * 19.5, y - 134, 19.5, 18); g.beginPath(); g.arc(x - 68 + k * 19.5, y - 116, 9.75, 0, Math.PI); g.fill(); }
+          g.font = 'bold 17px VT323, monospace'; g.fillStyle = '#b8352a'; g.textAlign = 'center'; g.fillText('SMOUTEBOLLEN', x, y - 46);
+          for (let k = 0; k < 7; k++) { g.fillStyle = '#c98a3b'; g.beginPath(); g.arc(x - 36 + k * 12, y - 62 - (k % 2) * 4, 6, 0, 7); g.fill(); g.fillStyle = '#fff'; g.fillRect(x - 38 + k * 12, y - 68 - (k % 2) * 4, 4, 2); }
+          for (const wx of [-50, 50]) { g.fillStyle = '#2a2a2a'; g.beginPath(); g.arc(x + wx, y - 8, 10, 0, 7); g.fill(); g.fillStyle = '#888'; g.beginPath(); g.arc(x + wx, y - 8, 3, 0, 7); g.fill(); } });
+        kam.face = side; emote('!', 1.2);
+        yield* tween(4, p => { CART.x = lerp(W / 2 + side * (W / 2 + 120), stop0, ez(p)); });
+        kam.eyes = 'groot'; emote('hearts', 1.6); yield* walkTo(kam.x + side * 60, 60); kam.face = side; yield* wait(.8);
+        let cone = 1, nose = 0;
+        const c1 = prop('front', (g) => { if (!cone) return; const m = kp(40, 420), x = m.x + kface() * 10, y = m.y + 4;
+          g.fillStyle = '#f2ece0'; g.beginPath(); g.moveTo(x - 12, y - 4); g.lineTo(x + 12, y - 4); g.lineTo(x, y + 22); g.closePath(); g.fill();
+          for (let k = 0; k < Math.ceil(4 * cone); k++) { g.fillStyle = '#c98a3b'; g.beginPath(); g.arc(x - 7 + (k % 3) * 7, y - 6 - Math.floor(k / 3) * 6, 5, 0, 7); g.fill(); }
+          g.fillStyle = '#fff'; g.fillRect(x - 10, y - 10, 20, 2); });
+        const n1 = prop('front', (g) => { if (!nose) return; const q = kp(10, 340); g.fillStyle = `rgba(255,255,255,${nose})`; g.beginPath(); g.arc(q.x, q.y, 9, 0, 7); g.fill(); g.beginPath(); g.arc(q.x + 7, q.y + 4, 6, 0, 7); g.fill(); });
+        for (let k = 0; k < 4; k++) { kam.head = .14; kam.mouth = .6; yield* wait(.5); kam.mouth = 0; kam.head = 0; cone = Math.max(.01, 1 - (k + 1) / 4); nose = Math.min(1, nose + .3); yield* wait(.7); }
+        cone = 0; kam.eyes = 'blij'; emote('hearts', 1.4); yield* wait(1);
+        kam.eyes = 'dicht'; kam.head = -.15; yield* wait(.8); kam.head = -.25; yield* wait(.5);
+        kam.head = .2; shout('HATSJOE!', kx(), FEET - 300, 1.4, '#fff');
+        particles('front', { until: cur.t + .2, emit: (ps) => { const q = kp(10, 340); for (let k = 0; k < 12; k++) ps.push(P({ x: q.x, y: q.y, vx: kface() * (60 + rnd() * 220), vy: (rnd() - .6) * 120, life: 1.6 })); },
+          draw: (g, p, tt) => { g.fillStyle = `rgba(255,255,255,${.85 * (1 - tt)})`; const r = 6 + 22 * tt; g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill(); } });
+        nose = 0; yield* shiver(.4, 3); kam.head = 0; kam.eyes = ''; emote('dots', 1.6); yield* wait(1.8);
+        stop(c1); stop(n1);
+        yield* tween(4, p => { CART.x = lerp(stop0, W / 2 + side * (W / 2 + 150), ez(p)); });
+        yield* walkTo(0, 55);
+      } },
+      // carnival: a parade with drums, confetti, the whole gang in hats, and Heidi on a float as the carnival princess
+      stoet: { fest: ['carnaval'], long: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1, gang = PETS.filter(p => !(cfg.off || []).includes(p)).map(nm => pet(nm, -d));
+        gang.forEach((a, i) => { a.cx = W / 2 - d * (W / 2 + 80 + i * 80); a.face = d; a.bday = true; });
+        const h = actor({ cx: W / 2 - d * (W / 2 + 560), s: .78, set: 'heidi', face: d, eyes: 'blij', outfit: ['kroon'], feet: FEET - 52 });
+        fx('front', 0, (g) => { if (h.alpha <= 0) return; const x = h.cx, y = FEET + 2;
+          g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(x, y, 130, 9, 0, 0, 7); g.fill();
+          g.fillStyle = '#9d4edd'; g.fillRect(x - 120, y - 54, 240, 40);
+          for (let k = 0; k < 12; k++) { g.fillStyle = ['#ff2a6d', '#05d9e8', '#ffe600', '#00c853'][k % 4]; g.beginPath(); g.moveTo(x - 120 + k * 20, y - 54); g.lineTo(x - 100 + k * 20, y - 54); g.lineTo(x - 110 + k * 20, y - 34); g.closePath(); g.fill(); }
+          g.font = 'bold 18px VT323, monospace'; g.fillStyle = '#ffe600'; g.textAlign = 'center'; g.fillText('PRINSES HEIDI', x, y - 22);
+          for (const wx of [-90, 90]) { g.fillStyle = '#2a2a2a'; g.beginPath(); g.arc(x + wx, y - 10, 12, 0, 7); g.fill(); g.fillStyle = '#ffe600'; g.beginPath(); g.arc(x + wx, y - 10, 4, 0, 7); g.fill(); } });
+        particles('front', { until: cur.t + 30, emit: (ps) => { if (rnd() < .35 && h.cx > -100 && h.cx < W + 100) { const m = A.llamaPoint(h, 100, 300); ps.push(P({ x: m.x, y: m.y, vx: (rnd() - .5) * 160, vy: -120 - rnd() * 100, grav: 160, life: 2.4, c: Math.floor(rnd() * 5) })); } },
+          draw: (g, p, tt) => { g.fillStyle = ['#ff2a6d', '#05d9e8', '#ffe600', '#00c853', '#ff7a00'][p.c]; g.globalAlpha = 1 - tt * tt; g.fillRect(p.x, p.y, 5, 3); g.globalAlpha = 1; } });
+        let beat = 0;
+        const drum = fx('screen', 0, () => { beat += st.dt; if (beat > 1.1) { beat = 0; shout(rnd() < .5 ? 'BOEM!' : 'BOEM BOEM!', 120 + rnd() * (W - 240), 120 + rnd() * 60, .9, ['#ff2a6d', '#05d9e8', '#ffe600'][Math.floor(rnd() * 3)]); } });
+        kam.face = -d; kam.eyes = 'groot'; emote('!', 1.2);
+        yield* par(...gang.map((a, i) => (function* () { yield* petTo(a, W / 2 + d * (W / 2 + 100 + (4 - i) * 10), 55); a.alpha = 0; })()),
+          (function* () { yield* tween(26, p => { h.cx = lerp(W / 2 - d * (W / 2 + 560), W / 2 + d * (W / 2 + 200), p); h.feet = FEET - 52 + Math.abs(Math.sin(p * 60)) * -3; if (Math.abs(h.cx - kx()) < 200) h.face = kx() < h.cx ? -1 : 1; else h.face = d; }); h.alpha = 0; })(),
+          (function* () { yield* wait(5); kam.eyes = 'blij'; for (let k = 0; k < 9; k++) { yield* hop(26, .35); yield* wait(.75); if (k === 4) emote('hearts', 2); } kam.face = d; emote('notes', 3); yield* wait(5); })());
+        stop(drum); kam.eyes = '';
+      } },
+      // 21 July: three little jets draw the flag across the sky, then the gang marches past with tiny flags
+      defile: { fest: ['nationale'], long: true, run: function* () {
+        const d = rnd() < .5 ? -1 : 1, J = { x: W / 2 - d * (W / 2 + 120) }, trail = [];
+        const BE = ['26,26,26', '255,217,12', '239,51,64'];
+        const last = [null, null, null];
+        fx('screen', 0, (g) => {
+          for (let i = trail.length - 1; i >= 0; i--) { const p = trail[i], a = cur.t - p.t0; if (a > 16) { trail.splice(i, 1); continue; }
+            const k = Math.max(0, 1 - a / 16); g.fillStyle = `rgba(${BE[p.c]},${.5 * k})`; const r = 6 + a * 1.6; g.beginPath(); g.arc(p.x + p.j * a, p.y + a * 1.5, r, 0, 7); g.fill(); }
+          for (let c = 0; c < 3; c++) { const x = J.x - d * c * 34, y = 175 + c * 22, tx = x - d * 30;
+            if (x > -80 && x < W + 80) {
+              const lx = last[c] === null ? tx : last[c]; for (let q = 0; q <= 1; q += 6 / Math.max(6, Math.abs(tx - lx))) trail.push({ x: lerp(lx, tx, q), y: y + (rnd() - .5) * 2, c, t0: cur.t, j: (rnd() - .5) * 3 }); last[c] = tx;
+              g.save(); g.translate(x, y); g.scale(d * 1.5, 1.5); g.fillStyle = '#c9ced8'; g.fillRect(-20, -3, 36, 6); g.fillRect(-4, -12, 10, 24); g.fillRect(-20, -9, 6, 6); g.fillStyle = '#5a6b8a'; g.fillRect(10, -2, 6, 3); g.restore(); } }
+        });
+        kam.head = -.25; kam.eyes = 'groot'; kam.face = d;
+        yield* tween(5, p => { J.x = lerp(W / 2 - d * (W / 2 + 120), W / 2 + d * (W / 2 + 200), p); });
+        emote('!', 1.2); kam.eyes = 'blij'; yield* wait(1.5); kam.head = 0;
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map(nm => pet(nm, -d));
+        gang.forEach((a, i) => { a.cx = W / 2 - d * (W / 2 + 70 + i * 75); a.face = d; });
+        const flag = (g, x, y, k) => { const w = Math.sin(cur.t * 6 + k) * 2; g.fillStyle = '#5a3a1a'; g.fillRect(x - 1, y - 40, 2, 40);
+          ['#1a1a1a', '#ffd90c', '#ef3340'].forEach((c, j) => { g.fillStyle = c; g.fillRect(x + 1 + j * 6, y - 40 + (j ? w * j * .4 : 0), 6, 14); }); };
+        fx('front', 0, (g) => { gang.forEach((a, i) => { if (a.alpha <= 0) return; const h = A.petPoint(a, 'head'); flag(g, h.x - d * 6, h.y - 2, i); }); const m = kp(40, 420); flag(g, m.x, m.y, 7); });
+        yield* par(...gang.map((a, i) => (function* () { a.rate = 12; yield* petTo(a, W / 2 + d * (W / 2 + 90), 50); a.alpha = 0; })()),
+          (function* () { yield* wait(2); for (let k = 0; k < 6; k++) { yield* hop(14, .3); yield* wait(1.1); } emote('hearts', 2); yield* wait(2); })());
+        kam.eyes = '';
+      } },
+      // the first school day: the bell, a school bag, and the whole class off to school
+      boekentas: { fest: ['schooldag'], run: function* () {
+        const d = rnd() < .5 ? -1 : 1;
+        shout('TRRRING!', W / 2, 140, 1.6, '#ffd23f'); kam.eyes = 'groot'; emote('!', 1.4); yield* shiver(.5, 2); yield* wait(1);
+        let bag = 0;
+        prop('front', (g) => { if (bag <= 0) return; const b = back(600), x = b.x, y = b.y - 12; g.globalAlpha = bag;
+          g.fillStyle = '#2f6fd6'; g.fillRect(x - 34, y, 68, 54); g.fillStyle = '#2558ad'; g.fillRect(x - 34, y, 68, 16); g.fillStyle = '#ffd23f'; g.fillRect(x - 6, y + 12, 12, 8);
+          g.fillStyle = '#e8463a'; g.fillRect(x - 26, y + 30, 18, 14); g.globalAlpha = 1; });
+        particles('front', { until: cur.t + .1, emit: (ps) => { const b = back(600); for (let k = 0; k < 14; k++) ps.push(P({ x: b.x, y: b.y, vx: (rnd() - .5) * 200, vy: -80 - rnd() * 100, grav: 200, life: .9 })); },
+          draw: (g, p, tt) => { g.fillStyle = `rgba(255,240,160,${1 - tt})`; g.fillRect(p.x, p.y, 4, 4); } });
+        yield* tween(.6, p => { bag = p; }); kam.eyes = 'blij'; emote('sparks', 1.6); yield* wait(1.2);
+        const gang = PETS.filter(p => !(cfg.off || []).includes(p)).map(nm => pet(nm, -d));
+        gang.forEach((a, i) => { a.cx = W / 2 - d * (W / 2 + 70 + i * 70); a.face = d; });
+        prop('front', (g) => { gang.forEach((a, i) => { if (a.alpha <= 0) return; const h = A.petPoint(a, 'head'), x = a.cx - (h.x - a.cx) * .35, y = (h.y + a.feet) / 2 - 14;
+          g.fillStyle = ['#e8463a', '#3fae5a', '#ff8ac1', '#ffd23f', '#9d4edd'][i % 5]; g.fillRect(x - 9, y, 18, 14); g.fillStyle = 'rgba(0,0,0,.2)'; g.fillRect(x - 9, y, 18, 4); }); });
+        yield* par(...gang.map((a, i) => petTo(a, kx() + d * (80 + i * 46), PET[a.pet].run)));
+        gang.forEach(a => { a.face = -d; emote(pick(['heart', '!', 'notes']), 1.2, a); }); kam.face = d; yield* wait(1.5);
+        // off to school together... as far as the corner
+        gang.forEach(a => { a.face = d; });
+        yield* par(walkTo(d * 260, 60), ...gang.map((a, i) => (function* () { yield* wait(i * .25); yield* petTo(a, W / 2 + d * (W / 2 + 90), 60); a.alpha = 0; })()));
+        kam.face = d; emote('hearts', 1.6); yield* wait(1.5);
+        kam.face = -d; kam.eyes = 'triest'; emote('dots', 2); yield* wait(2);
+        yield* walkTo(0, 50); kam.eyes = 'blij'; emote('stars', 2); yield* wait(2.4);
+        yield* tween(.6, p => { bag = 1 - p; }); kam.eyes = '';
+      } },
+      // Sinterklaas rides by on his white horse: Kamiel has put out his shoe with a carrot, the horse eats it, and there's a present in the shoe
+      sintpaard: { fest: ['sinterklaas'], max: 110, run: function* () {
+        const side = rnd() < .5 ? -1 : 1, f = side, shoeX = kx() + f * 110;
+        let shoe = 0, carrot = 1, gift = 0, giftY = 0;
+        prop('front', (g) => { if (shoe <= 0) return; g.globalAlpha = shoe; const x = shoeX, y = FEET + 4;
+          g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(x, y + 1, 30, 4, 0, 0, 7); g.fill();
+          g.fillStyle = '#7a3a1a'; g.fillRect(x - 26, y - 14, 52, 14); g.fillRect(x - 26, y - 30, 20, 18); g.fillStyle = '#5a2a10'; g.fillRect(x - 26, y - 3, 52, 3);
+          if (carrot > 0) { g.save(); g.translate(x + 6, y - 16); g.rotate(-.5); g.fillStyle = '#ff8a1c'; g.beginPath(); g.moveTo(0, -5); g.lineTo(30 * carrot, 0); g.lineTo(0, 5); g.closePath(); g.fill(); g.fillStyle = '#3fae5a'; g.fillRect(-8, -4, 8, 3); g.fillRect(-8, 1, 8, 3); g.restore(); }
+          if (gift > 0) { const gy = y - 22 - giftY; g.fillStyle = '#e8463a'; g.fillRect(x - 2, gy - 20, 24, 20); g.fillStyle = '#ffd23f'; g.fillRect(x + 8, gy - 20, 4, 20); g.fillRect(x - 2, gy - 12, 24, 4); g.fillRect(x + 4, gy - 26, 6, 6); g.fillRect(x + 12, gy - 26, 6, 6); }
+          g.globalAlpha = 1; });
+        // first the shoe, with a carrot for the horse
+        kam.face = f; yield* walkTo(kam.x + f * 30, 50); kam.head = .2; yield* tween(1, p => { shoe = p; }); kam.head = 0;
+        kam.eyes = 'blij'; emote('sparks', 1.6); yield* walkTo(kam.x - f * 80, 50); kam.face = f; yield* wait(1.5);
+        kam.head = -.1; emote('dots', 2); yield* wait(2.4); kam.head = 0;
+        // there he comes
+        const S0 = { x: W / 2 + side * (W / 2 + 160), ph: 0, eat: 0, wave: 0, alpha: 1 };
+        fx('back', 0, (g) => { if (S0.alpha > 0) drawSint(g, S0.x, FEET + 2, -side, S0.ph, S0.eat, S0.wave); });
+        kam.eyes = 'groot'; emote('!', 1.6); shout('Sinterklaas!', W / 2, 150, 2, '#e8463a');
+        const tx = shoeX + side * 92;
+        yield* tween(5, p => { S0.x = lerp(W / 2 + side * (W / 2 + 160), tx, ez(p)); S0.ph += st.dt * 7 * (1 - p * .7); });
+        S0.ph = 0; yield* wait(.6);
+        // the horse eats the carrot
+        for (let k = 0; k < 4; k++) { yield* tween(.4, p => { S0.eat = p; }); carrot = Math.max(0, 1 - (k + 1) / 4); yield* tween(.4, p => { S0.eat = 1 - p; }); }
+        kam.eyes = 'blij'; emote('hearts', 1.6);
+        // and Sinterklaas drops a present in the shoe
+        S0.wave = 1; gift = 1; yield* tween(.8, p => { giftY = 160 * (1 - ez(p)); }); emote('sparks', 1.4);
+        const nuts = particles('front', { until: cur.t + 4, emit: (ps) => { if (rnd() < .4) ps.push(P({ x: S0.x + (rnd() - .5) * 60, y: FEET - 200, vx: (rnd() - .5) * 120, vy: -80, grav: 400, life: 1.2 })); },
+          draw: (g, p) => { g.fillStyle = '#9a5a2a'; g.beginPath(); g.arc(p.x, Math.min(p.y, FEET + 4), 4, 0, 7); g.fill(); } });
+        yield* wait(2); S0.wave = 0;
+        // off he rides; Kamiel runs to his shoe
+        yield* par((function* () { yield* tween(5, p => { S0.x = lerp(tx, W / 2 - side * (W / 2 + 200), ez(p)); S0.ph += st.dt * 8; }); S0.alpha = 0; })(),
+          (function* () { yield* wait(1.5); yield* walkTo(shoeX - W / 2 - f * 50, 60); kam.face = f; kam.head = .2; yield* wait(.8); gift = 0; kam.head = 0; kam.eyes = 'groot'; emote('!', 1);
+            particles('screen', { until: cur.t + .1, emit: (ps) => { for (let k = 0; k < 40; k++) ps.push(P({ x: shoeX, y: FEET - 30, vx: (rnd() - .5) * 400, vy: -200 - rnd() * 200, grav: 500, life: 1.6, c: k % 3 })); },
+              draw: (g, p, tt) => { g.fillStyle = ['#e8463a', '#ffd23f', '#ffffff'][p.c]; g.globalAlpha = 1 - tt; g.fillRect(p.x, p.y, 5, 3); g.globalAlpha = 1; } });
+            kam.eyes = 'blij'; emote('hearts', 2.5); yield* hop(30, .4); yield* hop(30, .4); })());
+        stop(nuts); yield* tween(1, p => { shoe = 1 - p; }); yield* walkTo(0, 50); kam.eyes = '';
+      } },
+            begroeten: { can: () => !!greetFor && !greetFor.gone && !greetFor.busy && onScreen(greetFor), run: function* () { yield* greetRun(greetFor); } },
       // Heidi: the white lama. Lots of personality, mostly annoying: she won't cooperate and hates everything.
       lama: { run: function* () {
         const side = rnd() < .5 ? -1 : 1, H0 = { cx: W / 2 + side * (W / 2 + 130), s: .86, set: 'heidi', face: -side, eyes: 'vies' };
@@ -2625,7 +2899,7 @@
       bedtijd: { max: 2700, run: function* () {
         const B = A.bed; if (!B) return;
         const total = Math.max(150, B.secsLeft()), r = seeded(ymd(A.now()) + 'bed');
-        const HX = 330, DOOR = HX - 64, SPOT = HX - 235;   // house middle, its door and where Kamiel stands (kam.x)
+        const G = B.geom ? B.geom() : { HX: 330, DOOR: 266, SPOT: 95 }, HX = G.HX, DOOR = G.DOOR, SPOT = G.SPOT;   // house middle, its door and where Kamiel stands (kam.x)
         B.house = A.cam() + HX; B.a = 0; B.door = 0; B.light = 0; B.shadow = 0; B.zzz = 0; B.lantern = 0; B.save();
         // the house appears, with a little sparkle
         kam.face = 1; emote('!', 1.6);
@@ -2635,7 +2909,7 @@
         kam.eyes = 'blij'; emote('hearts', 2); yield* wait(2); kam.eyes = '';
         yield* walkTo(SPOT, 50); kam.face = -1; yield* wait(1);
         // what tonight looks like: a few things from the list, in a different order every evening
-        const pool = ['tanden', 'melk', 'boek', 'sterren', 'dieren', 'schaapjes', 'kussen', 'gapen', 'maan', 'bloemen', 'lantaarn'];
+        const pool = ['tanden', 'melk', 'boek', 'sterren', 'dieren', 'schaapjes', 'kussen', 'gapen', 'maan', 'lantaarn'].concat(G.own ? [] : ['bloemen']);   // your own house has no flower box
         for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
         const k = clamp(Math.round((total - 140) / 170), 2, 6), acts = ['muts'].concat(pool.slice(0, k));
         if (r() < .5 && acts.length > 2) [acts[0], acts[1]] = [acts[1], acts[0]];   // sometimes the nightcap comes a bit later
@@ -2657,14 +2931,14 @@
       } },
       opstaan: { max: 120, run: function* () {
         const B = A.bed; if (!B || !B.house) return;
-        const HX = B.house - A.cam(), DOOR = HX - 64;
+        const G = B.geom ? B.geom() : { HX: 330, DOOR: 266, SPOT: 95 }, HX = B.house - A.cam(), DOOR = HX - (G.HX - G.DOOR);
         kam.hide = true; B.zzz = 0; B.a = 1;
         yield* tween(1.5, p => { B.light = p; }); yield* wait(2.5);
         yield* tween(1, p => { B.door = ez(p); });
         kam.hide = false; kam.x = DOOR + 18; kam.face = -1; withOutfit(['slaapmuts']);
         yield* tween(1.6, p => { kam.alpha = p; kam.s = .85 + .15 * p; kam.x = DOOR + 18 - 30 * p; });
         yield* tween(1, p => { B.door = 1 - ez(p); B.light = 1 - p; });
-        yield* walkTo(HX - 235, 40); kam.face = -1;
+        yield* walkTo(HX - (G.HX - G.SPOT), 40); kam.face = -1;
         // a big stretch and a yawn
         yield* tween(1.6, p => { const e = ez(p); kam.sq = 1 + .16 * e; kam.sx = 1 - .07 * e; kam.head = -.16 * e; }); kam.eyes = 'dicht'; kam.mouth = .8;
         yield* wait(1.6); kam.mouth = 0;

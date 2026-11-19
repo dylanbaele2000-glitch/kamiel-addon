@@ -237,7 +237,9 @@ const lazy = (obj, key, src, label) => { let im = null; Object.defineProperty(ob
 // an element without a proper size can't be placed: it is left out (the add-on repairs it at its next start)
 const sizeOk = (a) => Array.isArray(a.size) && a.size[0] > 0 && a.size[1] > 0;
 world.assets.filter(a => a.active !== false && !sizeOk(a)).forEach(a => setTimeout(() => window.tlog && window.tlog('fout', 'Element "' + (a.label || a.id) + '" heeft geen geldige maat en wordt overgeslagen.'), 3000));
-const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false && sizeOk(a)).map(a => {
+// Kamiel's own house (Studio: "Dit is Kamiels huis"): only there at bedtime, never placed in the world
+const HOUSE = (() => { const a = world.assets.find(x => x.kamiel_house && sizeOk(x) && x.files && x.files.main); if (!a) return null; const o = Object.assign({}, a); lazy(o, 'img', 'media/' + a.files.main, a.label || a.id); return o; })();
+const OBJ = world.assets.filter(a => a.kind !== 'wolk' && a.active !== false && sizeOk(a) && !a.kamiel_house).map(a => {
   const o = Object.assign({}, a, { vimg: {}, maskImg: null });
   (a.colors || []).forEach(c => { if (a.files['kleur_' + c]) lazy(o.vimg, c, 'media/' + a.files['kleur_' + c]); });
   lazy(o, 'img', 'media/' + a.files.main, a.label || a.id);
@@ -328,7 +330,35 @@ const seasonOf = (d) => ['lente', 'zomer', 'herfst', 'winter'].find(n => inPerio
 const FEST_DATES = { halloween: ['10-31', '10-31'], kerst: ['12-24', '12-26'], nieuwjaar: ['12-31', '01-01'], valentijn: ['02-14', '02-14'], sinterklaas: ['12-05', '12-06'] };
 // the theme already shows in the days around it (less happens then than on the day itself)
 const FEST_AROUND = { halloween: ['10-24', '11-01'], kerst: ['12-15', '12-27'], nieuwjaar: ['12-28', '01-02'], valentijn: ['02-10', '02-15'], sinterklaas: ['11-28', '12-06'] };
-const FEST_NL = { liefde: 'Liefde', verjaardag: 'Verjaardag', halloween: 'Halloween', kerst: 'Kerstmis', nieuwjaar: 'Nieuwjaar', pasen: 'Pasen', valentijn: 'Valentijn', sinterklaas: 'Sinterklaas' };
+const FEST_NL = { liefde: 'Liefde', verjaardag: 'Verjaardag', halloween: 'Halloween', kerst: 'Kerstmis', nieuwjaar: 'Nieuwjaar', pasen: 'Pasen', valentijn: 'Valentijn', sinterklaas: 'Sinterklaas',
+  gentsefeesten: 'Gentse Feesten', carnaval: 'Carnaval', nationale: 'Nationale feestdag', schooldag: 'Eerste schooldag', kamiel: 'Kamiels verjaardag' };
+// Ghent and Belgium: the Gentse Feesten are ten days from the Friday before 21 July; carnival is the Sunday to Tuesday before Ash Wednesday;
+// the first school day in Flanders is 1 September (on a weekend: the Monday after)
+const dayNo = (d) => Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5);
+function gfStart(y) { const d = new Date(y, 6, 20); while (d.getDay() !== 5) d.setDate(d.getDate() - 1); return d; }
+function schoolDay(y) { const d = new Date(y, 8, 1); while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1); return d; }
+// Kamiel's own birthday (Studio → Feestdagen): "2026-03-15" = born in 2026, a year older every 15 March
+function kamielAge(d) {
+  const m = String((S.feest || {}).kamiel || '2026-03-15').match(/^(\d{4})-(\d\d)-(\d\d)$/);
+  return m ? Math.max(1, d.getFullYear() - +m[1]) : 1;
+}
+function kamielBdayIs(d) { const m = String((S.feest || {}).kamiel || '2026-03-15').match(/^\d{4}-(\d\d-\d\d)$/); return !!m && md(d) === m[1]; }
+function belgianDay(d, around) {
+  const H = (S.feest || {}).holidays || {}, n = dayNo(d), y = d.getFullYear(), x = md(d);
+  if (!around) {
+    if (H.kamiel !== false && kamielBdayIs(d)) return { kind: 'kamiel', name: 'Kamiels verjaardag', day: true, age: kamielAge(d) };
+    if (H.nationale !== false && x === '07-21') return { kind: 'nationale', name: 'Nationale feestdag', day: true };
+    if (H.schooldag !== false && n === dayNo(schoolDay(y))) return { kind: 'schooldag', name: 'Eerste schooldag', day: true };
+    const c = n - dayNo(easter(y));
+    if (H.carnaval !== false && c >= -49 && c <= -47) return { kind: 'carnaval', name: 'Carnaval', day: true };
+    return null;
+  }
+  const g = n - dayNo(gfStart(y));
+  if (H.gentsefeesten !== false && g >= 0 && g <= 9) return { kind: 'gentsefeesten', name: 'Gentse Feesten', day: false, gf: g + 1 };
+  const c = n - dayNo(easter(y));
+  if (H.carnaval !== false && c >= -52 && c <= -46) return { kind: 'carnaval', name: 'Carnaval', day: false };
+  return null;
+}
 let festCache = { key: '', v: null };
 function festival(d) {
   d = d || now();
@@ -336,12 +366,13 @@ function festival(d) {
   if (festCache.key === key) return festCache.v;
   let v = null;
   const F = S.feest || {};
-  if (params.get('feest')) v = { kind: params.get('feest'), name: FEST_NL[params.get('feest')] || params.get('feest'), day: true };
+  if (params.get('feest')) v = { kind: params.get('feest'), name: FEST_NL[params.get('feest')] || params.get('feest'), day: true, age: kamielAge(d), gf: 1 };
   else if (F.on !== false) {
     const x = md(d);
     // your own days first: birthdays and your days as a couple
     for (const b of F.days || []) if (b.date === x) { v = { kind: b.kind === 'liefde' ? 'liefde' : 'verjaardag', name: b.name || 'Verjaardag', day: true }; break; }
     for (const around of [false, true]) {
+      if (!v) v = belgianDay(d, around);
       if (v) break;
       for (const k of ['nieuwjaar', 'halloween', 'kerst', 'valentijn', 'sinterklaas']) {
         if ((F.holidays || {})[k] === false) continue;
@@ -357,7 +388,8 @@ function festival(d) {
   return v;
 }
 // Kamiel dresses for the occasion (one piece, on top of his own clothes)
-const FEST_HAT = { liefde: 'hartjesbril', verjaardag: 'feesthoed', nieuwjaar: 'feesthoed', halloween: 'heksenhoed', kerst: 'kerstmuts', pasen: 'paasoren', valentijn: 'hartjesbril' };
+const FEST_HAT = { liefde: 'hartjesbril', verjaardag: 'feesthoed', nieuwjaar: 'feesthoed', halloween: 'heksenhoed', kerst: 'kerstmuts', pasen: 'paasoren', valentijn: 'hartjesbril',
+  kamiel: 'kroon', carnaval: 'rodeneus' };
 function festOutfit(list) {
   list = sunOutfit(list);
   if (RCP.on && S.outfit_mode !== 'uit') list = (list || []).filter(x => (KamielOutfits.OUTFITS.find(o => o.id === x) || {}).slot !== 'hoofd').concat(['koksmuts']);
@@ -393,7 +425,7 @@ function hatAt(pet, ph) {
 }
 function petHat(g, o) {
   if (!o.pet || o.alpha === 0 || !PETART[o.pet]) return;
-  const f = festival(); if (!((f && (f.kind === 'verjaardag' || f.kind === 'nieuwjaar')) || o.bday || petBday(o.pet))) return;
+  const f = festival(); if (!((f && (f.kind === 'verjaardag' || f.kind === 'nieuwjaar' || f.kind === 'kamiel' || f.kind === 'carnaval')) || o.bday || petBday(o.pet))) return;
   const ph = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
   const art = PETART[o.pet], q = hatAt(o.pet, ph), u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u;
   let x = (-w / 2 + (q[0] + .5) * u) * (o.face > 0 ? -1 : 1) * (o.sx || 1), y = (-h + (q[1] + .6) * u) * (o.sq || 1);
@@ -407,14 +439,16 @@ function petHat(g, o) {
 // decorations in the sky and on the screen
 function drawFestScreen() {
   const f = festival(); if (!f) return;
-  const party = f.kind === 'verjaardag' || f.kind === 'nieuwjaar' || f.kind === 'liefde';
+  const party = f.kind === 'verjaardag' || f.kind === 'nieuwjaar' || f.kind === 'liefde' || f.kind === 'kamiel' || f.kind === 'carnaval' || f.kind === 'nationale';
+  if (f.kind === 'gentsefeesten') drawLanterns();
   if (party || f.kind === 'pasen') {   // bunting, swaying a little
-    const cols = f.kind === 'pasen' ? ['#f7c6d9', '#c6e8f7', '#f7f0b0', '#c9f2c4'] : f.kind === 'liefde' ? ['#ff3d8b', '#ffffff', '#ff8ac1', '#d61f4e'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff'];
+    const cols = f.kind === 'pasen' ? ['#f7c6d9', '#c6e8f7', '#f7f0b0', '#c9f2c4'] : f.kind === 'liefde' ? ['#ff3d8b', '#ffffff', '#ff8ac1', '#d61f4e']
+      : f.kind === 'nationale' ? ['#1a1a1a', '#ffd90c', '#ef3340'] : f.kind === 'carnaval' ? ['#ff2a6d', '#05d9e8', '#ffe600', '#00c853', '#ff7a00', '#9d4edd'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff'];
     for (let row = 0; row < 2; row++) {
       const y0 = 18 + row * 46, sag = 34 + row * 10;
       for (let k = 0; k < 22; k++) {
         const x = -20 + k * 48 - mod(kx * (.3 + row * .15), 48), u = k / 21, y = y0 + Math.sin(u * Math.PI) * sag + Math.sin(t * 1.3 + k) * 2;
-        ctx.fillStyle = cols[(k + row) % cols.length];
+        ctx.fillStyle = cols[(f.kind === 'nationale' ? k : k + row) % cols.length];
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 30, y + 2); ctx.lineTo(x + 15, y + 28); ctx.closePath(); ctx.fill();
       }
       ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5; ctx.beginPath();
@@ -423,7 +457,7 @@ function drawFestScreen() {
   }
   // everything that flies by is a small creature of its own: it comes and goes, now and then, never in step with the others
   const dt = Math.min(.1, Math.max(0, t - (festScreenT || t))); festScreenT = t;
-  const want = { verjaardag: ['balloon', 4, .0035], nieuwjaar: ['balloon', 3, .0025], liefde: ['heart', 5, .006], valentijn: ['heart', 5, .006],
+  const want = { verjaardag: ['balloon', 4, .0035], kamiel: ['balloon', 7, .006], carnaval: ['confetti', 26, .05], nieuwjaar: ['balloon', 3, .0025], liefde: ['heart', 5, .006], valentijn: ['heart', 5, .006],
     halloween: ['bat', isDark(now()) ? 4 : 2, isDark(now()) ? .0035 : .0009], sinterklaas: ['noot', 6, .004] }[f.kind];
   if (want && drifters.filter(b => b.kind === want[0]).length < want[1] && rnd() < want[2] * 60 * dt) {
     const n = want[0] === 'bat' && rnd() < .45 ? 2 + Math.floor(rnd() * 2) : 1;   // bats sometimes come as a little group
@@ -437,6 +471,28 @@ function drawFestScreen() {
   }
 }
 let festScreenT = 0;
+// the Gentse Feesten: strings of paper lanterns across the top of the screen, glowing in the evening
+function drawLanterns() {
+  const night = isDark(now()), cols = ['#ff5a3c', '#ffb02e', '#ff3d8b', '#ffd84a', '#ff7a2e', '#e8463a'];
+  for (let row = 0; row < 2; row++) {
+    const y0 = 10 + row * 52, sag = 40 + row * 14, step = 74 + row * 10, off = mod(kx * (.25 + row * .12), step);
+    ctx.strokeStyle = 'rgba(40,30,30,.75)'; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (let x = -20; x <= W + 20; x += 12) { const u = (x + 20) / (W + 40); ctx.lineTo(x, y0 + Math.sin(u * Math.PI) * sag); } ctx.stroke();
+    for (let k = -1; k < W / step + 1; k++) {
+      const x = k * step - off + step / 2, u = (x + 20) / (W + 40); if (u < 0 || u > 1) continue;
+      const y = y0 + Math.sin(u * Math.PI) * sag, sw = Math.sin(t * 1.4 + k * 1.7 + row) * .12, r = 13 - row * 2, c = cols[(k + 60 + row * 3) % cols.length];
+      const fl = .8 + .2 * nz(k * 13 + row * 7 + t * 2.3);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(sw);
+      if (night) { const g = ctx.createRadialGradient(0, r + 6, 2, 0, r + 6, r * 4); g.addColorStop(0, `rgba(255,190,90,${.35 * fl})`); g.addColorStop(1, 'rgba(255,190,90,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, r + 6, r * 4, 0, 7); ctx.fill(); }
+      ctx.fillStyle = '#3a2a20'; ctx.fillRect(-1, 0, 2, 6); ctx.fillRect(-r * .45, 5, r * .9, 3);
+      ctx.fillStyle = night ? `rgb(255,${190 + 40 * fl | 0},${110 + 50 * fl | 0})` : c; ctx.beginPath(); ctx.ellipse(0, r + 7, r, r * 1.1, 0, 0, 7); ctx.fill();
+      if (night) { ctx.globalAlpha = .55; ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(0, r + 7, r, r * 1.1, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1; for (const j of [.3, .68]) { ctx.beginPath(); ctx.ellipse(0, r + 7, r * j, r * 1.1, 0, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = '#3a2a20'; ctx.fillRect(-r * .45, r * 2.1 + 6, r * .9, 3);
+      ctx.restore();
+    }
+  }
+}
 const drifters = [];
 // smooth random wandering (value noise): organic, never a repeating wave
 const hash1 = (n) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
@@ -447,6 +503,7 @@ function newDrifter(kind, fest, side, y, delay) {
   if (kind === 'balloon') { b.x = 60 + rnd() * (W - 120); b.y = H + 50; b.c = (fest === 'liefde' ? ['#ff3d8b', '#d61f4e', '#ff8ac1', '#ffffff'] : ['#ff3d8b', '#3db8ff', '#ffd23f', '#7ee0a0', '#b98cff'])[Math.floor(rnd() * 5) % (fest === 'liefde' ? 4 : 5)]; }
   if (kind === 'heart') { b.x = 40 + rnd() * (W - 80); b.y = H * (.55 + rnd() * .35); b.c = ['255,80,150', '255,140,190', '230,40,90', '255,200,220'][Math.floor(rnd() * 4)]; b.max = 5 + rnd() * 6; }
   if (kind === 'noot') { b.x = 40 + rnd() * (W - 80); b.y = -20; }
+  if (kind === 'confetti') { b.x = rnd() * W; b.y = -10 - rnd() * 40; b.c = ['#ff2a6d', '#05d9e8', '#ffe600', '#00c853', '#ff7a00', '#9d4edd', '#ffffff'][Math.floor(rnd() * 7)]; }
   return b;
 }
 function moveDrifter(b, dt) {
@@ -471,6 +528,10 @@ function moveDrifter(b, dt) {
   if (b.kind === 'heart') {
     b.life = a / b.max; b.y -= (10 + 14 * b.z) * dt; b.x += (nz(s + a * .35) - .5) * 40 * dt; b.rot = (nz(s + 70 + a * .4) - .5) * .5;
     return b.life >= 1;
+  }
+  if (b.kind === 'confetti') {   // a scrap of paper: flutters down, turning, drifting with the air
+    b.y += (22 + 26 * b.z) * dt; b.x += (nz(s + a * .6) - .5) * 70 * dt; b.phase += dt * (5 + 4 * b.z);
+    return b.y > FEET + 10;
   }
   if (b.kind === 'noot') {
     b.vy = Math.min(260, b.vy + 300 * dt); b.y += b.vy * dt * (.5 + .5 * b.z); b.x += (nz(s + a) - .5) * 20 * dt; b.rot += dt * 3;
@@ -512,6 +573,7 @@ function drawDrifter(b) {
     ctx.beginPath(); ctx.moveTo(0, 6 * s); ctx.bezierCurveTo(-10 * s, -2 * s, -6 * s, -10 * s, 0, -4 * s); ctx.bezierCurveTo(6 * s, -10 * s, 10 * s, -2 * s, 0, 6 * s); ctx.fill();
     ctx.restore(); return;
   }
+  if (b.kind === 'confetti') { const w = (3 + 4 * z) * Math.abs(Math.cos(b.phase)) + 1, h = 4 + 3 * z; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.phase * .3); ctx.globalAlpha = .6 + .4 * z; ctx.fillStyle = b.c; ctx.fillRect(-w / 2, -h / 2, w, h); ctx.restore(); return; }
   if (b.kind === 'noot') { ctx.fillStyle = '#9a5a2a'; ctx.beginPath(); ctx.ellipse(b.x, b.y, 4 * (.6 + .5 * z), 3.4 * (.6 + .5 * z), b.rot, 0, 7); ctx.fill(); }
 }
 // on the ground: pumpkins, fairy lights, easter eggs
@@ -524,6 +586,10 @@ function drawFestGround() {
   const cam = kx - W / 2, night = isDark(now());
   for (let i = 0; i < N; i++) for (let k = kb() - 1; k <= kb() + 1; k++) {
     const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0 || (places[i] && places[i].hall)) continue;
+    if (f.kind === 'gentsefeesten' && sr(i, 5) < .7) {   // a little fair on the horizon, only where the horizon is free
+      const wx = i * PLACE + k * PW + PLACE * (.25 + .5 * sr(i, 6)), x = x0 + (wx - i * PLACE - k * PW), kind = sr(i, 7) < .55 ? 'rad' : 'molen', half = kind === 'rad' ? 80 : 62;
+      if (x > -100 && x < W + 100 && !hits.some(hh => hh.layer === 1 && hh.x < x + half + 10 && hh.x + hh.w > x - half - 10)) drawKermis(kind, x, horY(wx) + 2, night, i);
+    }
     if (f.kind === 'kerst') {   // a string of lights along the horizon
       for (let n = 0; n < 40; n++) {
         const x = x0 + n * PLACE / 40 + 12, y = horY(i * PLACE + k * PW + n * PLACE / 40 + 12) - 6 + Math.sin(n * .9) * 4;
@@ -534,6 +600,42 @@ function drawFestGround() {
       }
     }
   }
+}
+// the fair of the Gentse Feesten: a ferris wheel or a carousel, far away on the horizon, full of little lights at night
+function drawKermis(kind, x, y, night, seed) {
+  ctx.save(); ctx.translate(x, y);
+  const lights = [];   // at night the bulbs shine after the world got dark
+  const bulb = (bx, by, n) => { const on = !night || Math.sin(t * 3 + n * 1.3) > -.4; ctx.fillStyle = on ? ['#fff3a0', '#ff8ad0', '#8ae8ff', '#ffd23f'][n % 4] : '#554';
+    if (night && on) lights.push([x + bx, y + by, ctx.fillStyle]); ctx.fillRect(bx - 1.5, by - 1.5, 3, 3); };
+  if (kind === 'rad') {
+    const R = 62, cy = -R - 16, rot = t * .12 + seed;
+    ctx.strokeStyle = '#d8d2c8'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-34, 0); ctx.lineTo(0, cy); ctx.lineTo(34, 0); ctx.stroke();
+    ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, cy, R, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(0, cy, R * .7, 0, 7); ctx.stroke();
+    for (let n = 0; n < 12; n++) { const a = rot + n / 12 * Math.PI * 2; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(Math.cos(a) * R, cy + Math.sin(a) * R); ctx.stroke(); }
+    for (let n = 0; n < 12; n++) { const a = rot + n / 12 * Math.PI * 2, gx = Math.cos(a) * R, gy = cy + Math.sin(a) * R;
+      ctx.fillStyle = ['#e8463a', '#2f8fd6', '#ffd23f', '#3fae5a'][n % 4]; ctx.fillRect(gx - 6, gy + 2, 12, 9); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(gx - 6, gy + 9, 12, 2);
+      if (night) { ctx.fillStyle = 'rgba(255,220,140,.8)'; ctx.fillRect(gx - 4, gy + 4, 8, 3); } }
+    for (let n = 0; n < 24; n++) { const a = rot * 1 + n / 24 * Math.PI * 2; bulb(Math.cos(a) * R, cy + Math.sin(a) * R, n); }
+    ctx.fillStyle = '#c9c2b6'; ctx.beginPath(); ctx.arc(0, cy, 5, 0, 7); ctx.fill();
+  } else {
+    const turn = t * .8 + seed;
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(-56, -10, 112, 10);
+    for (let n = 0; n < 6; n++) { const a = turn + n / 6 * Math.PI * 2, px = Math.cos(a) * 46, front = Math.sin(a) > 0; if (front) continue;
+      ctx.fillStyle = '#e8c46a'; ctx.fillRect(px - 1, -66, 2, 56); }
+    ctx.fillStyle = '#f2ece0'; ctx.fillRect(-4, -70, 8, 60);
+    for (let n = 0; n < 6; n++) { const a = turn + n / 6 * Math.PI * 2, px = Math.cos(a) * 46, front = Math.sin(a) > 0; if (!front) continue;
+      const bob = Math.sin(t * 2 + n) * 5; ctx.fillStyle = '#e8c46a'; ctx.fillRect(px - 1, -66, 2, 56);
+      ctx.fillStyle = ['#ffffff', '#f7c6d9', '#c6e8f7'][n % 3]; ctx.fillRect(px - 10, -34 + bob, 20, 8); ctx.fillRect(px + (Math.cos(a) > 0 ? 6 : -10), -42 + bob, 5, 9); ctx.fillRect(px - 8, -26 + bob, 2, 6); ctx.fillRect(px + 6, -26 + bob, 2, 6); }
+    for (let n = 0; n < 8; n++) { ctx.fillStyle = n % 2 ? '#e8463a' : '#ffffff'; ctx.beginPath(); ctx.moveTo(-60 + n * 15, -66); ctx.lineTo(-60 + (n + 1) * 15, -66); ctx.lineTo(0, -100); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = '#ffd23f'; ctx.fillRect(-2, -110, 4, 12); ctx.fillStyle = '#e8463a'; ctx.fillRect(2, -110, 9, 5);
+    for (let n = 0; n < 10; n++) bulb(-56 + n * 12.4, -66, n);
+  }
+  ctx.restore();
+  if (lights.length) litWins.push({ x, y, w: 0, h: 0, a: 0, col: 'warm', seed: 0, after: (c) => {
+    const fr = hits.filter(hh => hh.layer === 2), kb = kam.hide ? null : { x: W / 2 + kam.x - 80 * (kam.s || 1), y: (kam.feet !== null ? kam.feet : FEET - kam.y) - 250 * (kam.s || 1), w: 160 * (kam.s || 1), h: 250 * (kam.s || 1) };
+    const behind = (lx, ly) => fr.concat(kb ? [kb] : []).some(hh => lx > hh.x + hh.w * .12 && lx < hh.x + hh.w * .88 && ly > hh.y + hh.h * .08 && ly < hh.y + hh.h);   // hidden behind something in front
+    for (const [lx, ly, col] of lights) { if (behind(lx, ly)) continue; c.globalAlpha = .3; c.fillStyle = col; c.beginPath(); c.arc(lx, ly, 5, 0, 7); c.fill(); c.globalAlpha = 1; c.fillRect(lx - 1.5, ly - 1.5, 3, 3); } } });
 }
 // pumpkins and easter eggs are placed last, only in free spots of the ground (never in front of or overlapping an element),
 // and they are drawn in depth order together with the ground elements
@@ -1212,7 +1314,7 @@ function updateSeason() {
   seasonNow = seasonOf(d); halloweenNow = inPeriod('halloween', d); kerstNow = inPeriod('kerst', d);
   const x = md(d), m = d.getHours() * 60 + d.getMinutes();
   fireworksNow = (x === '12-31' && m >= 23 * 60 + 30) || (x === '01-01' && m < 45);
-  const fz = festival(d); fireworksSome = !!fz && fz.kind === 'nieuwjaar' && (m >= 20 * 60 || m < 120);   // the evenings around New Year: now and then a rocket
+  const fz = festival(d); fireworksSome = !!fz && ((fz.kind === 'nieuwjaar' && (m >= 20 * 60 || m < 120)) || (fz.kind === 'nationale' && m >= 22 * 60 + 30) || (fz.kind === 'gentsefeesten' && fz.gf === 10 && m >= 22 * 60 + 45));   // New Year evenings; the fireworks of 21 July; the last night of the Gentse Feesten   // the evenings around New Year: now and then a rocket
 }
 updateSeason();
 const SEASON_TINT = { lente: 'rgba(255,170,215,.05)', zomer: 'rgba(255,225,140,.05)', herfst: 'rgba(255,135,40,.07)', winter: 'rgba(205,225,255,.08)' };
@@ -2467,7 +2569,16 @@ function skySafe(part, f) { try { f(); } catch (e) { console.error('lucht', part
    20 minutes (settable) before the night's rest begins he gets ready for bed: a different little ritual every evening
    (events 'bedtijd'), ending inside his house with the light out. Asleep, the house stays with zzz from the window;
    when the night is over he comes out ('opstaan'). While a recipe is on, bedtime waits. */
-const BED = { mode: '', day: '', house: null, a: 0, door: 0, light: 0, shadow: 0, zzz: 0, lantern: 0,
+// where everything is, as offsets from the middle of the screen (Kamiel's kam.x): the house middle, where he goes in, where he stands, by the lantern
+function houseGeom() {
+  if (!HOUSE) return { own: false, HX: 330, DOOR: 266, SPOT: 95, LANT: 114 };
+  let h = Math.max(200, Math.min(520, 330 * (HOUSE.scale || 1))), w = h * HOUSE.size[0] / HOUSE.size[1];
+  if (w > 560) { h *= 560 / w; w = 560; }
+  const HX = 195 + w / 2, d = (HOUSE.windows || []).find(x => x.mode === 'deur');
+  const doorX = d ? HX - w / 2 + (d.x + d.w / 2) * w : HX - w * .15;
+  return { own: true, w, h, HX, DOOR: doorX - 10, SPOT: 95, LANT: HX - w / 2 - 26 - 92, lx: HX - w / 2 - 26, door: d };
+}
+const BED = { mode: '', day: '', house: null, a: 0, door: 0, light: 0, shadow: 0, zzz: 0, lantern: 0, geom: houseGeom,
   secsLeft: () => { const d = now(), m = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60, a = minutesOf(S.night_start); return Math.round(((a - m + 1440) % 1440) * 60); },
   save: () => { try { localStorage.setItem('kamiel-bed', JSON.stringify({ mode: BED.mode, day: BED.day, house: BED.house, lantern: BED.lantern, t: Date.now() })); } catch (e) { } } };
 // the evening a night belongs to (after midnight it is still yesterday's night)
@@ -2488,12 +2599,13 @@ function bedCheck(d) {
     BED.day = bedDay(d); BED.mode = 'ritueel'; BED.reqT = Date.now(); BED.save(); EV.request('bedtijd');
   }
 }
-if (params.get('bed')) setTimeout(() => { BED.day = ''; BED.reqT = Date.now(); BED.mode = params.get('bed') === 'slaapt' ? '' : 'ritueel'; if (params.get('bed') === 'slaapt') Object.assign(BED, { mode: 'slaapt', house: kx + 330, a: 1, zzz: 1 }); else EV.request('bedtijd'); }, 3000);   // ?bed=1 / ?bed=slaapt, to try it out
+if (params.get('bed')) setTimeout(() => { BED.day = ''; BED.reqT = Date.now(); BED.mode = params.get('bed') === 'slaapt' ? '' : 'ritueel'; if (params.get('bed') === 'slaapt') Object.assign(BED, { mode: 'slaapt', house: kx + houseGeom().HX, a: 1, zzz: 1 }); else EV.request('bedtijd'); }, 3000);   // ?bed=1 / ?bed=slaapt, to try it out
 // Kamiel's house: drawn in pixels, a little cottage with a round door, a window with curtains, a chimney and his name
 function drawBedHouse(g) {
   if (BED.house === null || BED.a <= 0) return;
   const cam = kx - W / 2, sx = mod(BED.house - cam + PW / 2, PW) - PW / 2, u = 8, base = FEET - 10;
-  if (sx < -300 || sx > W + 300) return;
+  if (sx < -400 || sx > W + 400) return;
+  if (HOUSE && ready(HOUSE.img)) return drawOwnHouse(g, sx);
   const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   const X = (v) => sx + v * u, Y = (v) => base - v * u, snow = GROUND ? GROUND.snowK() : 0;
   g.save(); g.globalAlpha = BED.a;
@@ -2546,6 +2658,35 @@ function drawBedHouse(g) {
     c.font = 'bold 26px VT323, monospace'; c.textAlign = 'center';
     for (let k = 0; k < 3; k++) { const a = (t * .25 + k / 3) % 1; c.fillStyle = `rgba(255,255,255,${(1 - a) * .9 * BED.a})`; c.font = `bold ${18 + 16 * a}px VT323, monospace`; c.fillText('Z', wx0 + ww * .7 + a * 40, wy0 - 10 - a * 90); }
   } });
+}
+// your own house: the picture, with its door opening onto a dark (or warm) inside, its windows lighting up, and a lantern beside it
+function drawOwnHouse(g, sx) {
+  const G = houseGeom(), w = G.w, h = G.h, x0 = sx - w / 2, y0 = FEET - 4 - h, base = FEET - 4;
+  const R = (x, y, ww, hh, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), Math.round(ww), Math.round(hh)); };
+  g.save(); g.globalAlpha = BED.a;
+  const sh = g.createRadialGradient(sx, base, 0, sx, base, w * .6); sh.addColorStop(0, 'rgba(0,0,0,.25)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.save(); g.translate(0, base); g.scale(1, .12); g.fillStyle = sh; g.beginPath(); g.arc(sx, 0, w * .6, 0, 7); g.fill(); g.restore();
+  g.drawImage(HOUSE.img, x0, y0, w, h);
+  if (GROUND) GROUND.snowCap(g, HOUSE.img, x0, y0, w, h, false);
+  const D = G.door;
+  if (D && BED.door > .02) {   // the door swings open
+    const dx = x0 + D.x * w, dy = y0 + D.y * h, dw = D.w * w, dh = D.h * h;
+    R(dx, dy, dw * BED.door, dh, BED.light > .1 ? '#6a4420' : '#1e140c');
+  }
+  // the lantern by the house
+  const lx = sx - w / 2 - 26, ly = base - 72;
+  R(lx - 1, ly, 3, 72, '#3a2a1a'); R(lx - 7, ly - 14, 15, 14, '#2a2a2a'); R(lx - 5, ly - 12, 11, 10, BED.lantern > .05 ? '#ffd27a' : '#556');
+  g.restore();
+  const wins = (HOUSE.windows || []).filter(x => x.mode !== 'deur').map((x, i) => ({ x: x0 + x.x * w, y: y0 + x.y * h, w: x.w * w, h: x.h * h, col: x.color || 'warm', i }));
+  if (BED.light > .02) wins.forEach((q, i) => litWins.push({ x: q.x, y: q.y, w: q.w, h: q.h, a: BED.light * BED.a, col: q.col, seed: 3 + i, after: BED.shadow && i === 0 ? (c) => {
+    const k = Math.sin(t * 5); c.fillStyle = 'rgba(40,24,40,.5)'; c.fillRect(q.x + q.w * .2, q.y + q.h * .35 + k * q.h * .1, q.w * .6, q.h * .3); } : null }));
+  if (BED.light > .02 && D && BED.door > .02) litWins.push({ x: x0 + D.x * w, y: y0 + D.y * h, w: D.w * w * BED.door, h: D.h * h, a: BED.light * BED.a, col: 'warm', seed: 9 });
+  if (BED.lantern > .02) litWins.push({ x: lx - 5, y: ly - 12, w: 11, h: 10, a: BED.lantern * BED.a, col: 'warm', seed: 7 });
+  if (BED.zzz > 0) { const z = wins[0] || (D ? { x: x0 + D.x * w, y: y0 + D.y * h, w: D.w * w } : { x: sx, y: y0 + h * .3, w: 0 });
+    litWins.push({ x: z.x, y: z.y, w: 0, h: 0, a: 0, col: 'warm', seed: 0, after: (c) => {
+      c.textAlign = 'center';
+      for (let k = 0; k < 3; k++) { const a = (t * .25 + k / 3) % 1; c.fillStyle = `rgba(255,255,255,${(1 - a) * .9 * BED.a})`; c.font = `bold ${18 + 16 * a}px VT323, monospace`; c.fillText('Z', z.x + z.w * .7 + a * 40, z.y - 10 - a * 90); }
+    } }); }
 }
 // a battery that's nearly empty: a little speech bubble with "!" above Kamiel (tap it to see which one)
 let battAlerts = [], battHit = null;

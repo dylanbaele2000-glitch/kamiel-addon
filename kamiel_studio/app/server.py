@@ -133,7 +133,9 @@ DEFAULT_SETTINGS = {
     # feast days and birthdays: much more happens, with decorations and events of their own
     "feest": {"on": True, "boost": 3, "v": 2,
               "days": [],   # your own days (birthdays, your days as a couple) are filled in in the Studio and live only in /data
-              "holidays": {"halloween": True, "kerst": True, "nieuwjaar": True, "pasen": True, "valentijn": True, "sinterklaas": True}},
+              "kamiel": "2026-03-15",   # Kamiel's own birthday (the year he was born: he turns a year older every year)
+              "holidays": {"halloween": True, "kerst": True, "nieuwjaar": True, "pasen": True, "valentijn": True, "sinterklaas": True,
+                           "kamiel": True, "gentsefeesten": True, "carnaval": True, "nationale": True, "schooldag": True}},
     # halls: now and then a place is a room (museum, disco, observatory, or one of your own)
     "halls": {"chance": 12, "off": [], "custom": []},
     # air quality: with bad air Kamiel gets drowsy
@@ -229,6 +231,7 @@ def load_db():
     ev["pets_per_day"] = dict(DEFAULT_SETTINGS["events"]["pets_per_day"], **((stored.get("events") or {}).get("pets_per_day") or {}))
     for k in ("hills", "stack", "doorbell", "motion", "selfie", "feest", "halls", "air", "charge", "sky", "battery", "ai", "cook"):
         merged = copy.deepcopy(DEFAULT_SETTINGS[k]); merged.update(stored.get(k) or {}); s[k] = merged
+    s["feest"]["holidays"] = dict(DEFAULT_SETTINGS["feest"]["holidays"], **((stored.get("feest") or {}).get("holidays") or {}))   # new feast days start on
     cp = copy.deepcopy(DEFAULT_SETTINGS["compose"]); sc = stored.get("compose") or {}
     cp["styles"].update(sc.get("styles") or {}); cp["color"] = sc.get("color", cp["color"]); cp["busy"] = sc.get("busy", cp["busy"]); s["compose"] = cp
     for k in ("windows", "window_titles"):
@@ -1426,6 +1429,12 @@ async def api_edit_asset(request):
                     a["gaze"] = body["gaze"]
                 if body.get("clouds") in ("voor", "tussen", "achter"):   # sky objects: in front of, between or behind the clouds
                     a["clouds"] = body["clouds"]
+                if "kamiel_house" in body:   # Kamiel's own house for bedtime: only one element can be it
+                    a["kamiel_house"] = bool(body["kamiel_house"]) and a.get("kind") in ("grond", "horizon")
+                    if a["kamiel_house"]:
+                        for o in db["assets"]:
+                            if o is not a:
+                                o.pop("kamiel_house", None)
                 if isinstance(body.get("windows"), list):   # windows that light up: boxes (fractions of the picture) + when
                     a["windows"] = [w for w in (_clean_window(x) for x in body["windows"][:24]) if w]
                 save_db(db)
@@ -1442,7 +1451,7 @@ def _clean_window(w):
         return None
     until = str(w.get("until") or "23:00")
     return {"x": round(x, 4), "y": round(y, 4), "w": round(min(ww, 1 - x), 4), "h": round(min(hh, 1 - y), 4),
-            "mode": w.get("mode") if w.get("mode") in ("schemer", "nacht", "toeval", "lamp") else "schemer",
+            "mode": w.get("mode") if w.get("mode") in ("schemer", "nacht", "toeval", "lamp", "deur") else "schemer",
             "until": until if re.fullmatch(r"\d{2}:\d{2}", until) else "23:00",
             "entity": str(w.get("entity") or "")[:120], "color": w.get("color") if w.get("color") in ("warm", "koel", "tv") else "warm"}
 
@@ -1752,8 +1761,10 @@ async def api_settings(request):
                               "kind": "liefde" if x.get("kind") == "liefde" else "verjaardag",
                               **({"year": int(x["year"])} if str(x.get("year", "")).isdigit() and 1950 < int(x["year"]) < 2100 else {})}
                              for x in b["days"][:20] if isinstance(x, dict) and re.match(r"^\d\d-\d\d$", str(x.get("date", "")))]
+            if re.match(r"^\d{4}-\d\d-\d\d$", str(b.get("kamiel", ""))):
+                f["kamiel"] = str(b["kamiel"])
             if isinstance(b.get("holidays"), dict):
-                for k in f["holidays"]:
+                for k in DEFAULT_SETTINGS["feest"]["holidays"]:
                     if k in b["holidays"]:
                         f["holidays"][k] = bool(b["holidays"][k])
         if isinstance(body.get("halls"), dict):

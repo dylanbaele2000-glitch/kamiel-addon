@@ -629,6 +629,7 @@ details.fold.sub>summary{font-size:15px}
       <div class="row"><button type="button" id="ckSend">Op de tablet zetten</button><button type="button" id="ckResume">Vorig recept terug</button><span class="status" id="ckStatus" role="status" style="white-space:pre-line"></span></div>
       <h2 style="margin-top:18px">🌙 Slaapritueel</h2>
       <p class="hint">Voor de nachtrust begint (de rusttijd bij Scherm, nu <b id="ckNight">22:00</b>) maakt Kamiel zich klaar om te slapen: hij gaat naar zijn huisje, zet zijn slaapmuts op en doet elke avond een paar andere dingen (tanden poetsen, warme melk, een boekje, schaapjes tellen, de huisdieren welterusten zeggen…). Daarna gaat hij naar binnen, het licht gaat uit en hij slaapt tot de ochtend. Is er een recept bezig, dan wacht hij.</p>
+      <p class="hint"><b>Een eigen huis voor Kamiel?</b> Voeg bij Elementen een tekening of foto van een huis toe (soort Grond), open het en zet <b>Dit is Kamiels huis</b> aan. Trek daar een kader rond de deur en kies "Deur". Hij gaat dan in jouw huis slapen, en de andere ramen die je aanduidt gaan branden als hij binnen is. <span id="ckHouse"></span></p>
       <label class="sw"><input type="checkbox" id="ckBed"><span><b>Slaapritueel</b></span></label>
       <div class="settings"><label class="field" for="ckBedMin">Minuten voor de nachtrust<input type="number" id="ckBedMin" min="5" max="40"></label></div>
       <div class="row"><button type="button" class="primary" id="ckSave">Opslaan</button><span class="status" id="ckSaveStatus" role="status"></span></div>
@@ -921,8 +922,12 @@ details.fold.sub>summary{font-size:15px}
           <p class="hint" style="margin-top:4px">🎂 Verjaardag: slingers, ballonnen, feesthoedjes en een taart. 💕 Jullie dag (zoals de dag dat jullie een koppel werden, of jullie eerste date): alles in roze en rood, hartjes, een groot hart dat opstijgt, en Kamiel stuurt die dag via Telegram een foto: een polaroid van een van jullie foto's, met Kamiel helemaal verliefd ernaast. Vul het jaar in, dan telt hij hoeveel jaar het is.</p>
           <div id="fDays" class="rems" style="gap:8px;margin-top:6px"></div>
           <div class="row" style="margin-top:8px"><button type="button" id="fDayAdd">+ Dag toevoegen</button><button type="button" id="loveTest">💕 Test: stuur de liefdesfoto nu</button><span class="status" id="loveStatus" role="status"></span></div></div>
-        <div><b style="font-size:14px">Feestdagen</b><div class="days" id="fHol" style="margin-top:6px"></div></div>
-        <p class="hint">Uitproberen: met <b>▶</b> in de lijst met gebeurtenissen hieronder. De versiering zie je op de tablet met <code>?feest=verjaardag</code> (of halloween, kerst, nieuwjaar, pasen, valentijn, sinterklaas) achter het adres.</p>
+        <div><b style="font-size:14px">Kamiels verjaardag</b>
+          <p class="hint" style="margin-top:4px">Eén keer per jaar wordt Kamiel zelf een jaar ouder: slingers, ballonnen, een kroontje, alle huisdieren met een feesthoedje, een taart met een kaarsje per jaar... en Heidi die de taart probeert te stelen. Het jaartal is het jaar waarin hij "geboren" is.</p>
+          <label class="field" for="fKamiel">Geboortedag<input type="date" id="fKamiel" style="max-width:200px"></label></div>
+        <div><b style="font-size:14px">Feestdagen</b><div class="days" id="fHol" style="margin-top:6px"></div>
+          <p class="hint" style="margin-top:6px">Gentse Feesten: lampionnen boven het scherm, een kermis met reuzenrad en draaimolen aan de horizon, een lampionnenstoet en smoutebollen; op de laatste avond vuurwerk. Carnaval: confetti, slingers, een rode neus en een stoet met prinses Heidi op een praalwagen. 21 juli: driekleur, vliegtuigjes die de vlag in de lucht tekenen, een defilé en 's avonds vuurwerk. Eerste schooldag: de schoolbel, een boekentas en de hele klas op weg. Sinterklaas komt langs op zijn witte paard, dat de wortel uit Kamiels schoen eet.</p></div>
+        <p class="hint">Uitproberen: met <b>▶</b> in de lijst met gebeurtenissen hieronder. De versiering zie je op de tablet met <code>?feest=verjaardag</code> (of halloween, kerst, nieuwjaar, pasen, valentijn, sinterklaas, kamiel, gentsefeesten, carnaval, nationale, schooldag) achter het adres.</p>
       </div></details>
       <details class="fold sub"><summary>Huisdieren <small>Wifi, Snoet, Pippa, Pebbels en Dobby</small></summary><div class="inner">
       <p class="hint">Wifi, Snoet, Pippa, Pebbels en Dobby komen langs, elk met hun eigen karakter. Meestal alleen, soms met z'n tweeën. Op de tablet kan je ze ook roepen (venster Roepen).</p>
@@ -1182,7 +1187,7 @@ function badges(a) {
   if (a.active === false) b.push('uit');
   if (a.rare === 'zeldzaam') b.push('★'); if (a.rare === 'heelzeldzaam') b.push('★★');
   (a.weather || []).forEach(w => b.push((WX.find(x => x[0] === w) || ['', ''])[1]));
-  if (a.sign) b.push('🪧'); if (a.tv) b.push('📺'); if (a.grass_only) b.push('🌱');
+  if (a.kamiel_house) b.push('🏠'); if (a.sign) b.push('🪧'); if (a.tv) b.push('📺'); if (a.grass_only) b.push('🌱');
   if (a.stack) b.push('⬆ stapelt'); if (a.carry) b.push('⬇ draagt');
   if (a.period && a.period !== 'altijd') b.push((PERIOD_NL.find(p => p[0] === a.period) || ['', ''])[1]);
   if (a.kind === 'kader' && !a.hole) b.push('⚠ geen fotovlak');
@@ -1248,7 +1253,7 @@ function openEl(id) {
           ${isWolk ? '' : sw('stack', a.stack, 'Kan op iets anders staan', 'Verschijnt soms bovenop een element dat kan dragen, met een logische grootte.')}
           ${sw('carry', a.carry, 'Kan iets dragen', isWolk ? 'Er kan soms iets op deze wolk staan.' : 'Er kan soms iets op staan (ook de muziek-tv).')}
         </section>
-        ${a.kind === 'grond' || a.kind === 'horizon' ? winSection(a) : ''}
+        ${a.kind === 'grond' || a.kind === 'horizon' ? `<section class="sect"><h3>Kamiels huis</h3>${sw('kamiel_house', a.kamiel_house, 'Dit is Kamiels huis', 'Hier gaat hij slapen bij het slaapritueel, in plaats van het getekende huisje. Het verschijnt dan niet meer gewoon in de wereld, enkel bij bedtijd. Trek hieronder een kader rond de deur en kies bij dat kader "Deur"; de andere ramen gaan branden als hij binnen is.')}</section>` + winSection(a) : ''}
         ${isWolk ? '' : `<section class="sect"><h3>Tikken</h3>
           <div class="opt"><span class="lbl">Bij tikken op dit element</span><select data-sel="tap" style="max-width:360px"><option value="niets">Niets</option><option value="vertrek" ${tapVal === 'vertrek' ? 'selected' : ''}>Toon het vertrekbord</option>${SCRIPTS.map(e => `<option value="script:${e.id}" ${tapVal === 'script:' + e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
         </section>`}
@@ -1267,7 +1272,7 @@ function winSection(a) {
     <p class="hint" style="margin-top:0">Trek met je muis of vinger een kader rond elk raam. Kies daarna per raam wanneer het brandt. Zet het element bij "Moment" op "Dag en nacht", anders verdwijnt het 's avonds.</p>
     <div class="winEd" data-wined><img alt="" src="media/${a.files.main}">${W0.map((w, i) => `<div class="wbox" style="left:${w.x * 100}%;top:${w.y * 100}%;width:${w.w * 100}%;height:${w.h * 100}%"><span>${i + 1}</span></div>`).join('')}</div>
     <div>${W0.map((w, i) => `<div class="winRow" data-win="${i}"><b>Raam ${i + 1}</b>
-      <select data-wf="mode" aria-label="Wanneer brandt raam ${i + 1}">${WIN_MODES.map(([k, n]) => `<option value="${k}" ${w.mode === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <select data-wf="mode" aria-label="Wanneer brandt raam ${i + 1}">${WIN_MODES.concat(a.kamiel_house || w.mode === 'deur' ? [['deur', 'Deur (hier gaat Kamiel binnen)']] : []).map(([k, n]) => `<option value="${k}" ${w.mode === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
       ${w.mode === 'schemer' ? `<label>tot <input type="time" data-wf="until" value="${esc(w.until || '23:00')}"></label>` : ''}
       ${w.mode === 'lamp' ? `<select data-wf="entity" aria-label="Welke lamp"><option value="">Kies een lamp…</option>${LAMPS.map(e => `<option value="${esc(e.id)}" ${w.entity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>` : ''}
       <select data-wf="color" aria-label="Kleur van raam ${i + 1}">${WIN_COLS.map(([k, n]) => `<option value="${k}" ${(w.color || 'warm') === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
@@ -1334,7 +1339,7 @@ $('elDlg').addEventListener('change', (e) => {
     const list = (a.windows || []).map((w, k) => k === i ? Object.assign({}, w, { [t.dataset.wf]: t.value }) : w);
     return patchEl({ windows: list });
   }
-  if (t.dataset.sw) return patchEl({ [t.dataset.sw]: t.checked }, t.dataset.sw === 'sign');
+  if (t.dataset.sw) return patchEl({ [t.dataset.sw]: t.checked }, t.dataset.sw === 'sign' || t.dataset.sw === 'kamiel_house');
   if (t.dataset.text) return patchEl({ [t.dataset.text]: t.value });
   if (t.dataset.sel === 'tap') { const v = t.value; return patchEl({ tap: v.startsWith('script:') ? { action: 'script', entity: v.slice(7) } : { action: v } }); }
   if (t.dataset.sel === 'period' || t.matches('[data-pf],[data-pt]')) {
@@ -1424,9 +1429,9 @@ async function renderSettings() {
   $('eNormal').value = E.normal_per_week === undefined ? 4 : E.normal_per_week; $('eEvening').checked = E.evening !== false;
   const CATN = { film: 'Film', verhaal: 'Verhaaltje', feest: 'Op feestdagen', muziek: 'Op muziek', lama: 'Elke dag', dier: 'Huisdier', maan: 'Bij volle maan', vaak: 'Vaak', soms: 'Soms' };
   $('eStories').value = E.stories_per_week === undefined ? 3 : E.stories_per_week; $('eFilms').value = E.films_per_week === undefined ? 2 : E.films_per_week; $('eAurora').value = E.aurora_chance === undefined ? 15 : E.aurora_chance;
-  const F = s.feest || {}; $('fOn').checked = F.on !== false; $('fBoost').value = String(F.boost || 3);
+  const F = s.feest || {}; $('fOn').checked = F.on !== false; $('fBoost').value = String(F.boost || 3); $('fKamiel').value = F.kamiel || '2026-03-15';
   FDAYS = JSON.parse(JSON.stringify(F.days || [])); renderFDays();
-  const HOL = [['halloween', 'Halloween (31/10)'], ['kerst', 'Kerstmis (24–26/12)'], ['nieuwjaar', 'Nieuwjaar (31/12–1/1)'], ['pasen', 'Pasen'], ['valentijn', 'Valentijn (14/2)'], ['sinterklaas', 'Sinterklaas (5–6/12)']];
+  const HOL = [['halloween', 'Halloween (31/10)'], ['kerst', 'Kerstmis (24–26/12)'], ['nieuwjaar', 'Nieuwjaar (31/12–1/1)'], ['pasen', 'Pasen'], ['valentijn', 'Valentijn (14/2)'], ['sinterklaas', 'Sinterklaas (5–6/12, met zijn paard)'], ['kamiel', 'Kamiels verjaardag'], ['gentsefeesten', 'Gentse Feesten (10 dagen rond 21/7)'], ['carnaval', 'Carnaval'], ['nationale', 'Nationale feestdag (21/7)'], ['schooldag', 'Eerste schooldag (1/9)']];
   $('fHol').innerHTML = HOL.map(([k, n]) => `<label><input type="checkbox" class="fH" data-k="${k}" ${(F.holidays || {})[k] === false ? '' : 'checked'}> ${n}</label>`).join('');
   const PD = E.pets_per_day || {};
   $('petDays').innerHTML = [['wifi', 'Wifi'], ['snoet', 'Snoet'], ['pippa', 'Pippa'], ['pebbels', 'Pebbels'], ['dobby', 'Dobby']].map(([k, n]) =>
@@ -1519,7 +1524,7 @@ $('setForm').addEventListener('submit', async (e) => {
     windows: Object.fromEntries([...document.querySelectorAll('.wOn')].map(el => [el.dataset.k, el.checked])),
     window_titles: Object.fromEntries([...document.querySelectorAll('.wTitle')].map(el => [el.dataset.k, el.value])),
     window_close: +$('sWinClose').value, window_layout: $('sWinLayout').value,
-    feest: { on: $('fOn').checked, boost: +$('fBoost').value || 3, days: readFDays(), holidays: Object.fromEntries([...document.querySelectorAll('.fH')].map(e => [e.dataset.k, e.checked])) },
+    feest: { on: $('fOn').checked, boost: +$('fBoost').value || 3, kamiel: $('fKamiel').value || '2026-03-15', days: readFDays(), holidays: Object.fromEntries([...document.querySelectorAll('.fH')].map(e => [e.dataset.k, e.checked])) },
     outfit_mode: $('sOutMode').value, kamiel_tap: $('sKTap').checked ? 'kleerkast' : 'niets',
     outfits_off: $('oTiles').children.length ? [...document.querySelectorAll('.oOn')].filter(e => !e.checked).map(e => e.dataset.o) : undefined,
     osd_entities: [0, 1, 2].map(l => [...document.querySelectorAll('.osdsel:not([data-side])[data-l="' + l + '"]')].map(e => e.value).filter(Boolean)).filter(l => l.length),
@@ -1864,6 +1869,7 @@ function renderCook() {
   const A2 = world.settings.ai || {}, C = world.settings.cook || {};
   $('ckUse').checked = A2.use !== false; $('ckKey').value = A2.gemini_key || ''; $('ckModel').value = A2.model || '';
   $('ckWave').checked = !!C.wave; $('ckBed').checked = C.bedtime !== false; $('ckBedMin').value = C.bed_min || 20;
+  { const hs = ((world || {}).assets || []).find(x => x.kamiel_house); $('ckHouse').textContent = hs ? 'Nu: "' + (hs.label || 'eigen huis') + '"' + ((hs.windows || []).some(w => w.mode === 'deur') ? '.' : ' (nog zonder deur: hij gaat dan in het midden binnen).') : 'Nu: het getekende huisje.'; }
   $('ckNight').textContent = world.settings.night_start || '22:00';
 }
 $('ckSave').addEventListener('click', async () => {
