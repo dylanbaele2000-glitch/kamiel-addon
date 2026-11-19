@@ -883,6 +883,7 @@ details.fold.sub>summary{font-size:15px}
       <div class="settings">
         <label class="field" for="eDance">Dansfeest: kans per nummer<span>Bij een nummer uit de lijst hieronder komen soms alle huisdieren en Heidi dansen, in de maat. 1 op hoeveel nummers? (0 = nooit)</span>
           <span style="display:flex;align-items:center;gap:8px;color:var(--fg);font-size:15px">1 op <input type="number" id="eDance" min="0" max="500" style="width:6em"> nummers <button type="button" id="danceTry">▶ Probeer</button></span></label>
+        <label class="sw"><input type="checkbox" id="eHeidiDay"><span><b>👑 Heidi-dag (1× per maand)</b><span>Eén dag per maand neemt Heidi het scherm over: overal vlaggen met haar portret, spandoeken met slogans, haar gezicht in de lucht, en ze komt de hele dag langs om Kamiel te pesten. Elke maand een andere dag (een verrassing).</span></span></label>
         <label class="sw"><input type="checkbox" id="ePyro"><span><b>🔥 Pyro bij bepaalde artiesten</b><span>Speelt er een nummer van een van deze artiesten, dan gaat de wereld in vlammen op: vlammenwerpers op de maat, vonken, vuurballen, een gloeiende lucht. Elk nummer krijgt zijn eigen hevigheid, van al heel heftig tot de hel. Werkt bij elk nummer, ook zonder tempo in de lijst.</span></span></label>
         <label class="field" for="ePyroArt">Artiesten voor pyro<span>Gescheiden door komma's. Een deel van de naam is genoeg; ook "feat. …" in de titel telt.</span><input type="text" id="ePyroArt" placeholder="Doja Cat"></label></div>
       <details class="fold sub"><summary>Meeknikken <small id="songCount"></small></summary><div class="inner">
@@ -1435,7 +1436,7 @@ async function renderSettings() {
     `<label class="field" for="pb_${k}">🎂 ${n}<span>Verjaardag (leeg = geen).</span><input type="date" id="pb_${k}" class="petBday" data-p="${k}" value="${esc(PB[k] || '')}"></label>`).join('');
   $('ePetTogether').value = E.pets_together === undefined ? 25 : E.pets_together;
   $('eDance').value = E.dance_chance === undefined ? 20 : E.dance_chance;
-  $('ePyro').checked = E.pyro_on !== false; $('ePyroArt').value = (E.pyro_artists || ['Doja Cat']).join(', ');
+  $('eHeidiDay').checked = E.heidi_day !== false; $('ePyro').checked = E.pyro_on !== false; $('ePyroArt').value = (E.pyro_artists || ['Doja Cat']).join(', ');
   $('ePetStay').value = E.pets_stay === undefined ? 35 : E.pets_stay; $('ePetLying').value = E.pets_lying === undefined ? 20 : E.pets_lying; $('ePetMin').value = E.pets_stay_min || 45;
   $('evCount').textContent = (world.events || []).filter(ev => ev.cat !== 'intern').length + ' stuks';
   $('evTable').tBodies[0].innerHTML = (world.events || []).filter(ev => ev.cat !== 'intern').map(ev => `<tr><td><input type="checkbox" class="evOn" data-e="${ev.id}" ${(E.off || []).includes(ev.id) ? '' : 'checked'} aria-label="${esc(ev.name)} aan"></td>
@@ -1502,7 +1503,7 @@ $('setForm').addEventListener('submit', async (e) => {
     compose: { styles: Object.fromEntries([...document.querySelectorAll('.cStyle')].map(e => [e.dataset.s, e.checked])), color: $('compColor').checked, busy: +$('compBusy').value },
     hills: { chance: +$('hChance').value || 0, height: +$('hHeight').value || 18 }, stack: { chance: +$('stChance').value || 0, max: +$('stMax').value || 3 },
     counts: Object.fromEntries(['dag', 'nacht'].map(part => [part, Object.fromEntries(['grond', 'horizon', 'lucht', 'kader'].map(k => [k, [+$(`n_${part}_${k}_0`).value || 0, +$(`n_${part}_${k}_1`).value || 0]]))])),
-    events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0, pets_together: +$('ePetTogether').value || 0, dance_chance: +$('eDance').value || 0, pyro_on: $('ePyro').checked, pyro_artists: $('ePyroArt').value.split(',').map(x => x.trim()).filter(Boolean), stories_per_week: +$('eStories').value || 0, films_per_week: +$('eFilms').value || 0, aurora_chance: +$('eAurora').value || 0,
+    events: { on: $('eOn').checked, evening: $('eEvening').checked, lama_per_day: +$('eLama').value || 0, common_per_day: +$('eCommon').value || 0, normal_per_week: +$('eNormal').value || 0, pets_together: +$('ePetTogether').value || 0, dance_chance: +$('eDance').value || 0, pyro_on: $('ePyro').checked, heidi_day: $('eHeidiDay').checked, pyro_artists: $('ePyroArt').value.split(',').map(x => x.trim()).filter(Boolean), stories_per_week: +$('eStories').value || 0, films_per_week: +$('eFilms').value || 0, aurora_chance: +$('eAurora').value || 0,
       pets_stay: +$('ePetStay').value || 0, pets_lying: +$('ePetLying').value || 0, pets_stay_min: +$('ePetMin').value || 45,
       pets_per_day: Object.fromEntries([...document.querySelectorAll('.petDay')].map(e => [e.dataset.p, +e.value || 0])),
       pet_birthdays: Object.fromEntries([...document.querySelectorAll('.petBday')].map(e => [e.dataset.p, e.value || ''])),

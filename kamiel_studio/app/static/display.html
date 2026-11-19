@@ -377,11 +377,28 @@ function petBday(name) {
   const b = ((S.events || {}).pet_birthdays || {})[name], d = now();
   return typeof b === 'string' && b.endsWith('-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
 }
+// the top of a pet's head in a pose: found from where its eye is in that frame (the head moves when it sits or lies)
+const hatCache = {};
+function hatAt(pet, ph) {
+  const key = pet + ph; if (hatCache[key]) return hatCache[key];
+  const art = PETART[pet], fr = (art.frames && art.frames[ph]) || art.frames.stand, st = art.frames.stand;
+  let ex = art.eye[0], ey = art.eye[1];
+  try {
+    const ec = st.pal[st.rows[art.eye[1]][art.eye[0]]]; let best = 1e9;
+    fr.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const c = row[x]; if (c !== '.' && fr.pal[c] === ec) { const dd = (x - art.eye[0]) ** 2 + (y - art.eye[1]) ** 2; if (dd < best) { best = dd; ex = x; ey = y; } } } });
+  } catch (e) { }
+  let top = ey;
+  for (let x = ex; x <= ex + 4; x++) for (let y = 0; y < ey; y++) { const r = fr.rows[y] || ''; if (r[x] && r[x] !== '.') { top = Math.min(top, y); break; } }
+  return (hatCache[key] = [ex + 2, top]);
+}
 function petHat(g, o) {
-  if (!o.pet || o.alpha === 0) return;
+  if (!o.pet || o.alpha === 0 || !PETART[o.pet]) return;
   const f = festival(); if (!((f && (f.kind === 'verjaardag' || f.kind === 'nieuwjaar')) || o.bday || petBday(o.pet))) return;
-  const p = petPoint(o, 'head'), u = PET_U * (o.s || 1);
-  g.save(); g.translate(p.x, p.y - u); g.rotate((o.r || 0) + (o.face > 0 ? .25 : -.25));
+  const ph = o.pose === 'walk' ? 'walk' + (mod(Math.floor(o.wt || 0), 4) + 1) : (o.pose || 'stand');
+  const art = PETART[o.pet], q = hatAt(o.pet, ph), u = PET_U * (o.s || 1), w = art.w * u, h = art.h * u;
+  let x = (-w / 2 + (q[0] + .5) * u) * (o.face > 0 ? -1 : 1) * (o.sx || 1), y = (-h + (q[1] + .6) * u) * (o.sq || 1);
+  const r = o.r || 0, cr = Math.cos(r), sr = Math.sin(r), p = { x: o.cx + x * cr - y * sr, y: o.feet - (o.lift || 0) + u + x * sr + y * cr };
+  g.save(); g.translate(p.x, p.y); g.rotate(r + (o.face > 0 ? .18 : -.18));
   g.fillStyle = ['#ff3d8b', '#3db8ff', '#ffd23f'][o.pet.length % 3];
   g.beginPath(); g.moveTo(-3.2 * u, 0); g.lineTo(3.2 * u, 0); g.lineTo(0, -8 * u); g.closePath(); g.fill();
   g.fillStyle = '#fff'; g.fillRect(-2 * u, -3.5 * u, 4 * u, u); g.beginPath(); g.arc(0, -8 * u, 1.3 * u, 0, 7); g.fill();
@@ -882,26 +899,50 @@ function winLit(wn, key) {
   winNow.set(key, nx);
   return nx * (alt > 2 ? .25 : 1);
 }
+// what covers a window drawn early: the ground (everything on the horizon sinks into it) and, for a building on a
+// hill, the front hill too. One line across the screen per kind: the glow is only drawn above it.
+function coverLine(kind) {
+  const cam = kx - W / 2, ys = [];
+  for (let x = 0; x <= W + 6; x += 6) ys.push(horY(x + cam));
+  if (kind === 'heuvel') for (let i = 0; i < N; i++) {
+    const hl = places[i].hills; if (!hl || !hl.ranges.length) continue;
+    const rg = hl.ranges[hl.ranges.length - 1];
+    for (let k = kb() - 1; k <= kb() + 1; k++) {
+      const x0 = i * PLACE + k * PW - cam; if (x0 > W || x0 + PLACE < 0) continue;
+      for (let j = 0; j < ys.length; j++) { const dx = j * 6 - x0 - PLACE / 2; if (dx < -PLACE / 2 || dx > PLACE / 2) continue; ys[j] = Math.min(ys[j], horY(j * 6 + cam) - COMP.hillH(rg, dx) + 1); }
+    }
+  }
+  return ys;
+}
+function clipAbove(ys) { ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(W + 6, -10); for (let j = ys.length - 1; j >= 0; j--) ctx.lineTo(j * 6, ys[j]); ctx.closePath(); ctx.clip(); }
 function drawLitWindows(sun) {
   const L = light(sun.alt), kb0 = kam.hide ? null : { x: W / 2 + kam.x - 80 * (kam.s || 1), y: (kam.feet !== null ? kam.feet : FEET - kam.y) - 250 * (kam.s || 1), w: 160 * (kam.s || 1), h: 250 * (kam.s || 1) };
-  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const lines = {};
   for (const w of litWins) {
-    if (w.w <= 0) { if (w.after) { ctx.save(); ctx.globalCompositeOperation = 'source-over'; w.after(ctx); ctx.restore(); } continue; }
+    if (w.w <= 0) { if (w.after) { ctx.save(); w.after(ctx); ctx.restore(); } continue; }
     if (kb0 && !w.after && w.x < kb0.x + kb0.w && w.x + w.w > kb0.x && w.y < kb0.y + kb0.h && w.y + w.h > kb0.y) continue;
+    ctx.save();
+    if (w.cover) { lines[w.cover] = lines[w.cover] || coverLine(w.cover); clipAbove(lines[w.cover]); }
+    ctx.globalCompositeOperation = 'lighter';
     const day = .3 + .7 * (1 - L), a = w.a * day;
-    let c = w.col === 'koel' ? [205, 225, 255] : w.col === 'tv' ? [110, 150, 255] : [255, 190, 90];
-    let k = 1;
-    if (w.col === 'tv') { const f = Math.sin(Math.floor(t * 7 + w.seed) * 91.7) * 999; k = .55 + .45 * (f - Math.floor(f)); }
-    else k = .94 + .06 * Math.sin(t * 2 + w.seed);
-    const cx = w.x + w.w / 2, cy = w.y + w.h / 2, R = Math.max(w.w, w.h) * 1.4 + 6;
+    const c = w.col === 'koel' ? [205, 225, 255] : w.col === 'tv' ? [110, 150, 255] : [255, 186, 92];
+    let k;
+    if (w.col === 'tv') { const f = Math.sin(Math.floor(t * 6 + w.seed) * 91.7) * 999; k = .45 + .55 * (f - Math.floor(f)); }
+    else { k = .82 + .12 * nz(t * 1.7 + w.seed * 3) + .06 * nz(t * 9 + w.seed); if (nz(t * .4 + w.seed * 7) > .93) k *= .7; }   // a candle-like flicker, now and then a dip
+    const cx = w.x + w.w / 2, cy = w.y + w.h / 2, r0 = Math.max(w.w, w.h), R = r0 * 1.6 + 10;
+    const rgb = `${c[0]},${c[1]},${c[2]}`;
+    // the light spilling out around the window: a soft round glow
     const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
-    gr.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${.28 * a * k})`); gr.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    gr.addColorStop(0, `rgba(${rgb},${.34 * a * k})`); gr.addColorStop(.35, `rgba(${rgb},${.16 * a * k})`); gr.addColorStop(1, `rgba(${rgb},0)`);
     ctx.fillStyle = gr; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
-    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${.72 * a * k})`; ctx.fillRect(w.x, w.y, w.w, w.h);
-    ctx.fillStyle = `rgba(255,240,205,${.3 * a * k})`; ctx.fillRect(w.x + w.w * .18, w.y + w.h * .18, w.w * .64, w.h * .64);
-    if (w.after) { ctx.save(); ctx.globalCompositeOperation = 'source-over'; w.after(ctx); ctx.restore(); }
+    // the glass: brightest in the middle, fading to the frame (so the window's own drawing stays visible)
+    ctx.beginPath(); ctx.rect(w.x, w.y, w.w, w.h); ctx.clip();
+    const gi = ctx.createRadialGradient(cx, cy, 0, cx, cy, r0 * .75);
+    gi.addColorStop(0, `rgba(255,236,190,${.55 * a * k})`); gi.addColorStop(.6, `rgba(${rgb},${.32 * a * k})`); gi.addColorStop(1, `rgba(${rgb},${.12 * a * k})`);
+    ctx.fillStyle = gi; ctx.fillRect(w.x, w.y, w.w, w.h);
+    ctx.restore();
+    if (w.after) { ctx.save(); w.after(ctx); ctx.restore(); }
   }
-  ctx.restore();
 }
 /* ---------- Recept.exe: cooking with Kamiel ----------
    A recipe sent over Telegram (or pasted in the Studio) stays on the screen, step by step, until it's done.
@@ -1022,6 +1063,84 @@ function rcpSlide(dt) {
   const want = RCP.on ? W * .33 : 0, d = want - kam.x;
   if (Math.abs(d) < 2) { kamSlide = false; if (RCP.on) kam.face = -1; else if (kam.x !== 0) { kam.x = 0; kam.face = 0; } return; }
   kamSlide = true; kam.face = d > 0 ? 1 : -1; kam.x += Math.sign(d) * Math.min(Math.abs(d), 90 * dt);
+}
+/* ---------- Heidi's day: once a month she takes over the screen ----------
+   Flags with her portrait everywhere, banners with slogans, bunting in her colours, her face watching from the sky,
+   a slightly red-tinted world, and she turns up all day long (events.js plans that). Off with events.heidi_day. */
+if (params.get('heididag')) (S.events = S.events || {})._heidi_force = true;
+let hdDay = '', hdOn = false;
+function heidiDayNow() {
+  const d = now(), key = d.toDateString() + d.getHours();
+  if (key !== hdDay) { hdDay = key; const was = hdOn; hdOn = !!(window.KamielEvents && KamielEvents.heidiDay && KamielEvents.heidiDay(d, S.events || {})) && !filmNow();
+    if (hdOn && !was) tlog('event', 'Het is Heidi-dag: Heidi heeft het scherm overgenomen. Lang leve Heidi.'); }
+  return hdOn && !filmNow();
+}
+// her portrait, made once: Heidi with a crown on a round white badge
+let hdPortrait = null, hdTry = 0;
+function heidiPortrait() {
+  if (hdPortrait || t - hdTry < 2) return hdPortrait; hdTry = t;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 70; const g = c.getContext('2d');
+  const o = Object.assign({}, kamObj(), { cx: 34, feet: 68, s: .27, face: -1, set: 'heidi', pose: 'stand', wt: 0, head: 0, r: 0, sq: 1, sx: 1, eyes: '', mouth: 0, outfit: ['kroon'], alpha: 1, tint: '', filter: '', clipY: null, blur: 0, deco: null, layer: 'front' });
+  try { drawLlama(g, o); } catch (e) { return null; }
+  const d = g.getImageData(0, 0, 64, 70).data; let n = 0; for (let i = 3; i < d.length; i += 16) if (d[i] > 0) n++;
+  if (n > 20) hdPortrait = c;
+  return hdPortrait;
+}
+const HD_SLOGANS = ['LANG LEVE HEIDI', 'HEIDI WEET HET BEST', 'ALLES VOOR HEIDI', 'HEIDI ♥ HEIDI', 'BUIG VOOR HEIDI', 'HEIDI = DE BESTE'];
+function heidiFlag(x, y, sc, k) {   // pole + waving flag, with the badge on it
+  const g = ctx, pw = Math.max(2, 4 * sc), ph = 170 * sc, fw = 86 * sc, fh = 56 * sc;
+  g.fillStyle = '#9aa0a8'; g.fillRect(x - pw / 2, y - ph, pw, ph); g.fillStyle = '#ffd23f'; g.fillRect(x - pw, y - ph - 6 * sc, pw * 2, 6 * sc);
+  for (let i = 0; i < 12; i++) {   // the cloth in strips, each a little further in the wave
+    const u = i / 12, off = Math.sin(t * 3 + k + u * 5) * 4 * sc * u;
+    g.fillStyle = i % 4 === 3 ? '#a8101d' : '#d6202e'; g.fillRect(x + u * fw, y - ph + 4 * sc + off, fw / 12 + 1, fh);
+  }
+  const P0 = heidiPortrait(), bx = x + fw * .5, by = y - ph + 4 * sc + fh / 2 + Math.sin(t * 3 + k + 2.5) * 2 * sc, br = fh * .42;
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(bx, by, br, 0, 7); g.fill();
+  if (P0) { g.save(); g.beginPath(); g.arc(bx, by, br - 1, 0, 7); g.clip(); g.imageSmoothingEnabled = false; g.drawImage(P0, bx - br * 1.05, by - br * 1.2, br * 2.1, br * 2.3); g.restore(); }
+}
+function drawHeidiGround() {
+  const cam = kx - W / 2, step = 380, pts = [];
+  for (let wx = Math.floor((cam - 200) / step) * step; wx < cam + W + 200; wx += step) {
+    const j = Math.round(wx / step), sx = wx - cam + (seededDay('hdf' + j) - .5) * 80, y = horY(wx) + 26 + seededDay('hdy' + j) * 22, sc = .8 + (y - HOR0) / 260;
+    pts.push({ sx, y, sc, j });
+  }
+  // banners between two poles, sagging, with a slogan
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i], b = pts[i + 1]; if ((a.j & 1) === 0) continue;
+    const ya = a.y - 120 * a.sc, yb = b.y - 120 * b.sc, sag = 26, txt = HD_SLOGANS[mod(a.j, HD_SLOGANS.length)];
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.sx, ya); ctx.quadraticCurveTo((a.sx + b.sx) / 2, (ya + yb) / 2 + sag * 2, b.sx, yb); ctx.stroke();
+    const mx = (a.sx + b.sx) / 2, my = (ya + yb) / 2 + sag, bw = Math.min(b.sx - a.sx - 60, txt.length * 13 + 30);
+    ctx.fillStyle = '#14102a'; ctx.fillRect(mx - bw / 2, my - 15, bw, 30); ctx.fillStyle = '#d6202e'; ctx.fillRect(mx - bw / 2 + 3, my - 12, bw - 6, 24);
+    ctx.font = 'bold 22px VT323, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffd23f'; ctx.fillText(txt, mx, my + 1);
+  }
+  for (const p of pts) heidiFlag(p.sx, p.y, p.sc, p.j);
+}
+function drawHeidiScreen() {
+  const P0 = heidiPortrait();
+  // at night two searchlights sweep the sky, as in any proper regime
+  const L0 = light(sunPos(now()).alt);
+  if (L0 < .5) { ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const [x0, ph] of [[W * .18, 0], [W * .82, 2.1]]) {
+      const ang = -Math.PI / 2 + Math.sin(t * .35 + ph) * .55, len = 700, sp = .07;
+      const gr = ctx.createLinearGradient(x0, HOR0, x0 + Math.cos(ang) * len, HOR0 + Math.sin(ang) * len);
+      gr.addColorStop(0, `rgba(255,240,200,${.22 * (1 - L0 * 2)})`); gr.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(x0, HOR0); ctx.lineTo(x0 + Math.cos(ang - sp) * len, HOR0 + Math.sin(ang - sp) * len); ctx.lineTo(x0 + Math.cos(ang + sp) * len, HOR0 + Math.sin(ang + sp) * len); ctx.closePath(); ctx.fill();
+    } ctx.restore(); }
+  // bunting in her colours, with her badge now and then
+  for (let k = 0; k < 22; k++) {
+    const x = -20 + k * 48 - mod(kx * .3, 48), u = k / 21, y = 14 + Math.sin(u * Math.PI) * 30 + Math.sin(t * 1.3 + k) * 2;
+    ctx.fillStyle = ['#d6202e', '#ffffff', '#14102a'][k % 3]; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 30, y + 2); ctx.lineTo(x + 15, y + 28); ctx.closePath(); ctx.fill();
+    if (k % 3 === 1 && P0) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(P0, x + 7, y + 1, 16, 18); ctx.restore(); }
+  }
+  // the world gets her tint: a little red, a little darker at the edges
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgb(255,222,222)'; ctx.fillRect(0, 0, W, H); ctx.restore();
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * .45, W / 2, H / 2, H * .95); vg.addColorStop(0, 'rgba(90,0,10,0)'); vg.addColorStop(1, 'rgba(90,0,10,.28)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  // a slogan on a red ribbon, top middle, changing every few seconds
+  const txt = '★ HEIDI-DAG ★ ' + HD_SLOGANS[Math.floor(t / 6) % HD_SLOGANS.length];
+  ctx.font = 'bold 24px VT323, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const tw = ctx.measureText(txt).width + 34;
+  ctx.fillStyle = '#14102a'; ctx.fillRect(W / 2 - tw / 2 - 3, 52, tw + 6, 34); ctx.fillStyle = '#d6202e'; ctx.fillRect(W / 2 - tw / 2, 55, tw, 28);
+  ctx.fillStyle = '#ffd23f'; ctx.fillText(txt, W / 2, 70);
 }
 // the ground remembers the weather: puddles, snow that stays, footprints, fireflies (static/ground.js)
 let wxTemp = null;
@@ -2113,7 +2232,7 @@ function placeItems(layer, hill, sky) {
       else { drawImg(o.img, sx, y, w, h, it.flip); if (GROUND && layer > 0) GROUND.snowCap(ctx, o.img, sx, y, w, h, it.flip); }
       if (o.windows && o.windows.length && layer > 0) o.windows.forEach((wn, wi) => {
         const a = winLit(wn, (o.id || '') + ':' + wi + ':' + i);
-        if (a > .01) litWins.push({ x: sx + (it.flip ? 1 - wn.x - wn.w : wn.x) * w, y: y + wn.y * h, w: wn.w * w, h: wn.h * h, a: a * ctx.globalAlpha, col: wn.color || 'warm', seed: wi + i * 7 });
+        if (a > .01) litWins.push({ x: sx + (it.flip ? 1 - wn.x - wn.w : wn.x) * w, y: y + wn.y * h, w: wn.w * w, h: wn.h * h, a: a * ctx.globalAlpha, col: wn.color || 'warm', seed: wi + i * 7, cover: layer === 1 ? (it.onHill ? 'heuvel' : 'grond') : '' });
       });
       if (it.cloud && ready(it.cloud.img)) {   // the tv sits in a cloud
         const cw = w * 2.3, ch = cw * it.cloud.img.height / it.cloud.img.width;
@@ -2481,7 +2600,7 @@ function drawAurora(sun, d) {
   // slow, drifting curtains: where they glow, how high they reach and the rays in them all wander on their own (no repeating wave)
   const day = new Date(d.getTime() - (d.getHours() < 12 ? 86400000 : 0)), sd = seededDay('aurora-look ' + day.toDateString()) * 900;
   const bands = 1 + Math.floor(seededDay('aurora-n ' + day.toDateString()) * 2.6), top = [[170, 90, 255], [255, 110, 190], [90, 150, 255]][Math.floor(sd) % 3];
-  const T = t * .045, par = kx * .04, SW = 6;
+  const T = t * .11, par = kx * .04, SW = 4;
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (let k = 0; k < bands; k++) {
     const ks = sd + k * 131, base = 130 + k * 55 + (nz(ks + T * .2) - .5) * 40, pulse = .55 + .45 * nz(ks + 9 + T * .7);
@@ -2489,13 +2608,15 @@ function drawAurora(sun, d) {
       const wx = x + par * (k + 1);
       const patch = nz(ks + 77 + wx * .0045 + T * .5), on = Math.max(0, (patch - .35) / .65);
       if (on <= .02) continue;
-      const y = base + (nz(ks + wx * .0022 + T * .35) - .5) * 150 + (nz(ks + 33 + wx * .009 - T * .8) - .5) * 26;
-      const ray = .55 + .45 * nz(ks + 300 + wx * .07 + T * 1.5), len = 90 + 150 * nz(ks + 11 + wx * .004 + T * .25);
-      const a = auroraA * on * on * ray * pulse * (k === 0 ? .42 : .3);
+      // folds that travel along the curtain, rays that flicker, and waves of brightness rippling through it
+      const y = base + (nz(ks + wx * .0022 + T * .35) - .5) * 150 + (nz(ks + 33 + wx * .009 - T * .8) - .5) * 26 + Math.sin(wx * .013 - t * .55 + k * 2) * 16;
+      const ray = .35 + .65 * nz(ks + 300 + wx * .09 + t * 1.1), len = 90 + 150 * nz(ks + 11 + wx * .004 + T * .25) + Math.sin(wx * .03 + t * .9) * 18;
+      const ripple = .65 + .35 * Math.sin(wx * .021 - t * 1.6 + k * 1.7);
+      const a = auroraA * on * on * ray * pulse * ripple * (k === 0 ? .46 : .32);
       if (a <= .01) continue;
       const g = ctx.createLinearGradient(0, y - len, 0, y + 20);
       g.addColorStop(0, `rgba(${top},0)`); g.addColorStop(.5, `rgba(${top},${a * .45})`); g.addColorStop(.85, `rgba(80,255,170,${a})`); g.addColorStop(1, 'rgba(80,255,170,0)');
-      ctx.fillStyle = g; ctx.fillRect(x, y - len, SW + .5, len + 20);
+      ctx.fillStyle = g; ctx.fillRect(x + Math.sin(t * .7 + wx * .02) * 2, y - len, SW + .5, len + 20);
     }
   }
   ctx.restore();
@@ -2589,7 +2710,7 @@ function frame() {
   if (!hide) { placeItems(0, undefined, 'achter'); drawClouds(sun, false); placeItems(0, undefined, 'tussen'); skySafe('flyers', () => SKY.flyers(ctx, d, sun)); drawClouds(sun, true); placeItems(0, undefined, 'voor');
     drawHills(false); placeItems(1, true); drawHills(true); SKY.rainCloud && SKY.rainCloud(ctx, sun); }
   if (kam.layer === 'far') drawKamiel();
-  if (!hide) { placeItems(1, false); drawGround(); if (GROUND) skySafe('grond', () => GROUND.drawGround(ctx, t)); drawHalls(); drawFestGround(); }
+  if (!hide) { placeItems(1, false); drawGround(); if (GROUND) skySafe('grond', () => GROUND.drawGround(ctx, t)); drawHalls(); drawFestGround(); if (heidiDayNow()) skySafe('heididag', () => drawHeidiGround()); }
   EV.draw('ground', ctx);
   if (kam.layer === 'mid') drawKamiel();
   if (!hide) placeItems(2);
@@ -2610,7 +2731,7 @@ function frame() {
   ctx.globalCompositeOperation = 'source-over';
   ctx = mainCtx; ctx.drawImage(wc, 0, 0);
   if (!hide && litWins.length) drawLitWindows(sun);
-  if (!hide) { drawWeather(sun); if (GROUND) skySafe('vuurvliegjes', () => GROUND.drawFireflies(ctx, t)); drawFestScreen(); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); if (PYRO && !(EV.filming && EV.filming())) skySafe('pyro', () => PYRO.draw(ctx)); drawBattBubble(); }
+  if (!hide) { drawWeather(sun); if (GROUND) skySafe('vuurvliegjes', () => GROUND.drawFireflies(ctx, t)); drawFestScreen(); if (heidiDayNow()) skySafe('heididag2', () => drawHeidiScreen()); drawEggPops(); drawAirHaze(); skySafe('screen', () => SKY.screen(ctx, sun, cv)); if (PYRO && !(EV.filming && EV.filming())) skySafe('pyro', () => PYRO.draw(ctx)); drawBattBubble(); }
   EV.draw('screen', ctx);
   drawHallZoom();
   if (remCanvas && remAlpha > 0) { ctx.globalAlpha = remAlpha; ctx.drawImage(remCanvas, 0, 0); ctx.globalAlpha = 1; }
